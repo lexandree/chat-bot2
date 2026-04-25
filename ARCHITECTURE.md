@@ -26,6 +26,8 @@ Recommended package layout:
 ```text
 src/
   app/
+    __main__.py
+    commands.py
     settings.py
     logging.py
   graph/
