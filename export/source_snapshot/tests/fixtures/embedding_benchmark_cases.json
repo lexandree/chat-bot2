@@ -1,0 +1,126 @@
+{
+  "passages": [
+    {
+      "passage_id": "passage-jobcenter-docs-de",
+      "topic": "jobcenter-documents",
+      "language": "de",
+      "text": "Fuer einen Antrag beim Jobcenter werden in der Regel Ausweis, Meldeadresse, Aufenthaltstitel oder Fiktionsbescheinigung, Nachweise ueber Einkommen und Mietunterlagen benoetigt."
+    },
+    {
+      "passage_id": "passage-submission-authority-de",
+      "topic": "submission-authority",
+      "language": "de",
+      "text": "Der Antrag wird beim zustaendigen Jobcenter oder Sozialamt abgegeben. Welche Behoerde zustaendig ist, haengt vom Leistungsfall und dem Wohnort ab."
+    },
+    {
+      "passage_id": "passage-appointment-procedure-de",
+      "topic": "appointment-procedure",
+      "language": "de",
+      "text": "Fuer viele Auslaenderbehoerde-Termine muss man online oder telefonisch einen Termin buchen und danach die benoetigten Unterlagen zum Termin mitbringen."
+    },
+    {
+      "passage_id": "passage-benefit-eligibility-de",
+      "topic": "benefit-eligibility",
+      "language": "de",
+      "text": "Ob jemand Anspruch auf Leistungen hat, haengt vom Aufenthaltsstatus, Einkommen, Haushaltslage und den jeweils einschlaegigen Regeln der zustaendigen Stelle ab."
+    },
+    {
+      "passage_id": "passage-jobcenter-docs-ru",
+      "topic": "jobcenter-documents",
+      "language": "ru",
+      "text": "Для подачи в Jobcenter обычно нужны удостоверение личности, регистрация адреса, документ о статусе пребывания, справки о доходах и документы по жилью."
+    },
+    {
+      "passage_id": "passage-submission-authority-uk",
+      "topic": "submission-authority",
+      "language": "uk",
+      "text": "Заяву слід подавати до відповідного Jobcenter або Sozialamt. Конкретний орган залежить від виду допомоги та місця проживання."
+    }
+  ],
+  "queries": [
+    {
+      "query_id": "query-ru-jobcenter-docs",
+      "language": "ru",
+      "text": "Какие документы нужны для Jobcenter в Германии?",
+      "expected_topic": "jobcenter-documents",
+      "expected_passage_ids": ["passage-jobcenter-docs-de", "passage-jobcenter-docs-ru"]
+    },
+    {
+      "query_id": "query-uk-jobcenter-docs",
+      "language": "uk",
+      "text": "Які документи потрібні для Jobcenter?",
+      "expected_topic": "jobcenter-documents",
+      "expected_passage_ids": ["passage-jobcenter-docs-de", "passage-jobcenter-docs-ru"]
+    },
+    {
+      "query_id": "query-de-jobcenter-docs",
+      "language": "de",
+      "text": "Welche Unterlagen braucht das Jobcenter?",
+      "expected_topic": "jobcenter-documents",
+      "expected_passage_ids": ["passage-jobcenter-docs-de", "passage-jobcenter-docs-ru"]
+    },
+    {
+      "query_id": "query-mixed-jobcenter-docs",
+      "language": "mixed",
+      "text": "Jobcenter документы какие нужны bitte?",
+      "expected_topic": "jobcenter-documents",
+      "expected_passage_ids": ["passage-jobcenter-docs-de", "passage-jobcenter-docs-ru"]
+    },
+    {
+      "query_id": "query-ru-submission-authority",
+      "language": "ru",
+      "text": "Куда подавать заявление на пособие?",
+      "expected_topic": "submission-authority",
+      "expected_passage_ids": ["passage-submission-authority-de", "passage-submission-authority-uk"]
+    },
+    {
+      "query_id": "query-uk-submission-authority",
+      "language": "uk",
+      "text": "Куди подавати заяву на допомогу?",
+      "expected_topic": "submission-authority",
+      "expected_passage_ids": ["passage-submission-authority-de", "passage-submission-authority-uk"]
+    },
+    {
+      "query_id": "query-de-submission-authority",
+      "language": "de",
+      "text": "Bei welcher Behoerde muss ich den Antrag abgeben?",
+      "expected_topic": "submission-authority",
+      "expected_passage_ids": ["passage-submission-authority-de", "passage-submission-authority-uk"]
+    },
+    {
+      "query_id": "query-ru-appointment",
+      "language": "ru",
+      "text": "Как записаться в Auslaenderbehoerde?",
+      "expected_topic": "appointment-procedure",
+      "expected_passage_ids": ["passage-appointment-procedure-de"]
+    },
+    {
+      "query_id": "query-uk-appointment",
+      "language": "uk",
+      "text": "Як записатися в Auslaenderbehoerde на прийом?",
+      "expected_topic": "appointment-procedure",
+      "expected_passage_ids": ["passage-appointment-procedure-de"]
+    },
+    {
+      "query_id": "query-de-appointment",
+      "language": "de",
+      "text": "Wie buche ich einen Termin bei der Auslaenderbehoerde?",
+      "expected_topic": "appointment-procedure",
+      "expected_passage_ids": ["passage-appointment-procedure-de"]
+    },
+    {
+      "query_id": "query-ru-eligibility",
+      "language": "ru",
+      "text": "От чего зависит право на выплаты?",
+      "expected_topic": "benefit-eligibility",
+      "expected_passage_ids": ["passage-benefit-eligibility-de"]
+    },
+    {
+      "query_id": "query-mixed-eligibility",
+      "language": "mixed",
+      "text": "Право auf Leistungen от чего зависит?",
+      "expected_topic": "benefit-eligibility",
+      "expected_passage_ids": ["passage-benefit-eligibility-de"]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "validation_set_id": "legal-structural-set-v1",
+  "name": "Legal structural baseline set",
+  "scope_note": "Direct cites, version links, and exception references for the first 004 slice.",
+  "version": "v1",
+  "cases": [
+    {
+      "case_id": "case-direct-aufenthg-4",
+      "prompt_text": "What does § 4 AufenthG regulate?",
+      "case_type": "direct_section_cite",
+      "expected_support_refs": ["AufenthG:§ 4"],
+      "expected_outcome": "resolved",
+      "as_of_date": ""
+    },
+    {
+      "case_id": "case-amend-link",
+      "prompt_text": "Show the amendment context for § 4 AufenthG",
+      "case_type": "amendment_or_version_link",
+      "expected_support_refs": ["AufenthG:§ 4", "AufenthG:§ 4a"],
+      "expected_outcome": "related",
+      "as_of_date": ""
+    },
+    {
+      "case_id": "case-exception-link",
+      "prompt_text": "Which exception is connected to § 5 AufenthG?",
+      "case_type": "exception_or_condition",
+      "expected_support_refs": ["AufenthG:§ 5", "AufenthG:§ 5a"],
+      "expected_outcome": "related",
+      "as_of_date": ""
+    }
+  ]
+}

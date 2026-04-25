@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "legal-graph-foundation"
+version = "0.1.0"
+description = "Database-first legal graph foundation for future GraphRAG inference"
+requires-python = ">=3.11"
+dependencies = [
+  "neo4j>=5.18.0",
+  "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+sentence-transformers = [
+  "sentence-transformers>=3.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

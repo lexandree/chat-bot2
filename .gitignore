@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.env
+.env.*
+.jina.env
+!.env.example
+jina/.jina.env
+data/legal_xml/*.xml
+data/import_preview/*.json
+data/import_preview/load_reports/
+tmp/

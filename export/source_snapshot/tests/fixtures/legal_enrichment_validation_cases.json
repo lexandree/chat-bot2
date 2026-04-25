@@ -1,0 +1,25 @@
+{
+  "question_set_id": "legal-enrichment-set-v1",
+  "name": "Germany foreigners legal enrichment slice",
+  "source_strategy": "project_local_manual",
+  "scope_note": "Germany-focused laws and official guidance for foreigners across multiple residence and benefit statuses",
+  "version": "v1",
+  "questions": [
+    {
+      "question_id": "legal-q1",
+      "prompt_text": "Какие документы нужны для продления ВНЖ и обращения за пособием?",
+      "language": "ru",
+      "expected_topic": "documents",
+      "expected_support_refs": ["law-documents", "guidance-documents"],
+      "success_outcome": "grounded answer"
+    },
+    {
+      "question_id": "legal-q2",
+      "prompt_text": "Welche Stelle ist für die Abgabe von Unterlagen zuständig?",
+      "language": "de",
+      "expected_topic": "authority",
+      "expected_support_refs": ["guidance-authority"],
+      "success_outcome": "grounded answer"
+    }
+  ]
+}

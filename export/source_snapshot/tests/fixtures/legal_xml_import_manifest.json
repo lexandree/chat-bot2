@@ -1,0 +1,23 @@
+{
+  "name": "legal_first_xml_import",
+  "inputs": [
+    {
+      "law_code": "AufenthG",
+      "path": "data/legal_xml/AufenthG.xml",
+      "jurisdiction": "DE",
+      "language": "de"
+    },
+    {
+      "law_code": "AsylG",
+      "path": "data/legal_xml/AsylG.xml",
+      "jurisdiction": "DE",
+      "language": "de"
+    },
+    {
+      "law_code": "BeschV",
+      "path": "data/legal_xml/BeschV.xml",
+      "jurisdiction": "DE",
+      "language": "de"
+    }
+  ]
+}
