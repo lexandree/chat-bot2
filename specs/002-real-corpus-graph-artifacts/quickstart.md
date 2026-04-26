@@ -1,4 +1,4 @@
-# Quickstart: Real Corpus Snapshot Comparison
+# Quickstart: Real Corpus Graph Artifacts
 
 ## 1. Environment
 
@@ -63,7 +63,7 @@ Expected result:
 ## 5. Capture Baseline Snapshot
 
 Capture the legacy AufenthG baseline graph snapshot as a read-only snapshot
-artifact once, then compare against that file:
+artifact once, then use it for the baseline check:
 
 ```bash
 python -m app graph snapshot \
@@ -72,22 +72,22 @@ python -m app graph snapshot \
   --read-only-baseline
 ```
 
-## 6. Compare Snapshots
+## 6. Baseline Check
 
-Compare the new snapshot against the baseline snapshot:
+Check the new snapshot against the baseline snapshot:
 
 ```bash
 python -m app graph compare \
   --new data/snapshots/aufenthg_snapshot.json \
   --baseline data/snapshots/legacy_aufenthg_baseline_snapshot.json \
-  --output data/snapshots/aufenthg_comparison.json
+  --output data/snapshots/aufenthg_baseline_report.json
 ```
 
 Expected result:
 
 - matching, missing, and extra acts, sections, fragments, references, labels,
   and relation types
-- read-only baseline treated as comparison evidence only
+- read-only baseline treated as coverage evidence only
 - no migration of old graph data
 
 ## 7. Validation

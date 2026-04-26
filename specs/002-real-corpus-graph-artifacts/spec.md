@@ -1,9 +1,9 @@
-# Feature Specification: Real Corpus Snapshot Comparison
+# Feature Specification: Real Corpus Graph Artifacts
 
-**Feature Branch**: `002-corpus-snapshot-comparison`  
+**Feature Branch**: `002-real-corpus-graph-artifacts`  
 **Created**: 2026-04-26  
 **Status**: Draft  
-**Input**: User description: "Build real corpus ingestion and graph snapshot comparison for the legal graph foundation. Scope: real corpus manifest handling, preview over selected German legal XML sources, load/verify/delete against the new graph schema, snapshot artifacts with counts, labels, relation types, sample ids, source coverage, and embedding profile metadata, plus a comparison report against the legacy AufenthG baseline graph snapshot for coverage checking. Do not migrate old graph data. Do not treat the old graph as source of truth. Do not add chatbot UX, LLM extraction, answer generation, or GraphRAG inference."
+**Input**: User description: "Build real corpus ingestion and graph artifact workflows for the legal graph foundation. Scope: real corpus manifest handling, preview over selected German legal XML sources, load/verify/delete against the new graph schema, snapshot artifacts with counts, labels, relation types, sample ids, source coverage, and embedding profile metadata, plus a legacy AufenthG baseline coverage check. Do not migrate old graph data. Do not treat the old graph as source of truth. Do not add chatbot UX, LLM extraction, answer generation, or GraphRAG inference."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -43,7 +43,7 @@ against the new graph foundation so that the new schema can be validated with
 real source data while remaining reversible. Loading writes persisted graph
 state; it does not create another preview file.
 
-**Why this priority**: Snapshot comparison is meaningful only after the new
+**Why this priority**: Baseline coverage checks are meaningful only after the new
 graph can manage real loaded data with controlled scope and repeatable
 verification.
 
@@ -95,9 +95,9 @@ state has not changed.
 
 ---
 
-### User Story 4 - Compare Against Legacy AufenthG Baseline Graph Snapshot (Priority: P4)
+### User Story 4 - Legacy AufenthG Baseline Coverage Check (Priority: P4)
 
-As an operator, I want to compare the new graph snapshot against the legacy
+As an operator, I want to check the new graph snapshot against the legacy
 AufenthG baseline graph snapshot so that I can identify coverage gaps before
 the old artifact is removed.
 
@@ -106,19 +106,19 @@ reference. Comparison must support cutover confidence without migrating or
 trusting old graph data.
 
 **Independent Test**: Given a new snapshot for the selected scope and a
-read-only legacy AufenthG baseline graph snapshot, comparison produces a report
-of missing and extra acts, sections, fragments, references, labels, relation
-types, sample ids, and coverage differences without copying old nodes.
+read-only legacy AufenthG baseline graph snapshot, the coverage check produces
+a report of missing and extra acts, sections, fragments, references, labels,
+relation types, sample ids, and coverage differences without copying old nodes.
 
 **Acceptance Scenarios**:
 
-1. **Given** both new and legacy baseline snapshots, **When** comparison runs,
+1. **Given** both new and legacy baseline snapshots, **When** the coverage check runs,
    **Then** the report identifies matching, missing, and extra coverage by acts,
    sections, fragments, references, labels, and relation types.
 2. **Given** the legacy baseline has records not represented in the new graph,
-   **When** comparison runs, **Then** those records are reported as coverage
+   **When** the coverage check runs, **Then** those records are reported as coverage
    gaps and not imported into the new graph.
-3. **Given** comparison artifacts are no longer needed after cutover, **When**
+3. **Given** baseline artifacts are no longer needed after cutover, **When**
    the operator removes the temporary comparison scope and references, **Then**
    the project no longer depends on old baseline artifacts.
 

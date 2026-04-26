@@ -1,4 +1,4 @@
-# Research: Real Corpus Snapshot Comparison
+# Research: Real Corpus Graph Artifacts
 
 ## Decision 1: Keep preview as a file artifact
 

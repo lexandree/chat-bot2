@@ -1,6 +1,6 @@
-# Tasks: Real Corpus Snapshot Comparison
+# Tasks: Real Corpus Graph Artifacts
 
-**Input**: Design documents from `/specs/002-corpus-snapshot-comparison/`
+**Input**: Design documents from `/specs/002-real-corpus-graph-artifacts/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
 
 **Tests**: Required. Unit tests stay offline. Live Neo4j checks are marked integration. File artifact validation is covered by unit or smoke tests as appropriate.
@@ -16,9 +16,9 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Establish real-corpus snapshot comparison scaffolding without changing runtime behavior.
+**Purpose**: Establish real-corpus graph artifacts scaffolding without changing runtime behavior.
 
-- [X] T001 Create feature documentation files in `specs/002-corpus-snapshot-comparison/` and confirm `plan.md`, `research.md`, `data-model.md`, `quickstart.md`, and `contracts/artifacts.md` exist
+- [X] T001 Create feature documentation files in `specs/002-real-corpus-graph-artifacts/` and confirm `plan.md`, `research.md`, `data-model.md`, `quickstart.md`, and `contracts/artifacts.md` exist
 - [X] T002 Update operator-facing docs in `README.md` and `AGENTS.md` to distinguish preview artifacts, loaded graph state, snapshot artifacts, and the legacy AufenthG baseline graph snapshot
 - [X] T003 Update ignored artifact paths in `.gitignore` for real-corpus snapshot/comparison outputs and any temporary legacy baseline files
 
@@ -104,17 +104,17 @@
 
 ---
 
-## Phase 6: User Story 4 - Compare Against Legacy AufenthG Baseline Graph Snapshot (Priority: P4)
+## Phase 6: User Story 4 - Legacy AufenthG Baseline Coverage Check (Priority: P4)
 
-**Goal**: Operators can compare a new graph snapshot against the legacy AufenthG baseline graph snapshot without migrating legacy data.
+**Goal**: Operators can check a new graph snapshot against the legacy AufenthG baseline graph snapshot without migrating legacy data.
 
-**Independent Test**: Given a new graph snapshot and a read-only legacy AufenthG baseline graph snapshot, comparison reports missing, extra, and matching coverage without copying old nodes or promoting baseline content.
+**Independent Test**: Given a new graph snapshot and a read-only legacy AufenthG baseline graph snapshot, the coverage check reports missing, extra, and matching coverage without copying old nodes or promoting baseline content.
 
 ### Tests for User Story 4
 
 - [X] T027 [US4] Add offline unit tests for comparison report assembly in `tests/unit/test_artifact_contracts.py`
 - [X] T028 [US4] Add offline unit tests for read-only baseline handling in `tests/unit/test_load_verify_delete_reports.py`
-- [X] T029 [US4] Add smoke test for snapshot comparison file generation in `tests/smoke/test_cli_offline.py`
+- [X] T029 [US4] Add smoke test for graph artifact file generation in `tests/smoke/test_cli_offline.py`
 
 ### Implementation for User Story 4
 
@@ -122,7 +122,7 @@
 - [X] T031 [US4] Implement file-to-file comparison report generation between the new graph snapshot and the legacy AufenthG baseline graph snapshot in `src/evaluation/load_cases.py`
 - [X] T032 [US4] Wire `foundation graph compare` command handling in `src/app/commands.py`
 
-**Checkpoint**: The legacy AufenthG baseline graph snapshot can be compared without becoming part of the new graph workflow.
+**Checkpoint**: The legacy AufenthG baseline graph snapshot can be checked without becoming part of the new graph workflow.
 
 ---
 
@@ -130,14 +130,14 @@
 
 **Purpose**: Validate contracts, docs, and operational boundaries across all completed stories.
 
-- [X] T033 Update `specs/002-corpus-snapshot-comparison/quickstart.md` with the final preview, load, snapshot, legacy baseline, and compare workflow
-- [X] T034 Update `specs/002-corpus-snapshot-comparison/contracts/artifacts.md` if artifact fields changed during implementation
+- [X] T033 Update `specs/002-real-corpus-graph-artifacts/quickstart.md` with the final preview, load, snapshot, legacy baseline, and compare workflow
+- [X] T034 Update `specs/002-real-corpus-graph-artifacts/contracts/artifacts.md` if artifact fields changed during implementation
 - [X] T035 Verify no default unit test imports live Neo4j, live Jina, paid APIs, or remote notebooks in `tests/unit/`
 - [X] T036 Verify no chatbot UX, LLM extraction, answer generation, GraphRAG inference, or fallback answer behavior exists under `src/`
-- [X] T037 Verify comparison evidence remains file-based and the legacy AufenthG baseline graph snapshot is not treated as source of truth in `specs/002-corpus-snapshot-comparison/`
-- [X] T038 Run `python -m compileall src tests` and record the result in `specs/002-corpus-snapshot-comparison/quickstart.md`
-- [X] T039 Run `python -m pytest tests/unit tests/smoke` and record the result in `specs/002-corpus-snapshot-comparison/quickstart.md`
-- [X] T040 Run marked live Neo4j integration checks for load/comparison workflows and record the result in `specs/002-corpus-snapshot-comparison/quickstart.md`
+- [X] T037 Verify comparison evidence remains file-based and the legacy AufenthG baseline graph snapshot is not treated as source of truth in `specs/002-real-corpus-graph-artifacts/`
+- [X] T038 Run `python -m compileall src tests` and record the result in `specs/002-real-corpus-graph-artifacts/quickstart.md`
+- [X] T039 Run `python -m pytest tests/unit tests/smoke` and record the result in `specs/002-real-corpus-graph-artifacts/quickstart.md`
+- [X] T040 Run marked live Neo4j integration checks for load/baseline-check workflows and record the result in `specs/002-real-corpus-graph-artifacts/quickstart.md`
 
 ---
 

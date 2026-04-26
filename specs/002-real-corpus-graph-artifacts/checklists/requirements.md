@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Real Corpus Snapshot Comparison
+# Specification Quality Checklist: Real Corpus Graph Artifacts
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-04-26

@@ -89,8 +89,8 @@ code automatically.
 ## Active Technologies
 - Python 3.11+ in conda environment `chbot` + Neo4j official Python driver (`neo4j>=5.18`), `pydantic` plus `pydantic-settings` for typed env configuration, pytest, Python stdlib HTTP client for the Jina-compatible local embedding endpoint unless implementation evidence justifies a narrow HTTP dependency (001-legal-graph-foundation)
 - Neo4j 5.18+ / Aura-compatible graph of record with stable constraints and vector indexes; local fixture files for unit tests and legal XML preview inputs (001-legal-graph-foundation)
-- Python 3.11+ + Neo4j official Python driver, pydantic/pydantic-settings, pytest, stdlib JSON/filesystem tooling (002-corpus-snapshot-comparison)
-- Neo4j for loaded graph state; JSON files for preview, snapshot, and comparison artifacts (002-corpus-snapshot-comparison)
+- Python 3.11+ + Neo4j official Python driver, pydantic/pydantic-settings, pytest, stdlib JSON/filesystem tooling (002-real-corpus-graph-artifacts)
+- Neo4j for loaded graph state; JSON files for preview, snapshot, and comparison artifacts (002-real-corpus-graph-artifacts)
 
 ## Recent Changes
 - 001-legal-graph-foundation: Added Python 3.11+ in conda environment `chbot` + Neo4j official Python driver (`neo4j>=5.18`), `pydantic` plus `pydantic-settings` for typed env configuration, pytest, Python stdlib HTTP client for the Jina-compatible local embedding endpoint unless implementation evidence justifies a narrow HTTP dependency

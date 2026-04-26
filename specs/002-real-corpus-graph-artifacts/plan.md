@@ -1,7 +1,7 @@
-# Implementation Plan: Real Corpus Snapshot Comparison
+# Implementation Plan: Real Corpus Graph Artifacts
 
-**Branch**: `002-corpus-snapshot-comparison` | **Date**: 2026-04-26 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/002-corpus-snapshot-comparison/spec.md`
+**Branch**: `002-real-corpus-graph-artifacts` | **Date**: 2026-04-26 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `/specs/002-real-corpus-graph-artifacts/spec.md`
 
 ## Summary
 
@@ -43,7 +43,7 @@ evidence, not as a migration source.
 ### Documentation
 
 ```text
-specs/002-corpus-snapshot-comparison/
+specs/002-real-corpus-graph-artifacts/
 ├── plan.md
 ├── research.md
 ├── data-model.md

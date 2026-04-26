@@ -1,4 +1,4 @@
-# Artifact Contracts: Real Corpus Snapshot Comparison
+# Artifact Contracts: Real Corpus Graph Artifacts
 
 ## Real Corpus Preview Artifact
 

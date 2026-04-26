@@ -1,4 +1,4 @@
-# Data Model: Real Corpus Snapshot Comparison
+# Data Model: Real Corpus Graph Artifacts
 
 ## Real Corpus Manifest
 
