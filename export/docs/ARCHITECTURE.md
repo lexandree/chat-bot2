@@ -111,8 +111,17 @@ The embedding layer has three concepts:
   metadata
 - router: controls local-only and interactive failover behavior
 
-Graph-write workflows use local-only embedding. Interactive query workflows may
-prefer local with API failover, but only after that mode is explicitly enabled.
+Graph-write workflows use a local/dev embedding endpoint unless a managed
+contour is explicitly selected. The endpoint is logical: it may be a local
+process or an endpoint already exposed on the development machine. The project
+code should not care about the physical source as long as the approved
+embedding profile is preserved.
+
+Hosted Jina API is a first-class managed contour, not just failover and not a
+relay. Local Jina and hosted Jina are contract-equivalent when they preserve the
+same retrieval model family, `Query: ` / `Document: ` semantics, dimensionality,
+normalization, and compatible embedding profile metadata. Backend changes must
+still be recorded as effective runtime metadata.
 
 ## Structural Legal Retrieval
 
@@ -179,8 +188,14 @@ Promotion to trusted support is a separate review action.
 Bulk processing is a controlled execution contour for source enrichment and
 validation.
 
-The runtime may be a local machine, a remote notebook, Kaggle, Colab, or a
-managed API. Regardless of location, the project-facing contract is the same:
+The preferred notebook contour is model-server-only: Kaggle, Colab, or another
+remote notebook starts an LLM runtime such as `vLLM` or `llama-server` and
+exposes a temporary LLM endpoint. The main project calls that endpoint while
+Neo4j, embeddings, ingestion, validation, review, and checkpoints remain in the
+main project.
+
+The runtime may also be a local machine or a managed API. Regardless of
+location, the project-facing contract is the same:
 
 - explicit run guard
 - explicit input manifest
@@ -192,8 +207,9 @@ managed API. Regardless of location, the project-facing contract is the same:
 - review-gated outputs
 
 Notebook code should be treated as an operator surface, not as the core domain
-implementation. Reusable logic belongs in project modules; notebooks should
-wire artifacts, runtime startup, and reporting.
+implementation. Reusable orchestration belongs in project modules; notebooks
+should wire temporary runtime startup, endpoint exposure, and reporting.
+Tunnel URLs are operational launch parameters, not project artifacts.
 
 ## Future GraphRAG Inference
 
@@ -229,12 +245,16 @@ Selection criteria:
 
 - Neo4j or AuraDB reachable
 - local Jina-compatible endpoint reachable
+- hosted Jina API may be selected as a managed contour when the embedding
+  profile is preserved
 - graph writes fail fast if embeddings cannot be created
 
 ### Operator-managed enrichment
 
 - open-weights LLM may run on a remote notebook runtime
-- embeddings remain on the validated Jina-compatible path
+- the notebook exposes a temporary LLM endpoint
+- embeddings remain in the main project on the validated local/dev or hosted
+  Jina-compatible path
 - runs record contour, backend, model, and policy metadata
 - resume state is persisted
 - useful runs export manifest, profile report, result JSON, command metadata,

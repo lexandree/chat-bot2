@@ -19,6 +19,8 @@
   research and critique notes.
 - `docs/BULK_NOTEBOOK_PROCESSING.md`: retained notebook and operator-managed
   bulk execution lessons.
+- `docs/NOTEBOOK_EMBEDDING_RELAY_FALLBACK.md`: private-infrastructure-safe
+  description of the notebook-only fallback relay for embeddings.
 - `docs/EXPORT_MANIFEST.md`: this manifest.
 
 ### Project Seed

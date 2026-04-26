@@ -5,14 +5,20 @@
 The notebook work defines an operator-managed bulk execution contour. It is not
 the interactive chatbot inference layer.
 
-The useful pattern is:
+The preferred useful pattern is:
 
-1. prepare source or preview artifacts outside the notebook
-2. attach prebuilt runtime and model artifacts
+1. keep Neo4j, embeddings, ingestion, validation, review, and checkpoints in
+   the main project
+2. attach prebuilt LLM runtime and model artifacts to the notebook
 3. explicitly opt in to execution
 4. stage a local server runtime into notebook working storage
-5. process a bounded corpus slice
-6. export a complete artifact bundle for review and project handoff
+5. expose a temporary LLM endpoint through `trycloudflare`, Cloudflare Tunnel,
+   or an equivalent tunnel
+6. let the main project call that endpoint for bounded work
+7. export a complete artifact bundle for review and project handoff
+
+Notebook embedding relay is a fallback only for cases where the notebook itself
+must create embeddings. It is not the default project embedding path.
 
 ## Retained Notebook Ideas
 
@@ -49,13 +55,14 @@ processes make execution order visible and reduce hidden helper-state mistakes.
 The notebooks separate:
 
 - project source code
-- prebuilt `llama-server` runtime artifact
+- prebuilt `vLLM` or `llama-server` runtime artifact
 - GGUF model artifact
 - optional multimodal projection file
 - generated run artifacts
 
 The new project should keep this separation. Runtime binaries and model files
 should not become normal source-code files.
+Notebook state must not become the durable project state.
 
 ### GPU And CPU Runtime Profiles Are Distinct
 
@@ -103,11 +110,11 @@ ready.
 The legal extraction notebook contributes a project-facing bulk flow:
 
 1. clone or install the selected project branch
-2. stage prebuilt `llama-server`
-3. start local OpenAI-compatible server
-4. load legal preview corpus
-5. limit scope with `MAX_DOCUMENTS` and `LAW_CODES`
-6. build a proposition extractor around the active model
+2. stage prebuilt `vLLM` or `llama-server`
+3. start an OpenAI-compatible LLM server
+4. expose a temporary LLM endpoint
+5. let project code load legal preview corpus and scope controls
+6. let project code call the active model endpoint
 7. call the application-level semantic validation cycle
 8. export result artifacts
 
@@ -220,4 +227,5 @@ define the contracts that bulk processing will consume:
 - hiding runtime command parameters
 - exporting scattered files instead of one run artifact bundle
 - treating notebook output as trusted graph state without review
+- letting notebook-owned checkpoints replace project-owned checkpoints
 - storing project-specific legal artifacts publicly by default

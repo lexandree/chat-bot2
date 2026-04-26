@@ -16,6 +16,8 @@ build/
 .jina.env
 !.env.example
 jina/.jina.env
+export/project_seed/.env
+export/jina/.jina.env
 data/legal_xml/*.xml
 data/import_preview/*.json
 data/import_preview/load_reports/

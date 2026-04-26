@@ -16,7 +16,15 @@ validation. Chatbot inference is out of scope until those stages are stable.
   vectors.
 - Local embedding service may be exposed as
   `http://127.0.0.1:18080/v1/embeddings`.
+- The local embedding URL is a logical endpoint. The physical source is not
+  important to the project when the embedding profile is preserved.
+- Hosted Jina API is a separate managed contour, not a relay. It may become the
+  main commercial contour when it remains contract-equivalent to the validated
+  local Jina-compatible runtime.
 - The embedding service is not assumed to be running during default unit tests.
+- Notebooks do not own project state. They may provide temporary compute
+  endpoints, especially LLM endpoints, while Neo4j, embeddings, ingestion,
+  checkpoints, validation, and review stay in the main project.
 
 ## Non-Goals
 
@@ -170,6 +178,11 @@ Acceptance criteria:
 - Graph-write embedding workflows fail fast if the local-only backend is
   unavailable.
 - Unit tests can run without a live embedding backend.
+- The physical embedding source is hidden behind the configured endpoint;
+  changing local, tunnel, or hosted infrastructure must not change graph
+  embedding semantics unless the model, dimension, normalization, prefix
+  contract, or embedding profile changes.
+- Backend changes record effective backend metadata.
 
 ### 6. Structural Retrieval Baseline
 
@@ -222,6 +235,9 @@ Acceptance criteria:
 - Runs can limit scope by law code and maximum document or fragment count.
 - Runs export a coherent artifact bundle with manifest, profile report, result
   JSON, command metadata, logs, and checkpoint state when available.
+- Preferred notebooks only start model servers and expose temporary endpoints;
+  reusable orchestration, durable checkpoints, validation, and review state stay
+  in project code and project storage.
 - Runs can be resumed from stable per-item or cursor state.
 - Project-specific legal inputs and outputs are private artifacts unless
   explicitly sanitized.
