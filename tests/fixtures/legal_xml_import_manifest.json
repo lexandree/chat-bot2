@@ -1,0 +1,19 @@
+{
+  "name": "minimal_german_legal_xml",
+  "inputs": [
+    {
+      "path": "tests/fixtures/legal_xml/aufenthg.xml",
+      "law_code": "AufenthG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    },
+    {
+      "path": "tests/fixtures/legal_xml/missing_optional.xml",
+      "law_code": "MissingG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": false
+    }
+  ]
+}

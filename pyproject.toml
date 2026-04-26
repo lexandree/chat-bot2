@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
   "neo4j>=5.18.0",
   "pydantic>=2.0.0",
+  "pydantic-settings>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +24,11 @@ sentence-transformers = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "neo4j: live Neo4j/Aura integration tests",
+  "embedding: live local embedding endpoint integration tests",
+  "smoke: operator smoke tests",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

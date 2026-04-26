@@ -24,6 +24,8 @@
       "jurisdiction": "DE",
       "language": "de",
       "law_code": "AufenthG",
+      "title": "Aufenthaltsgesetz",
+      "publication_date": "2004-07-30",
       "source_uri": "string",
       "checksum": "sha256:string"
     }
@@ -33,7 +35,8 @@
       "source_fragment_id": "string",
       "source_document_id": "string",
       "law_code": "AufenthG",
-      "section_reference": "1",
+      "section_reference": "§ 1",
+      "normalized_reference": "§ 1",
       "title": "string",
       "body_text": "string",
       "order_index": 1,

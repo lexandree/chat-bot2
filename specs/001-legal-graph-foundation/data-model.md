@@ -6,6 +6,7 @@ Effective runtime settings for an operator run.
 
 **Fields**:
 - `neo4j_uri`, `neo4j_username`, `neo4j_password`, `neo4j_database`
+  (optional; empty means use the server default database)
 - `embedding_profile_id`, `embedding_model_id`, `embedding_provider`
 - `embedding_vector_dimensions`, default `1024`
 - `embedding_normalized`, default `true`

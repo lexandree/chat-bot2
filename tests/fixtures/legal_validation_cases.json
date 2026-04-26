@@ -1,0 +1,19 @@
+{
+  "law_codes": ["AufenthG"],
+  "exact_references": [
+    {
+      "law_code": "AufenthG",
+      "section_reference": "§ 1",
+      "expected_legal_section_id": "legal-section:AufenthG:1:current"
+    }
+  ],
+  "traversal": [
+    {
+      "start_section_reference": "§ 1",
+      "allowed_relation_types": ["CITES"],
+      "depth_limit": 1,
+      "fanout_limit": 25,
+      "node_limit": 100
+    }
+  ]
+}

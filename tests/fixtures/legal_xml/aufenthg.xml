@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dokumente>
+  <norm>
+    <metadaten>
+      <jurabk>AufenthG</jurabk>
+      <kurzue>Aufenthaltsgesetz</kurzue>
+      <enbez>§ 1</enbez>
+      <titel>Zweck des Gesetzes</titel>
+      <ausfertigung-datum>2004-07-30</ausfertigung-datum>
+    </metadaten>
+    <textdaten>
+      <text>
+        <Content>Dieses Gesetz regelt die Einreise und den Aufenthalt. Es verweist auf § 2 AufenthG.</Content>
+      </text>
+    </textdaten>
+  </norm>
+  <norm>
+    <metadaten>
+      <jurabk>AufenthG</jurabk>
+      <kurzue>Aufenthaltsgesetz</kurzue>
+      <enbez>§ 2</enbez>
+      <titel>Begriffsbestimmungen</titel>
+      <ausfertigung-datum>2004-07-30</ausfertigung-datum>
+    </metadaten>
+    <textdaten>
+      <text>
+        <Content>Ausländer ist jeder, der nicht Deutscher im Sinne des Artikels 116 Absatz 1 des Grundgesetzes ist.</Content>
+      </text>
+    </textdaten>
+  </norm>
+</dokumente>
