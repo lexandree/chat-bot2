@@ -21,6 +21,8 @@ export/jina/.jina.env
 data/legal_xml/*.xml
 data/import_preview/*.json
 data/import_preview/load_reports/
+data/snapshots/*.json
+data/comparisons/*.json
 data/**/.gitkeep
 tmp/
 *.tmp

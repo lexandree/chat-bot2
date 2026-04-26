@@ -204,3 +204,41 @@ class StructuralRetrievalResult:
         for forbidden in ("answer_text", "answer", "generated_answer"):
             payload.pop(forbidden, None)
         return payload
+
+
+@dataclass(slots=True)
+class GraphSnapshotArtifact:
+    snapshot_id: str
+    selected_scope: dict[str, Any]
+    source_scope: dict[str, Any]
+    counts: dict[str, int]
+    labels: dict[str, int]
+    relation_types: dict[str, int]
+    sample_ids: dict[str, list[str]]
+    source_coverage: dict[str, Any]
+    embedding_profile_metadata: dict[str, Any]
+    unresolved_reference_evidence: list[dict[str, Any]]
+
+    def as_dict(self) -> dict[str, Any]:
+        return to_plain_dict(self)
+
+
+@dataclass(slots=True)
+class LegacyAufenthGBaselineGraphSnapshotArtifact(GraphSnapshotArtifact):
+    baseline_scope: dict[str, Any] = field(default_factory=dict)
+    baseline_origin: str = "legacy_aufenthg_graph_scope"
+
+
+@dataclass(slots=True)
+class SnapshotComparisonReport:
+    comparison_id: str
+    new_snapshot_id: str
+    baseline_snapshot_id: str
+    matching: dict[str, Any]
+    missing: dict[str, Any]
+    extra: dict[str, Any]
+    summary_counts: dict[str, int]
+    notes: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return to_plain_dict(self)

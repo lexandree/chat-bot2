@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import json
 from typing import Any
 
 from graph.schema import bootstrap_schema, build_schema_statements, candidate_review_placeholders_present
-from graph.types import DeletionReport, EmbeddingRunReport, GraphReadinessReport, LoadRunReport, VerificationReport
+from graph.types import (
+    DeletionReport,
+    EmbeddingRunReport,
+    GraphReadinessReport,
+    LoadRunReport,
+    VerificationReport,
+)
 from graph.writer import GraphWriter
+from evaluation.load_cases import (
+    build_graph_snapshot_artifact,
+    build_legacy_baseline_graph_snapshot_artifact,
+)
 from ingestion.legal_structure_builder import build_structural_legal_graph
 from ingestion.verification import (
     build_deletion_report,
@@ -162,6 +173,42 @@ class GraphDataRepository:
             backend_name=embedding_service.backend.backend_name,
         )
 
+    def snapshot_scope(
+        self,
+        *,
+        law_codes: list[str],
+        read_only_baseline: bool = False,
+        baseline_scope: dict[str, Any] | None = None,
+        baseline_origin: str = "legacy_aufenthg_graph_scope",
+    ):
+        components = _collect_snapshot_components(self.client, law_codes=law_codes)
+        selected_scope = {"law_codes": law_codes or []}
+        if read_only_baseline:
+            return build_legacy_baseline_graph_snapshot_artifact(
+                selected_scope=selected_scope,
+                source_scope=components["source_scope"],
+                counts=components["counts"],
+                labels=components["labels"],
+                relation_types=components["relation_types"],
+                sample_ids=components["sample_ids"],
+                source_coverage=components["source_coverage"],
+                embedding_profile_metadata=components["embedding_profile_metadata"],
+                unresolved_reference_evidence=components["unresolved_reference_evidence"],
+                baseline_scope=baseline_scope or selected_scope,
+                baseline_origin=baseline_origin,
+            )
+        return build_graph_snapshot_artifact(
+            selected_scope=selected_scope,
+            source_scope=components["source_scope"],
+            counts=components["counts"],
+            labels=components["labels"],
+            relation_types=components["relation_types"],
+            sample_ids=components["sample_ids"],
+            source_coverage=components["source_coverage"],
+            embedding_profile_metadata=components["embedding_profile_metadata"],
+            unresolved_reference_evidence=components["unresolved_reference_evidence"],
+        )
+
     def resolve_reference(
         self,
         *,
@@ -280,3 +327,178 @@ def _total_records(report: VerificationReport) -> int:
         + report.legal_fragment_count
         + report.legal_reference_count
     )
+
+
+def _collect_snapshot_components(client: Any, *, law_codes: list[str]) -> dict[str, Any]:
+    parameters = {"law_codes": law_codes or [], "limit": 5}
+    counts, labels = _collect_label_counts(client, parameters)
+    relation_types = _collect_relation_types(client, parameters)
+    sample_ids = _collect_sample_ids(client, parameters)
+    source_coverage = {
+        "law_codes": sorted(set(law_codes or [])),
+        "source_document_count": counts.get("SourceDocument", 0),
+        "source_fragment_count": counts.get("SourceFragment", 0),
+        "legal_act_count": counts.get("LegalAct", 0),
+        "legal_section_count": counts.get("LegalSection", 0),
+        "legal_fragment_count": counts.get("LegalFragment", 0),
+        "legal_reference_count": counts.get("LegalReference", 0),
+        "unresolved_reference_count": counts.get("UnresolvedLegalReference", 0),
+    }
+    embedding_profile_metadata = _collect_embedding_metadata(client, parameters)
+    unresolved_reference_evidence = _collect_unresolved_reference_evidence(client, parameters)
+    source_scope = {"source_families": ["law"], "law_codes": source_coverage["law_codes"]}
+    return {
+        "counts": counts,
+        "labels": labels,
+        "relation_types": relation_types,
+        "sample_ids": sample_ids,
+        "source_coverage": source_coverage,
+        "embedding_profile_metadata": embedding_profile_metadata,
+        "unresolved_reference_evidence": unresolved_reference_evidence,
+        "source_scope": source_scope,
+    }
+
+
+def _collect_label_counts(client: Any, parameters: dict[str, Any]) -> tuple[dict[str, int], dict[str, int]]:
+    rows = client.read(
+        "MATCH (n) "
+        "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+        "RETURN labels(n) AS labels, count(n) AS count",
+        parameters,
+    )
+    counts: dict[str, int] = {}
+    labels: dict[str, int] = {}
+    for row in rows:
+        count = int(row.get("count", 0))
+        for label in row.get("labels") or []:
+            label_name = str(label)
+            counts[label_name] = counts.get(label_name, 0) + count
+            labels[label_name] = labels.get(label_name, 0) + count
+    unresolved_rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE n.resolution_status <> 'resolved' "
+        "AND (size($law_codes) = 0 OR n.law_code IN $law_codes) "
+        "RETURN count(n) AS count",
+        parameters,
+    )
+    unresolved_count = int(unresolved_rows[0].get("count", 0)) if unresolved_rows else 0
+    counts["UnresolvedLegalReference"] = unresolved_count
+    counts["node_count"] = sum(labels.values())
+    counts["relationship_count"] = _relation_count(client, parameters)
+    return counts, labels
+
+
+def _relation_count(client: Any, parameters: dict[str, Any]) -> int:
+    rows = client.read(
+        "MATCH (start)-[r]->(end) "
+        "WHERE size($law_codes) = 0 OR coalesce(start.law_code, end.law_code) IN $law_codes "
+        "RETURN count(r) AS count",
+        parameters,
+    )
+    if not rows:
+        return 0
+    return int(rows[0].get("count", 0))
+
+
+def _collect_relation_types(client: Any, parameters: dict[str, Any]) -> dict[str, int]:
+    rows = client.read(
+        "MATCH (start)-[r]->(end) "
+        "WHERE size($law_codes) = 0 OR coalesce(start.law_code, end.law_code) IN $law_codes "
+        "RETURN type(r) AS relation_type, count(r) AS count "
+        "ORDER BY relation_type",
+        parameters,
+    )
+    relation_types: dict[str, int] = {}
+    for row in rows:
+        relation_type = str(row.get("relation_type") or "")
+        if not relation_type:
+            continue
+        relation_types[relation_type] = int(row.get("count", 0))
+    return relation_types
+
+
+def _collect_sample_ids(client: Any, parameters: dict[str, Any]) -> dict[str, list[str]]:
+    sample_specs = [
+        ("SourceDocument", "source_document_id", "source_document_ids"),
+        ("SourceFragment", "source_fragment_id", "source_fragment_ids"),
+        ("LegalAct", "legal_act_id", "legal_act_ids"),
+        ("LegalSection", "legal_section_id", "legal_section_ids"),
+        ("LegalFragment", "legal_fragment_id", "legal_fragment_ids"),
+        ("LegalReference", "legal_reference_id", "legal_reference_ids"),
+    ]
+    sample_ids: dict[str, list[str]] = {}
+    for label, id_field, output_key in sample_specs:
+        rows = client.read(
+            f"MATCH (n:{label}) "
+            "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+            f"RETURN n.{id_field} AS id ORDER BY id LIMIT $limit",
+            parameters,
+        )
+        sample_ids[output_key] = [str(row.get("id")) for row in rows if row.get("id")]
+    return sample_ids
+
+
+def _collect_embedding_metadata(client: Any, parameters: dict[str, Any]) -> dict[str, Any]:
+    rows = client.read(
+        "MATCH (n) "
+        "WHERE n.embedding_v1 IS NOT NULL "
+        "AND (size($law_codes) = 0 OR n.law_code IN $law_codes) "
+        "RETURN count(n) AS embedding_count, "
+        "collect(DISTINCT n.embedding_profile_id) AS profile_ids, "
+        "collect(DISTINCT n.embedding_model_id) AS model_ids, "
+        "collect(DISTINCT n.embedding_dimensions) AS vector_dimensions, "
+        "collect(DISTINCT n.embedding_backend_name) AS backend_names, "
+        "collect(DISTINCT n.embedding_normalized) AS normalized_flags",
+        parameters,
+    )
+    row = rows[0] if rows else {}
+    return {
+        "embedding_count": int(row.get("embedding_count", 0) or 0),
+        "profile_ids": [item for item in row.get("profile_ids", []) if item],
+        "model_ids": [item for item in row.get("model_ids", []) if item],
+        "vector_dimensions": [int(item) for item in row.get("vector_dimensions", []) if item],
+        "backend_names": [item for item in row.get("backend_names", []) if item],
+        "normalized_flags": [bool(item) for item in row.get("normalized_flags", []) if item is not None],
+    }
+
+
+def _collect_unresolved_reference_evidence(client: Any, parameters: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE n.resolution_status <> 'resolved' "
+        "AND (size($law_codes) = 0 OR n.law_code IN $law_codes) "
+        "RETURN n.legal_reference_id AS legal_reference_id, "
+        "n.source_legal_section_id AS source_legal_section_id, "
+        "n.source_legal_fragment_id AS source_legal_fragment_id, "
+        "n.target_law_code AS target_law_code, "
+        "n.target_section_reference AS target_section_reference, "
+        "n.relation_type AS relation_type, "
+        "n.resolution_status AS resolution_status, "
+        "n.raw_reference_text AS raw_reference_text, "
+        "n.normalized_reference_text AS normalized_reference_text, "
+        "coalesce(n.unresolved_target_evidence_json, '') AS unresolved_target_evidence_json "
+        "ORDER BY n.legal_reference_id",
+        parameters,
+    )
+    evidence: list[dict[str, Any]] = []
+    for row in rows:
+        raw_payload = row.get("unresolved_target_evidence_json") or ""
+        try:
+            unresolved_target_evidence = json.loads(raw_payload) if raw_payload else {}
+        except json.JSONDecodeError:
+            unresolved_target_evidence = {"raw": raw_payload}
+        evidence.append(
+            {
+                "legal_reference_id": row.get("legal_reference_id", ""),
+                "source_legal_section_id": row.get("source_legal_section_id", ""),
+                "source_legal_fragment_id": row.get("source_legal_fragment_id", ""),
+                "target_law_code": row.get("target_law_code", ""),
+                "target_section_reference": row.get("target_section_reference", ""),
+                "relation_type": row.get("relation_type", ""),
+                "resolution_status": row.get("resolution_status", ""),
+                "raw_reference_text": row.get("raw_reference_text", ""),
+                "normalized_reference_text": row.get("normalized_reference_text", ""),
+                "unresolved_target_evidence": unresolved_target_evidence,
+            }
+        )
+    return evidence

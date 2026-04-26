@@ -40,7 +40,8 @@ code automatically.
 ## Architecture Rules
 
 - Keep ingestion, graph storage, embeddings, retrieval, enrichment, review,
-  evaluation, bulk processing, and future inference as separate concerns.
+  evaluation, bulk processing, snapshot/comparison artifacts, and future
+  inference as separate concerns.
 - Build the database foundation before inference.
 - Preserve legal source provenance, structural references, checksums, temporal
   metadata, embedding profile metadata, and review state.
@@ -82,10 +83,14 @@ code automatically.
 - Mark integration and smoke tests separately from default unit tests.
 - Update documentation when behavior, contracts, or operational assumptions
   change.
+- Treat legacy comparison baselines as read-only file artifacts that can be
+  removed after cutover.
 
 ## Active Technologies
 - Python 3.11+ in conda environment `chbot` + Neo4j official Python driver (`neo4j>=5.18`), `pydantic` plus `pydantic-settings` for typed env configuration, pytest, Python stdlib HTTP client for the Jina-compatible local embedding endpoint unless implementation evidence justifies a narrow HTTP dependency (001-legal-graph-foundation)
 - Neo4j 5.18+ / Aura-compatible graph of record with stable constraints and vector indexes; local fixture files for unit tests and legal XML preview inputs (001-legal-graph-foundation)
+- Python 3.11+ + Neo4j official Python driver, pydantic/pydantic-settings, pytest, stdlib JSON/filesystem tooling (002-corpus-snapshot-comparison)
+- Neo4j for loaded graph state; JSON files for preview, snapshot, and comparison artifacts (002-corpus-snapshot-comparison)
 
 ## Recent Changes
 - 001-legal-graph-foundation: Added Python 3.11+ in conda environment `chbot` + Neo4j official Python driver (`neo4j>=5.18`), `pydantic` plus `pydantic-settings` for typed env configuration, pytest, Python stdlib HTTP client for the Jina-compatible local embedding endpoint unless implementation evidence justifies a narrow HTTP dependency

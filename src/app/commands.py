@@ -11,6 +11,10 @@ from app.settings import FoundationSettings, load_settings
 from graph.client import Neo4jGraphClient
 from graph.repositories import GraphDataRepository, GraphFoundationRepository
 from graph.types import to_plain_dict
+from evaluation.load_cases import (
+    build_snapshot_comparison_report,
+    write_json_artifact,
+)
 from ingestion.legal_preview_loader import build_preview_from_manifest_path, write_preview_artifact
 from ingestion.verification import build_embedding_run_report
 from retrieval.embedding_backend import build_local_embedding_backend
@@ -47,6 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
     delete_parser = graph_subparsers.add_parser("delete")
     delete_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
     delete_parser.add_argument("--confirm", action="store_true")
+    snapshot_parser = graph_subparsers.add_parser("snapshot")
+    snapshot_parser.add_argument("--law-code", action="append", dest="law_codes", required=True)
+    snapshot_parser.add_argument("--output", required=True)
+    snapshot_parser.add_argument("--read-only-baseline", action="store_true")
+    compare_parser = graph_subparsers.add_parser("compare")
+    compare_parser.add_argument("--new", required=True)
+    compare_parser.add_argument("--baseline", required=True)
+    compare_parser.add_argument("--output", required=True)
 
     references_parser = subparsers.add_parser("references")
     references_subparsers = references_parser.add_subparsers(dest="action")
@@ -124,6 +136,21 @@ def _graph_client_from_settings(settings: FoundationSettings) -> Neo4jGraphClien
 
 
 def handle_graph_command(args: argparse.Namespace, settings: FoundationSettings) -> tuple[int, dict[str, object]]:
+    if args.action == "compare":
+        new_snapshot = json.loads(Path(args.new).read_text(encoding="utf-8"))
+        baseline_snapshot = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        report = build_snapshot_comparison_report(
+            new_snapshot,
+            baseline_snapshot,
+            notes=[
+                "comparison artifacts are file-based",
+                "legacy AufenthG baseline graph snapshot remains read-only",
+            ],
+        )
+        output_path = write_json_artifact(args.output, report)
+        payload = report.as_dict()
+        payload["comparison_artifact_path"] = str(output_path)
+        return 0, payload
     client = _graph_client_from_settings(settings)
     try:
         repo = GraphDataRepository(client)
@@ -134,6 +161,15 @@ def handle_graph_command(args: argparse.Namespace, settings: FoundationSettings)
             report = repo.verify_scope(law_codes=args.law_codes)
         elif args.action == "delete":
             report = repo.delete_scope(law_codes=args.law_codes, confirm=args.confirm)
+        elif args.action == "snapshot":
+            artifact = repo.snapshot_scope(
+                law_codes=args.law_codes,
+                read_only_baseline=args.read_only_baseline,
+            )
+            output_path = write_json_artifact(args.output, artifact)
+            payload = artifact.as_dict()
+            payload["snapshot_artifact_path"] = str(output_path)
+            return 0, payload
         else:
             raise ValueError(f"unknown graph action: {args.action}")
     finally:

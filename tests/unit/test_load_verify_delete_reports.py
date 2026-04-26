@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from evaluation.load_cases import (
+    build_graph_snapshot_artifact,
+    build_legacy_baseline_graph_snapshot_artifact,
+    build_snapshot_comparison_report,
+)
 from ingestion.legal_preview_loader import build_preview_from_manifest_path
 from ingestion.legal_structure_builder import build_structural_legal_graph
 from ingestion.verification import build_deletion_report, build_load_report, build_verification_report
@@ -50,3 +55,124 @@ def test_deletion_report_records_scope_and_removed_count() -> None:
     assert report.selected_scope == {"law_codes": ["AufenthG"]}
     assert report.matched_records == 6
     assert report.removed_records == 6
+
+
+def test_snapshot_artifact_is_reproducible_for_identical_state() -> None:
+    snapshot_kwargs = dict(
+        selected_scope={"law_codes": ["AufenthG"]},
+        source_scope={"source_families": ["law"], "law_codes": ["AufenthG"]},
+        counts={"SourceDocument": 1, "SourceFragment": 2},
+        labels={"SourceDocument": 1, "SourceFragment": 2},
+        relation_types={"HAS_SOURCE_FRAGMENT": 2},
+        sample_ids={
+            "source_document_ids": ["source-document:DE:de:AufenthG"],
+            "source_fragment_ids": ["source-fragment:AufenthG:1", "source-fragment:AufenthG:2"],
+            "legal_act_ids": [],
+            "legal_section_ids": [],
+            "legal_fragment_ids": [],
+            "legal_reference_ids": [],
+        },
+        source_coverage={
+            "law_codes": ["AufenthG"],
+            "source_document_count": 1,
+            "source_fragment_count": 2,
+            "legal_act_count": 0,
+            "legal_section_count": 0,
+            "legal_fragment_count": 0,
+            "legal_reference_count": 0,
+            "unresolved_reference_count": 0,
+        },
+        embedding_profile_metadata={
+            "embedding_count": 0,
+            "profile_ids": [],
+            "model_ids": [],
+            "vector_dimensions": [],
+            "backend_names": [],
+            "normalized_flags": [],
+        },
+        unresolved_reference_evidence=[],
+    )
+
+    first = build_graph_snapshot_artifact(**snapshot_kwargs)
+    second = build_graph_snapshot_artifact(**snapshot_kwargs)
+
+    assert first.as_dict() == second.as_dict()
+
+
+def test_legacy_baseline_snapshot_remains_read_only_and_comparable() -> None:
+    baseline = build_legacy_baseline_graph_snapshot_artifact(
+        selected_scope={"law_codes": ["AufenthG"]},
+        source_scope={"source_families": ["law"], "law_codes": ["AufenthG"]},
+        counts={"SourceDocument": 1},
+        labels={"SourceDocument": 1},
+        relation_types={},
+        sample_ids={
+            "source_document_ids": ["source-document:DE:de:AufenthG"],
+            "source_fragment_ids": [],
+            "legal_act_ids": [],
+            "legal_section_ids": [],
+            "legal_fragment_ids": [],
+            "legal_reference_ids": [],
+        },
+        source_coverage={
+            "law_codes": ["AufenthG"],
+            "source_document_count": 1,
+            "source_fragment_count": 0,
+            "legal_act_count": 0,
+            "legal_section_count": 0,
+            "legal_fragment_count": 0,
+            "legal_reference_count": 0,
+            "unresolved_reference_count": 0,
+        },
+        embedding_profile_metadata={
+            "embedding_count": 0,
+            "profile_ids": [],
+            "model_ids": [],
+            "vector_dimensions": [],
+            "backend_names": [],
+            "normalized_flags": [],
+        },
+        unresolved_reference_evidence=[],
+        baseline_scope={"law_codes": ["AufenthG"]},
+    )
+    new_snapshot = build_graph_snapshot_artifact(
+        selected_scope={"law_codes": ["AufenthG"]},
+        source_scope={"source_families": ["law"], "law_codes": ["AufenthG"]},
+        counts={"SourceDocument": 1, "SourceFragment": 1},
+        labels={"SourceDocument": 1, "SourceFragment": 1},
+        relation_types={},
+        sample_ids={
+            "source_document_ids": ["source-document:DE:de:AufenthG"],
+            "source_fragment_ids": ["source-fragment:AufenthG:1"],
+            "legal_act_ids": [],
+            "legal_section_ids": [],
+            "legal_fragment_ids": [],
+            "legal_reference_ids": [],
+        },
+        source_coverage={
+            "law_codes": ["AufenthG"],
+            "source_document_count": 1,
+            "source_fragment_count": 1,
+            "legal_act_count": 0,
+            "legal_section_count": 0,
+            "legal_fragment_count": 0,
+            "legal_reference_count": 0,
+            "unresolved_reference_count": 0,
+        },
+        embedding_profile_metadata={
+            "embedding_count": 0,
+            "profile_ids": [],
+            "model_ids": [],
+            "vector_dimensions": [],
+            "backend_names": [],
+            "normalized_flags": [],
+        },
+        unresolved_reference_evidence=[],
+    )
+
+    report = build_snapshot_comparison_report(new_snapshot, baseline)
+
+    assert baseline.as_dict()["baseline_origin"] == "legacy_aufenthg_graph_scope"
+    assert baseline.as_dict()["baseline_scope"] == {"law_codes": ["AufenthG"]}
+    assert report.new_snapshot_id == new_snapshot.snapshot_id
+    assert report.baseline_snapshot_id == baseline.snapshot_id
