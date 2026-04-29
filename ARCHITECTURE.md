@@ -197,6 +197,11 @@ Notebook code should be treated as an operator surface, not as the core domain
 implementation. Reusable logic belongs in project modules; notebooks should
 wire artifacts, runtime startup, and reporting.
 
+An LLM server or other model runtime may be started separately from the bulk
+job, but the bulk workflow itself must execute in the project program and own
+the manifest handling, checkpointing, processing order, and artifact export.
+External server startup is a contour concern, not the bulk contract itself.
+
 ## Future GraphRAG Inference
 
 Future inference should be added only after the database foundation is stable.

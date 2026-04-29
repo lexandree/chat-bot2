@@ -16,7 +16,6 @@ Read these files before making project-shaping changes:
 - `PROJECT_CONSTITUTION.md`
 - `TECHNICAL_SPEC.md`
 - `ARCHITECTURE.md`
-- `BULK_NOTEBOOK_PROCESSING.md`
 - `export/migration_export_plan.md`
 
 `export/source_snapshot/`, `export/notebooks/`, `export/reference_docs/`, and
@@ -76,6 +75,8 @@ code automatically.
 - Useful bulk runs must export coherent artifact bundles with manifest, runtime
   profile, result JSON, logs, command metadata, and checkpoint state when
   available.
+- A separate model server may be started for bulk work, but the bulk runner and
+  state machine belong in project code, not in notebook glue.
 - Project-specific legal inputs and outputs are private unless explicitly
   sanitized for publication.
 

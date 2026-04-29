@@ -95,6 +95,9 @@ application architecture.
   manifest, runtime profile, result JSON, logs, and command metadata.
 - Project-specific legal inputs, outputs, and environment snapshots are private
   unless explicitly sanitized for publication.
+- Bulk jobs may rely on a separately started model server, but the job runner
+  itself must live in project code and own orchestration, checkpointing, and
+  artifact export.
 - Reusable notebook logic should move into project modules once it becomes part
   of the system contract.
 
