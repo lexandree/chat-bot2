@@ -1,13 +1,14 @@
-"""Build structural legal graph records from preview artifacts."""
+"""Build source/legal graph records and relationship evidence from previews."""
 
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from hashlib import sha256
+from typing import Any, Iterable
 
-from graph.types import LegalAct, LegalFragment, LegalReference, LegalSection
-from ingestion.legal_reference_parser import parse_explicit_legal_references
-from ingestion.legal_xml_import import section_reference_slug
+from graph.types import CLASSIFIER_POLICY_VERSION, LegalAct, LegalFragment, LegalReference, LegalSection
+from ingestion.legal_reference_parser import ParsedReferenceCandidate, parse_explicit_legal_references
+from ingestion.legal_xml_import import normalize_section_reference, section_reference_slug
 from ingestion.legal_preview_loader import sha256_text
 
 
@@ -24,11 +25,10 @@ def legal_fragment_id(law_code: str, section_reference: str, order_index: int) -
 
 
 def build_structural_legal_graph(preview: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Build the base graph shape without trusted relationship evidence."""
     legal_acts: dict[str, LegalAct] = {}
-    sections: list[LegalSection] = []
-    fragments: list[LegalFragment] = []
-    references: list[dict[str, Any]] = []
-    section_lookup: dict[tuple[str, str], str] = {}
+    sections: dict[str, LegalSection] = {}
+    fragments: dict[str, LegalFragment] = {}
 
     for source_fragment in preview.get("source_fragments", []):
         law_code = str(source_fragment["law_code"])
@@ -48,8 +48,8 @@ def build_structural_legal_graph(preview: dict[str, Any]) -> dict[str, list[dict
             ),
         )
         section_id = legal_section_id(law_code, section_reference)
-        section_lookup[(law_code, section_reference)] = section_id
-        sections.append(
+        sections.setdefault(
+            section_id,
             LegalSection(
                 legal_section_id=section_id,
                 legal_act_id=legal_act_id(law_code),
@@ -60,65 +60,273 @@ def build_structural_legal_graph(preview: dict[str, Any]) -> dict[str, list[dict
                 valid_from=str(document.get("effective_date", "")),
                 version_identity="current",
                 is_current=True,
-            )
+            ),
         )
-        fragments.append(
+        fragment_id = legal_fragment_id(law_code, section_reference, 1)
+        fragments.setdefault(
+            fragment_id,
             LegalFragment(
-                legal_fragment_id=legal_fragment_id(law_code, section_reference, 1),
+                legal_fragment_id=fragment_id,
                 legal_section_id=section_id,
                 source_fragment_id=str(source_fragment["source_fragment_id"]),
                 text=str(source_fragment.get("body_text", "")),
                 order_index=1,
                 checksum=str(source_fragment.get("checksum") or sha256_text(str(source_fragment.get("body_text", "")))),
-            )
+            ),
         )
-
-    for source_fragment in preview.get("source_fragments", []):
-        law_code = str(source_fragment["law_code"])
-        section_reference = str(source_fragment["section_reference"])
-        source_section_id = legal_section_id(law_code, section_reference)
-        parsed_refs = parse_explicit_legal_references(
-            str(source_fragment.get("body_text", "")),
-            default_law_code=law_code,
-        )
-        for ordinal, parsed in enumerate(parsed_refs, start=1):
-            target_key = (parsed.target_law_code or law_code, parsed.target_section_reference)
-            target_section_id = section_lookup.get(target_key, "")
-            status = "resolved" if target_section_id else "unresolved"
-            reference = asdict(
-                LegalReference(
-                    legal_reference_id=f"legal-reference:{source_section_id}:{ordinal}",
-                    source_legal_section_id=source_section_id,
-                    source_legal_fragment_id=legal_fragment_id(law_code, section_reference, 1),
-                    target_law_code=target_key[0],
-                    target_section_reference=target_key[1],
-                    target_legal_section_id=target_section_id,
-                    relation_type=parsed.relation_type,
-                    resolution_status=status,
-                    unresolved_target_evidence=(
-                        {}
-                        if target_section_id
-                        else {
-                            "target_law_code": target_key[0],
-                            "target_section_reference": target_key[1],
-                            "raw_reference_text": parsed.raw_reference_text,
-                        }
-                    ),
-                    raw_reference_text=parsed.raw_reference_text,
-                    normalized_reference_text=parsed.normalized_reference_text,
-                )
-            )
-            reference["law_code"] = law_code
-            references.append(reference)
 
     return {
         "source_documents": list(preview.get("source_documents", [])),
         "source_fragments": list(preview.get("source_fragments", [])),
         "legal_acts": [asdict(item) for item in legal_acts.values()],
-        "legal_sections": [asdict(item) for item in sections],
-        "legal_fragments": [asdict(item) for item in fragments],
-        "legal_references": references,
+        "legal_sections": [asdict(item) for item in sections.values()],
+        "legal_fragments": [asdict(item) for item in fragments.values()],
+        "legal_references": [],
     }
+
+
+def build_relationship_evidence_from_preview(
+    preview: dict[str, Any],
+    *,
+    law_codes: list[str] | None = None,
+    classifier_policy_version: str = CLASSIFIER_POLICY_VERSION,
+) -> list[dict[str, Any]]:
+    graph = build_structural_legal_graph(preview)
+    source_documents = {
+        str(document.get("source_document_id", "")): document for document in preview.get("source_documents", [])
+    }
+    legal_sections = graph["legal_sections"]
+    source_fragments = []
+    for fragment in preview.get("source_fragments", []):
+        law_code = str(fragment.get("law_code", ""))
+        section_reference = str(fragment.get("section_reference", ""))
+        source_fragments.append(
+            {
+                **fragment,
+                "source_legal_section_id": legal_section_id(law_code, section_reference),
+                "source_legal_fragment_id": legal_fragment_id(law_code, section_reference, 1),
+            }
+        )
+    return build_relationship_evidence_from_records(
+        source_fragments=source_fragments,
+        legal_sections=legal_sections,
+        source_documents=source_documents,
+        law_codes=law_codes,
+        classifier_policy_version=classifier_policy_version,
+    )
+
+
+def build_relationship_evidence_from_records(
+    *,
+    source_fragments: Iterable[dict[str, Any]],
+    legal_sections: Iterable[dict[str, Any]],
+    source_documents: dict[str, dict[str, Any]] | None = None,
+    law_codes: list[str] | None = None,
+    classifier_policy_version: str = CLASSIFIER_POLICY_VERSION,
+) -> list[dict[str, Any]]:
+    source_documents = source_documents or {}
+    fragment_rows = sorted(
+        list(source_fragments),
+        key=lambda item: (
+            str(item.get("law_code", "")),
+            str(item.get("section_reference", "")),
+            str(item.get("source_fragment_id", "")),
+        ),
+    )
+    section_rows = sorted(
+        list(legal_sections),
+        key=lambda item: (
+            str(item.get("law_code", "")),
+            str(item.get("section_reference") or item.get("normalized_reference") or ""),
+            str(item.get("legal_section_id", "")),
+        ),
+    )
+    selected_law_codes = _selected_law_codes(law_codes, fragment_rows, section_rows)
+    section_index = _section_index(section_rows)
+    references: list[dict[str, Any]] = []
+    for fragment in fragment_rows:
+        law_code = str(fragment.get("law_code", ""))
+        if law_code not in selected_law_codes:
+            continue
+        document = source_documents.get(str(fragment.get("source_document_id", "")), {})
+        source_legal_section_id = str(
+            fragment.get("source_legal_section_id")
+            or legal_section_id(law_code, str(fragment.get("section_reference", "")))
+        )
+        source_legal_fragment_id = str(
+            fragment.get("source_legal_fragment_id")
+            or legal_fragment_id(law_code, str(fragment.get("section_reference", "")), 1)
+        )
+        temporal_metadata = _temporal_metadata(fragment, document)
+        candidates = parse_explicit_legal_references(
+            str(fragment.get("body_text", "")),
+            default_law_code=law_code,
+            source_legal_section_id=source_legal_section_id,
+            source_legal_fragment_id=source_legal_fragment_id,
+            source_fragment_id=str(fragment.get("source_fragment_id", "")),
+            law_code=law_code,
+            section_reference=str(fragment.get("section_reference", "")),
+            title=str(fragment.get("title") or document.get("title") or ""),
+            classifier_policy_version=classifier_policy_version,
+            **temporal_metadata,
+        )
+        for ordinal, candidate in enumerate(candidates, start=1):
+            references.append(
+                asdict(
+                    _resolve_candidate(
+                        candidate,
+                        ordinal=ordinal,
+                        selected_law_codes=selected_law_codes,
+                        section_index=section_index,
+                    )
+                )
+            )
+    return references
+
+
+def _resolve_candidate(
+    candidate: ParsedReferenceCandidate,
+    *,
+    ordinal: int,
+    selected_law_codes: set[str],
+    section_index: dict[tuple[str, str], list[str]],
+) -> LegalReference:
+    target_law_code = candidate.target_law_code or candidate.law_code
+    target_section_reference = normalize_section_reference(candidate.target_section_reference)
+    target_key = (target_law_code, target_section_reference)
+    target_candidates = section_index.get(target_key, [])
+    target_legal_section_id = ""
+    unresolved_target_evidence: dict[str, Any] = {}
+    if target_law_code not in selected_law_codes:
+        resolution_status = "out_of_scope"
+        unresolved_target_evidence = _unresolved_evidence(candidate, reason="out_of_scope")
+    elif len(target_candidates) == 1:
+        resolution_status = "resolved"
+        target_legal_section_id = target_candidates[0]
+    elif len(target_candidates) > 1:
+        resolution_status = "ambiguous"
+        unresolved_target_evidence = _unresolved_evidence(
+            candidate,
+            reason="ambiguous",
+            candidate_legal_section_ids=target_candidates,
+        )
+    else:
+        resolution_status = "unresolved"
+        unresolved_target_evidence = _unresolved_evidence(candidate, reason="not_found")
+
+    return LegalReference(
+        legal_reference_id=_legal_reference_id(candidate, ordinal=ordinal),
+        source_legal_section_id=candidate.source_legal_section_id,
+        target_law_code=target_law_code,
+        target_section_reference=target_section_reference,
+        source_legal_fragment_id=candidate.source_legal_fragment_id,
+        source_fragment_id=candidate.source_fragment_id,
+        law_code=candidate.law_code,
+        raw_reference_text=candidate.raw_reference_text,
+        normalized_reference_text=candidate.normalized_reference_text,
+        target_legal_section_id=target_legal_section_id,
+        subsection_anchor=candidate.subsection_anchor,
+        context_before=candidate.context_before,
+        context_text=candidate.context_text,
+        context_after=candidate.context_after,
+        context_checksum=candidate.context_checksum,
+        primary_relation_type=candidate.primary_relation_type,
+        secondary_relation_signals=candidate.secondary_relation_signals,
+        classifier_policy_version=candidate.classifier_policy_version,
+        relation_type=candidate.primary_relation_type,
+        resolution_status=resolution_status,
+        unresolved_target_evidence=unresolved_target_evidence,
+        effective_from=candidate.effective_from,
+        effective_until=candidate.effective_until,
+        publication_date=candidate.publication_date,
+        source_version_id=candidate.source_version_id,
+        source_revision_marker=candidate.source_revision_marker,
+        temporal_context_text=candidate.temporal_context_text,
+        temporal_context_checksum=candidate.temporal_context_checksum,
+        temporal_evidence_status=candidate.temporal_evidence_status,
+    )
+
+
+def _section_index(legal_sections: Iterable[dict[str, Any]]) -> dict[tuple[str, str], list[str]]:
+    index: dict[tuple[str, str], list[str]] = {}
+    for section in legal_sections:
+        law_code = str(section.get("law_code", ""))
+        reference = normalize_section_reference(
+            str(section.get("section_reference") or section.get("normalized_reference") or "")
+        )
+        section_id = str(section.get("legal_section_id", ""))
+        if law_code and reference and section_id:
+            index.setdefault((law_code, reference), []).append(section_id)
+    for key, values in list(index.items()):
+        index[key] = sorted(set(values))
+    return index
+
+
+def _selected_law_codes(
+    law_codes: list[str] | None,
+    source_fragments: Iterable[dict[str, Any]],
+    legal_sections: Iterable[dict[str, Any]],
+) -> set[str]:
+    if law_codes:
+        return {code for code in law_codes if code}
+    selected = {str(item.get("law_code", "")) for item in source_fragments if item.get("law_code")}
+    selected.update(str(item.get("law_code", "")) for item in legal_sections if item.get("law_code"))
+    return selected
+
+
+def _temporal_metadata(fragment: dict[str, Any], document: dict[str, Any]) -> dict[str, str | bool]:
+    return {
+        "effective_from": str(
+            fragment.get("effective_from")
+            or fragment.get("effective_date")
+            or document.get("effective_from")
+            or document.get("effective_date")
+            or ""
+        ),
+        "effective_until": str(fragment.get("effective_until") or document.get("effective_until") or ""),
+        "publication_date": str(fragment.get("publication_date") or document.get("publication_date") or ""),
+        "source_version_id": str(fragment.get("source_version_id") or document.get("source_version_id") or ""),
+        "source_revision_marker": str(
+            fragment.get("source_revision_marker") or document.get("source_revision_marker") or ""
+        ),
+        "temporal_metadata_expected": bool(
+            fragment.get("temporal_metadata_expected") or document.get("temporal_metadata_expected") or False
+        ),
+    }
+
+
+def _unresolved_evidence(
+    candidate: ParsedReferenceCandidate,
+    *,
+    reason: str,
+    candidate_legal_section_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        "reason": reason,
+        "target_law_code": candidate.target_law_code or candidate.law_code,
+        "target_section_reference": candidate.target_section_reference,
+        "raw_reference_text": candidate.raw_reference_text,
+        "normalized_reference_text": candidate.normalized_reference_text,
+    }
+    if candidate_legal_section_ids:
+        evidence["candidate_legal_section_ids"] = candidate_legal_section_ids
+    return evidence
+
+
+def _legal_reference_id(candidate: ParsedReferenceCandidate, *, ordinal: int) -> str:
+    digest = sha256(
+        "|".join(
+            [
+                candidate.parsed_reference_id,
+                candidate.source_legal_section_id,
+                str(ordinal),
+                candidate.target_law_code,
+                candidate.target_section_reference,
+                candidate.context_checksum,
+            ]
+        ).encode("utf-8")
+    ).hexdigest()[:12]
+    return f"legal-reference:{candidate.source_legal_section_id}:{ordinal}:{digest}"
 
 
 def _source_document_for_fragment(preview: dict[str, Any], source_document_id: str) -> dict[str, Any]:

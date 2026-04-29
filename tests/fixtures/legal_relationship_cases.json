@@ -1,0 +1,65 @@
+{
+  "classifier_policy_version": "legal-ref-context-v1",
+  "cases": [
+    {
+      "case_id": "cites_direct_reference",
+      "expected_primary_relation_type": "CITES",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:1:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:1:1",
+      "source_fragment_id": "source-fragment:TestG:1",
+      "section_reference": "§ 1",
+      "title": "Allgemeine Verweisung",
+      "body_text": "Die Einzelheiten ergeben sich aus § 2 TestG."
+    },
+    {
+      "case_id": "defines_reference",
+      "expected_primary_relation_type": "DEFINES",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:3:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:3:1",
+      "source_fragment_id": "source-fragment:TestG:3",
+      "section_reference": "§ 3",
+      "title": "Begriffe",
+      "body_text": "Ausbildungsduldung im Sinne des § 2 TestG ist eine befristete Duldung."
+    },
+    {
+      "case_id": "applies_if_reference",
+      "expected_primary_relation_type": "APPLIES_IF",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:4:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:4:1",
+      "source_fragment_id": "source-fragment:TestG:4",
+      "section_reference": "§ 4",
+      "title": "Anwendungsbereich",
+      "body_text": "Diese Vorschrift gilt, wenn die Voraussetzungen des § 2 TestG vorliegen."
+    },
+    {
+      "case_id": "requires_reference",
+      "expected_primary_relation_type": "REQUIRES",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:5:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:5:1",
+      "source_fragment_id": "source-fragment:TestG:5",
+      "section_reference": "§ 5",
+      "title": "Erforderliche Nachweise",
+      "body_text": "Die Erteilung setzt voraus, dass die Anforderungen nach § 2 TestG erfüllt sind."
+    },
+    {
+      "case_id": "exception_reference",
+      "expected_primary_relation_type": "EXCEPTION_TO",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:6:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:6:1",
+      "source_fragment_id": "source-fragment:TestG:6",
+      "section_reference": "§ 6",
+      "title": "Ausnahmen",
+      "body_text": "Abweichend von § 2 TestG kann die Behörde eine Ausnahme zulassen."
+    }
+  ]
+}

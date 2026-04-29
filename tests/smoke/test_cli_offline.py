@@ -8,6 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from app.commands import dispatch
+from app.settings import FoundationSettings
+from evaluation.load_cases import build_relationship_quality_artifact
+
 
 pytestmark = pytest.mark.smoke
 
@@ -112,6 +116,29 @@ def test_cli_graph_compare_writes_comparison_artifact_without_live_services(tmp_
     assert artifact["missing"]["counts"]["SourceFragment"] == 1
 
 
+def test_cli_relationships_quality_writes_artifact_with_injected_repository(tmp_path: Path) -> None:
+    output_path = tmp_path / "relationship_quality.json"
+
+    exit_code, payload = dispatch(
+        [
+            "relationships",
+            "quality",
+            "--law-code",
+            "TestG",
+            "--output",
+            str(output_path),
+        ],
+        settings=FoundationSettings(),
+        graph_repository_factory=lambda settings: FakeRelationshipRepository(),
+    )
+
+    artifact = json.loads(output_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert payload["relationship_quality_artifact_path"] == str(output_path)
+    assert artifact["counts_by_relation_type"]["CITES"] == 1
+    assert "answer_text" not in artifact
+
+
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = {
         "PATH": os.environ.get("PATH", ""),
@@ -125,3 +152,20 @@ def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
+
+
+class FakeRelationshipRepository:
+    def relationship_quality_artifact(self, *, law_codes: list[str], classifier_policy_version: str = ""):
+        return build_relationship_quality_artifact(
+            selected_scope={"law_codes": law_codes},
+            classifier_policy_version=classifier_policy_version or "legal-ref-context-v1",
+            generated_at="2026-01-01T00:00:00Z",
+            counts_by_relation_type={"CITES": 1},
+            counts_by_resolution_status={"resolved": 1},
+            sample_edges_by_relation_type={},
+            sample_reference_evidence=[],
+            top_unresolved_targets=[],
+            source_to_relation_coverage={},
+            fanout_summary={},
+            temporal_metadata_completeness={},
+        )

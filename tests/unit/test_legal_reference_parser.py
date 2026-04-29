@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+from graph.types import CLASSIFIER_POLICY_VERSION
 from ingestion.legal_reference_parser import parse_explicit_legal_references
 
 
@@ -12,8 +16,128 @@ def test_parse_german_section_reference_with_default_law_code() -> None:
     assert references[0].normalized_reference_text == "§ 2 Abs. 1"
 
 
+def test_parse_full_absatz_and_nummer_words_without_treating_absatz_as_law() -> None:
+    references = parse_explicit_legal_references(
+        "Die Rechtsfolge bestimmt sich nach § 26 Absatz 1 Satz 2 Nummer 3 AsylG.",
+        default_law_code="AufenthG",
+    )
+
+    assert len(references) == 1
+    assert references[0].raw_reference_text == "§ 26 Absatz 1 Satz 2 Nummer 3 AsylG"
+    assert references[0].target_law_code == "AsylG"
+    assert references[0].target_section_reference == "§ 26"
+    assert references[0].normalized_reference_text == "§ 26 Abs. 1 Satz 2 Nr. 3"
+    assert references[0].subsection_anchor == {
+        "section_reference": "§ 26",
+        "subsection": "1",
+        "sentence": "2",
+        "number": "3",
+    }
+
+
 def test_parse_reference_without_law_uses_default_law_code() -> None:
     references = parse_explicit_legal_references("Nach § 2 gilt dies.", default_law_code="AufenthG")
 
     assert references[0].target_law_code == "AufenthG"
+    assert references[0].primary_relation_type == "CITES"
     assert references[0].relation_type == "CITES"
+
+
+def test_parse_reference_does_not_treat_following_title_word_as_law_code() -> None:
+    references = parse_explicit_legal_references(
+        "Die Voraussetzungen nach § 3d Schutz vor Verfolgung bleiben unberührt.",
+        default_law_code="AsylG",
+    )
+
+    assert references[0].raw_reference_text == "§ 3d"
+    assert references[0].target_law_code == "AsylG"
+    assert references[0].target_section_reference == "§ 3d"
+
+
+def test_fixture_driven_mandatory_relation_classification() -> None:
+    fixture = json.loads(Path("tests/fixtures/legal_relationship_cases.json").read_text(encoding="utf-8"))
+
+    for case in fixture["cases"]:
+        references = parse_explicit_legal_references(
+            case["body_text"],
+            default_law_code=case["default_law_code"],
+            source_legal_section_id=case["source_legal_section_id"],
+            source_legal_fragment_id=case["source_legal_fragment_id"],
+            source_fragment_id=case["source_fragment_id"],
+            law_code=case["law_code"],
+            section_reference=case["section_reference"],
+            title=case["title"],
+        )
+
+        assert len(references) == 1, case["case_id"]
+        assert references[0].primary_relation_type == case["expected_primary_relation_type"], case["case_id"]
+        assert references[0].classifier_policy_version == CLASSIFIER_POLICY_VERSION
+
+
+def test_context_checksum_source_ids_subsection_anchor_and_policy_are_deterministic() -> None:
+    text = "Vorheriger Satz. Die Erteilung setzt voraus, dass § 2 Abs. 1 Satz 2 Nr. 3 TestG gilt. Danach folgt Text."
+
+    first = parse_explicit_legal_references(
+        text,
+        default_law_code="TestG",
+        source_legal_section_id="legal-section:TestG:1:current",
+        source_legal_fragment_id="legal-fragment:TestG:1:1",
+        source_fragment_id="source-fragment:TestG:1",
+        law_code="TestG",
+        section_reference="§ 1",
+    )[0]
+    second = parse_explicit_legal_references(
+        text,
+        default_law_code="TestG",
+        source_legal_section_id="legal-section:TestG:1:current",
+        source_legal_fragment_id="legal-fragment:TestG:1:1",
+        source_fragment_id="source-fragment:TestG:1",
+        law_code="TestG",
+        section_reference="§ 1",
+    )[0]
+
+    assert first.parsed_reference_id == second.parsed_reference_id
+    assert first.context_checksum == second.context_checksum
+    assert first.context_before == "Vorheriger Satz."
+    assert first.context_text.startswith("Die Erteilung setzt voraus")
+    assert first.context_after == "Danach folgt Text."
+    assert first.source_legal_section_id == "legal-section:TestG:1:current"
+    assert first.source_legal_fragment_id == "legal-fragment:TestG:1:1"
+    assert first.source_fragment_id == "source-fragment:TestG:1"
+    assert first.subsection_anchor == {
+        "section_reference": "§ 2",
+        "subsection": "1",
+        "sentence": "2",
+        "number": "3",
+    }
+    assert first.classifier_policy_version == CLASSIFIER_POLICY_VERSION
+
+
+def test_optional_temporal_metadata_is_preserved_and_statuses_are_explicit() -> None:
+    available = parse_explicit_legal_references(
+        "Nach § 2 TestG gilt dies.",
+        default_law_code="TestG",
+        effective_from="2026-01-01",
+        publication_date="2025-12-01",
+    )[0]
+    partial = parse_explicit_legal_references(
+        "Ab 2026 gilt § 2 TestG.",
+        default_law_code="TestG",
+    )[0]
+    not_available = parse_explicit_legal_references(
+        "Nach § 2 TestG gilt dies.",
+        default_law_code="TestG",
+        temporal_metadata_expected=True,
+    )[0]
+    not_applicable = parse_explicit_legal_references(
+        "Nach § 2 TestG gilt dies.",
+        default_law_code="TestG",
+    )[0]
+
+    assert available.effective_from == "2026-01-01"
+    assert available.publication_date == "2025-12-01"
+    assert available.temporal_evidence_status == "available"
+    assert partial.temporal_evidence_status == "partial"
+    assert partial.temporal_context_checksum
+    assert not_available.temporal_evidence_status == "not_available"
+    assert not_applicable.temporal_evidence_status == "not_applicable"

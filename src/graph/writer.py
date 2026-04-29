@@ -5,17 +5,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from graph.types import RELATION_TYPES
 
-ALLOWED_RELATION_TYPES = {
-    "CITES",
-    "DEFINES",
-    "APPLIES_IF",
-    "REQUIRES",
-    "EXCEPTION_TO",
-    "EXCLUDES_IF",
-    "AMENDS",
-    "SUPERSEDED_BY",
-}
+
+ALLOWED_RELATION_TYPES = set(RELATION_TYPES)
+TEMPORAL_EDGE_PROPERTIES = (
+    "effective_from",
+    "effective_until",
+    "publication_date",
+    "source_version_id",
+    "temporal_evidence_status",
+)
 
 
 class GraphWriter:
@@ -78,6 +78,10 @@ class GraphWriter:
         )
 
     def upsert_legal_reference(self, record: dict[str, Any]) -> None:
+        relation_type = str(record.get("primary_relation_type") or record.get("relation_type") or "CITES")
+        if relation_type not in ALLOWED_RELATION_TYPES:
+            raise ValueError(f"unsupported legal relation type: {relation_type}")
+        record = {**record, "primary_relation_type": relation_type, "relation_type": relation_type}
         self.client.write(
             "MERGE (n:LegalReference {legal_reference_id: $legal_reference_id}) "
             "SET n += $record "
@@ -89,20 +93,41 @@ class GraphWriter:
                 "record": _neo4j_properties(record),
             },
         )
-        if record.get("target_legal_section_id"):
-            relation_type = str(record.get("relation_type") or "CITES")
-            if relation_type not in ALLOWED_RELATION_TYPES:
-                raise ValueError(f"unsupported legal relation type: {relation_type}")
+        if record.get("resolution_status") == "resolved" and record.get("target_legal_section_id"):
+            edge_record = {
+                "legal_reference_id": record["legal_reference_id"],
+                "classifier_policy_version": record.get("classifier_policy_version", ""),
+                "source_legal_section_id": record.get("source_legal_section_id", ""),
+                "target_legal_section_id": record.get("target_legal_section_id", ""),
+                **{key: record.get(key, "") for key in TEMPORAL_EDGE_PROPERTIES},
+            }
             self.client.write(
                 "MATCH (s:LegalSection {legal_section_id: $source_legal_section_id}) "
                 "MATCH (t:LegalSection {legal_section_id: $target_legal_section_id}) "
-                f"MERGE (s)-[:{relation_type} {{legal_reference_id: $legal_reference_id}}]->(t)",
+                f"MERGE (s)-[r:{relation_type} {{legal_reference_id: $legal_reference_id}}]->(t) "
+                "SET r += $edge_record",
                 {
                     "source_legal_section_id": record["source_legal_section_id"],
                     "target_legal_section_id": record["target_legal_section_id"],
                     "legal_reference_id": record["legal_reference_id"],
+                    "edge_record": _neo4j_properties(edge_record),
                 },
             )
+
+    def cleanup_relationships_for_scope(self, *, law_codes: list[str]) -> None:
+        for relation_type in RELATION_TYPES:
+            self.client.write(
+                "MATCH (s:LegalSection)-[r]->(:LegalSection) "
+                f"WHERE type(r) = '{relation_type}' "
+                "AND r.legal_reference_id IS NOT NULL "
+                "AND s.law_code IN $law_codes "
+                "DELETE r",
+                {"law_codes": law_codes},
+            )
+        self.client.write(
+            "MATCH (n:LegalReference) WHERE n.law_code IN $law_codes DETACH DELETE n",
+            {"law_codes": law_codes},
+        )
 
     def write_source_embeddings(self, records: list[dict[str, Any]], *, preflight) -> None:
         preflight()

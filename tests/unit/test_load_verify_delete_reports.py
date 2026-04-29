@@ -5,6 +5,7 @@ from evaluation.load_cases import (
     build_legacy_baseline_graph_snapshot_artifact,
     build_snapshot_comparison_report,
 )
+from graph.types import RelationshipRefreshReport
 from ingestion.legal_preview_loader import build_preview_from_manifest_path
 from ingestion.legal_structure_builder import build_structural_legal_graph
 from ingestion.verification import build_deletion_report, build_load_report, build_verification_report
@@ -20,8 +21,32 @@ def test_load_report_counts_source_legal_and_unresolved_records() -> None:
     assert report.source_document_count == 1
     assert report.source_fragment_count == 2
     assert report.legal_section_count == 2
-    assert report.legal_reference_count == 1
+    assert report.legal_reference_count == 0
     assert report.unresolved_reference_count == 0
+
+
+def test_relationship_refresh_report_counts_and_failure_visibility() -> None:
+    report = RelationshipRefreshReport(
+        refresh_id="relationship-refresh:test",
+        selected_scope={"law_codes": ["AufenthG"]},
+        classifier_policy_version="legal-ref-context-v1",
+        started_at="2026-01-01T00:00:00Z",
+        finished_at="2026-01-01T00:00:01Z",
+        processed_fragment_count=2,
+        created_reference_count=2,
+        created_edge_count=1,
+        failed_count=1,
+        status="failed",
+        counts_by_relation_type={"CITES": 2},
+        counts_by_resolution_status={"resolved": 1, "unresolved": 1},
+        errors=["boom"],
+    )
+
+    assert report.status == "failed"
+    assert report.created_reference_count == 2
+    assert report.created_edge_count == 1
+    assert report.failed_count == 1
+    assert report.errors == ["boom"]
 
 
 def test_verification_report_assembly_includes_embedding_metadata_fields() -> None:

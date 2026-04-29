@@ -47,6 +47,12 @@ code automatically.
   metadata, embedding profile metadata, and review state.
 - Prefer exact legal-reference resolution and bounded typed traversal before
   broad semantic expansion.
+- Base graph load must write source/legal structure only. Trusted
+  `LegalReference` evidence and typed legal relationship edges belong to an
+  explicit relationship-refresh workflow.
+- Relationship-quality artifacts summarize the new graph only. They must not
+  rely on legacy graph comparison, framework sidecar output, chatbot answers,
+  or generated answer text.
 - Use mature Neo4j/GraphRAG framework patterns when inference is later added,
   unless a documented project-specific exception exists.
 

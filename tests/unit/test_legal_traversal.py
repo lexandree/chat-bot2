@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from retrieval.legal_traversal import TraversalEdge, bounded_traversal_from_edges
+import pytest
+
+from graph.types import RELATION_TYPES
+from retrieval.legal_traversal import TraversalEdge, bounded_traversal_from_edges, normalize_allowed_relation_types
 
 
 def test_bounded_traversal_respects_relation_depth_fanout_and_node_limits() -> None:
@@ -42,3 +45,9 @@ def test_bounded_traversal_prevents_cycles_and_node_limit_overflow() -> None:
 
     assert result.visited_count == 2
     assert "answer" not in result.as_dict()
+
+
+def test_traversal_policy_accepts_full_relationship_taxonomy_without_related() -> None:
+    assert normalize_allowed_relation_types(RELATION_TYPES) == set(RELATION_TYPES)
+    with pytest.raises(ValueError):
+        normalize_allowed_relation_types({"RELATED"})

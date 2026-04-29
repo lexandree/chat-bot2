@@ -6,7 +6,11 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Iterable
 
-from graph.types import StructuralRetrievalResult
+from graph.types import RELATION_TYPES, StructuralRetrievalResult
+
+
+DEFAULT_ALLOWED_RELATION_TYPES = tuple(RELATION_TYPES)
+FORBIDDEN_STRUCTURAL_RELATION_TYPES = {"RELATED", "SEMANTICALLY_RELATED"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +32,7 @@ def bounded_traversal_from_edges(
 ) -> StructuralRetrievalResult:
     if depth_limit < 0 or fanout_limit < 0 or node_limit <= 0:
         raise ValueError("depth_limit and fanout_limit must be non-negative; node_limit must be positive")
+    allowed_relation_types = normalize_allowed_relation_types(allowed_relation_types)
     adjacency: dict[str, list[TraversalEdge]] = {}
     for edge in edges:
         if edge.relation_type in allowed_relation_types:
@@ -56,3 +61,14 @@ def bounded_traversal_from_edges(
         node_limit=node_limit,
         visited_count=len(visited),
     )
+
+
+def normalize_allowed_relation_types(relation_types: Iterable[str] | None) -> set[str]:
+    requested = set(relation_types or DEFAULT_ALLOWED_RELATION_TYPES)
+    forbidden = requested.intersection(FORBIDDEN_STRUCTURAL_RELATION_TYPES)
+    if forbidden:
+        raise ValueError(f"unsupported structural relation type: {sorted(forbidden)}")
+    unsupported = requested.difference(RELATION_TYPES)
+    if unsupported:
+        raise ValueError(f"unsupported structural relation type: {sorted(unsupported)}")
+    return requested

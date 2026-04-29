@@ -261,8 +261,10 @@ Current modules already provide a starting point:
 
 - `src/ingestion/legal_reference_parser.py`: upgrade from regex-only parsing to
   context-aware reference extraction and relation classification.
-- `src/ingestion/legal_structure_builder.py`: keep building `LegalReference`
-  records, but preserve context evidence and classifier metadata.
+- `src/ingestion/legal_structure_builder.py`: keep base structural graph
+  assembly separate from relationship evidence assembly. Base graph load writes
+  source/legal structure only; relationship refresh emits `LegalReference`
+  records with context evidence and classifier metadata.
 - `src/graph/writer.py`: keep the typed edge allowlist; add properties such as
   classifier version, resolution status, and evidence reference where useful.
 - `src/retrieval/legal_traversal.py`: keep bounded traversal; later validate
@@ -286,6 +288,10 @@ The next stage should be accepted only when:
 - default tests run without live Neo4j, live embeddings, paid APIs, remote
   notebooks, chatbot UX, or answer generation
 - no task depends on legacy graph comparison
+- base graph load creates no trusted `LegalReference` records or typed legal
+  relationship edges before explicit relationship refresh
+- framework sidecar output is never an acceptance dependency or trusted graph
+  writer in `003`
 
 ## Suggested Speckit Prompt
 

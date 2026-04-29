@@ -5,6 +5,28 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, Literal
 
+RELATION_TYPES = (
+    "CITES",
+    "DEFINES",
+    "APPLIES_IF",
+    "REQUIRES",
+    "EXCEPTION_TO",
+    "EXCLUDES_IF",
+    "AMENDS",
+    "SUPERSEDED_BY",
+)
+MANDATORY_CLASSIFIER_RELATION_TYPES = (
+    "CITES",
+    "DEFINES",
+    "APPLIES_IF",
+    "REQUIRES",
+    "EXCEPTION_TO",
+)
+DEFERRED_RELATION_TYPES = ("EXCLUDES_IF", "AMENDS", "SUPERSEDED_BY")
+RESOLUTION_STATUSES = ("resolved", "out_of_scope", "unresolved", "ambiguous")
+TEMPORAL_EVIDENCE_STATUSES = ("available", "partial", "not_available", "not_applicable")
+CLASSIFIER_POLICY_VERSION = "legal-ref-context-v1"
+
 
 def to_plain_dict(value: Any) -> Any:
     """Convert dataclass records into JSON-serializable primitives."""
@@ -103,13 +125,124 @@ class LegalReference:
     source_legal_section_id: str
     target_law_code: str
     target_section_reference: str
-    relation_type: str = "CITES"
-    resolution_status: Literal["resolved", "unresolved", "ambiguous"] = "unresolved"
     source_legal_fragment_id: str = ""
-    target_legal_section_id: str = ""
-    unresolved_target_evidence: dict[str, Any] = field(default_factory=dict)
+    source_fragment_id: str = ""
+    law_code: str = ""
     raw_reference_text: str = ""
     normalized_reference_text: str = ""
+    target_legal_section_id: str = ""
+    subsection_anchor: dict[str, Any] = field(default_factory=dict)
+    context_before: str = ""
+    context_text: str = ""
+    context_after: str = ""
+    context_checksum: str = ""
+    primary_relation_type: str = "CITES"
+    secondary_relation_signals: list[str] = field(default_factory=list)
+    classifier_policy_version: str = CLASSIFIER_POLICY_VERSION
+    relation_type: str = "CITES"
+    resolution_status: Literal["resolved", "out_of_scope", "unresolved", "ambiguous"] = "unresolved"
+    unresolved_target_evidence: dict[str, Any] = field(default_factory=dict)
+    effective_from: str = ""
+    effective_until: str = ""
+    publication_date: str = ""
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    temporal_context_text: str = ""
+    temporal_context_checksum: str = ""
+    temporal_evidence_status: Literal["available", "partial", "not_available", "not_applicable"] = (
+        "not_applicable"
+    )
+
+
+@dataclass(slots=True)
+class ParsedReferenceCandidate:
+    parsed_reference_id: str
+    source_legal_section_id: str
+    source_legal_fragment_id: str
+    source_fragment_id: str
+    law_code: str
+    raw_reference_text: str
+    normalized_reference_text: str
+    target_law_code: str
+    target_section_reference: str
+    subsection_anchor: dict[str, Any] = field(default_factory=dict)
+    context_before: str = ""
+    context_text: str = ""
+    context_after: str = ""
+    context_checksum: str = ""
+    primary_relation_type: str = "CITES"
+    secondary_relation_signals: list[str] = field(default_factory=list)
+    classifier_policy_version: str = CLASSIFIER_POLICY_VERSION
+    effective_from: str = ""
+    effective_until: str = ""
+    publication_date: str = ""
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    temporal_context_text: str = ""
+    temporal_context_checksum: str = ""
+    temporal_evidence_status: Literal["available", "partial", "not_available", "not_applicable"] = (
+        "not_applicable"
+    )
+
+    @property
+    def relation_type(self) -> str:
+        return self.primary_relation_type
+
+
+@dataclass(slots=True)
+class RelationshipRefreshReport:
+    refresh_id: str
+    selected_scope: dict[str, Any]
+    classifier_policy_version: str
+    started_at: str
+    finished_at: str
+    processed_fragment_count: int = 0
+    created_reference_count: int = 0
+    updated_reference_count: int = 0
+    created_edge_count: int = 0
+    updated_edge_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    status: Literal["completed", "failed"] = "completed"
+    counts_by_relation_type: dict[str, int] = field(default_factory=dict)
+    counts_by_resolution_status: dict[str, int] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class RelationshipVerificationReport:
+    selected_scope: dict[str, Any]
+    classifier_policy_version: str
+    counts_by_relation_type: dict[str, int]
+    counts_by_resolution_status: dict[str, int]
+    sample_reference_ids: list[str] = field(default_factory=list)
+    sample_edge_ids: list[str] = field(default_factory=list)
+    unresolved_reference_evidence: list[dict[str, Any]] = field(default_factory=list)
+    ambiguous_reference_evidence: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class RelationshipQualityArtifact:
+    artifact_id: str
+    selected_scope: dict[str, Any]
+    classifier_policy_version: str
+    generated_at: str
+    counts_by_relation_type: dict[str, int]
+    counts_by_resolution_status: dict[str, int]
+    sample_edges_by_relation_type: dict[str, list[dict[str, Any]]]
+    sample_reference_evidence: list[dict[str, Any]]
+    top_unresolved_targets: list[dict[str, Any]]
+    source_to_relation_coverage: dict[str, Any]
+    fanout_summary: dict[str, Any]
+    temporal_metadata_completeness: dict[str, Any]
+    deferred_relation_strategy: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = to_plain_dict(self)
+        for forbidden in ("answer_text", "answer", "generated_answer"):
+            payload.pop(forbidden, None)
+        return payload
 
 
 @dataclass(slots=True)

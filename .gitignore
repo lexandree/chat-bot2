@@ -23,6 +23,7 @@ data/import_preview/*.json
 data/import_preview/load_reports/
 data/snapshots/*.json
 data/comparisons/*.json
+data/relationship_quality/*.json
 data/**/.gitkeep
 tmp/
 *.tmp

@@ -3,23 +3,34 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 import json
 from typing import Any
 
 from graph.schema import bootstrap_schema, build_schema_statements, candidate_review_placeholders_present
 from graph.types import (
+    CLASSIFIER_POLICY_VERSION,
     DeletionReport,
     EmbeddingRunReport,
     GraphReadinessReport,
     LoadRunReport,
+    RELATION_TYPES,
+    RESOLUTION_STATUSES,
+    RelationshipRefreshReport,
+    RelationshipVerificationReport,
+    TEMPORAL_EVIDENCE_STATUSES,
     VerificationReport,
 )
 from graph.writer import GraphWriter
 from evaluation.load_cases import (
     build_graph_snapshot_artifact,
     build_legacy_baseline_graph_snapshot_artifact,
+    build_relationship_quality_artifact,
 )
-from ingestion.legal_structure_builder import build_structural_legal_graph
+from ingestion.legal_structure_builder import (
+    build_relationship_evidence_from_records,
+    build_structural_legal_graph,
+)
 from ingestion.verification import (
     build_deletion_report,
     build_embedding_run_report,
@@ -28,6 +39,7 @@ from ingestion.verification import (
 )
 from retrieval.embedding_service import EmbeddingInput, EmbeddingService
 from retrieval.legal_reference_resolver import ReferenceQuery
+from retrieval.legal_traversal import normalize_allowed_relation_types
 from graph.types import StructuralRetrievalResult
 
 
@@ -80,9 +92,130 @@ class GraphDataRepository:
             self.writer.upsert_legal_section(record)
         for record in graph["legal_fragments"]:
             self.writer.upsert_legal_fragment(record)
-        for record in graph["legal_references"]:
-            self.writer.upsert_legal_reference(record)
         return build_load_report(scoped_preview, graph, law_codes=law_codes)
+
+    def refresh_relationships(
+        self,
+        *,
+        law_codes: list[str],
+        classifier_policy_version: str = CLASSIFIER_POLICY_VERSION,
+    ) -> RelationshipRefreshReport:
+        if not law_codes:
+            raise ValueError("relationship refresh requires at least one law code")
+        started_at = _utc_timestamp()
+        try:
+            source = _collect_relationship_source(self.client, law_codes=law_codes)
+            references = build_relationship_evidence_from_records(
+                source_fragments=source["source_fragments"],
+                legal_sections=source["legal_sections"],
+                source_documents=source["source_documents"],
+                law_codes=law_codes,
+                classifier_policy_version=classifier_policy_version,
+            )
+            self.writer.cleanup_relationships_for_scope(law_codes=law_codes)
+            for reference in references:
+                self.writer.upsert_legal_reference(reference)
+            status = "completed"
+            errors: list[str] = []
+        except Exception as exc:
+            references = []
+            source = {"source_fragments": []}
+            status = "failed"
+            errors = [str(exc)]
+        finished_at = _utc_timestamp()
+        counts_by_relation_type = _count_records(references, "primary_relation_type", RELATION_TYPES)
+        counts_by_resolution_status = _count_records(references, "resolution_status", RESOLUTION_STATUSES)
+        resolved_count = counts_by_resolution_status.get("resolved", 0)
+        return RelationshipRefreshReport(
+            refresh_id=f"relationship-refresh:{classifier_policy_version}:{','.join(sorted(law_codes))}",
+            selected_scope={"law_codes": law_codes},
+            classifier_policy_version=classifier_policy_version,
+            started_at=started_at,
+            finished_at=finished_at,
+            processed_fragment_count=len(source.get("source_fragments", [])),
+            created_reference_count=len(references),
+            updated_reference_count=0,
+            created_edge_count=resolved_count,
+            updated_edge_count=0,
+            skipped_count=0,
+            failed_count=1 if status == "failed" else 0,
+            status=status,
+            counts_by_relation_type=counts_by_relation_type,
+            counts_by_resolution_status=counts_by_resolution_status,
+            errors=errors,
+        )
+
+    def verify_relationships(
+        self,
+        *,
+        law_codes: list[str],
+        classifier_policy_version: str = "",
+    ) -> RelationshipVerificationReport:
+        version = classifier_policy_version or _collect_classifier_policy_version(self.client, law_codes)
+        counts_by_relation_type = _collect_reference_relation_counts(self.client, law_codes=law_codes)
+        counts_by_resolution_status = _collect_reference_status_counts(self.client, law_codes=law_codes)
+        sample_reference_ids = _collect_reference_ids(self.client, law_codes=law_codes, limit=10)
+        sample_edge_ids = _collect_relationship_edge_ids(self.client, law_codes=law_codes, limit=10)
+        unresolved_evidence = _collect_reference_evidence(
+            self.client,
+            law_codes=law_codes,
+            statuses=["unresolved", "out_of_scope"],
+            limit=10,
+        )
+        ambiguous_evidence = _collect_reference_evidence(
+            self.client,
+            law_codes=law_codes,
+            statuses=["ambiguous"],
+            limit=10,
+        )
+        return RelationshipVerificationReport(
+            selected_scope={"law_codes": law_codes},
+            classifier_policy_version=version,
+            counts_by_relation_type=counts_by_relation_type,
+            counts_by_resolution_status=counts_by_resolution_status,
+            sample_reference_ids=sample_reference_ids,
+            sample_edge_ids=sample_edge_ids,
+            unresolved_reference_evidence=unresolved_evidence,
+            ambiguous_reference_evidence=ambiguous_evidence,
+        )
+
+    def relationship_quality_artifact(
+        self,
+        *,
+        law_codes: list[str],
+        classifier_policy_version: str = "",
+    ):
+        version = classifier_policy_version or _collect_classifier_policy_version(self.client, law_codes)
+        selected_scope = {"law_codes": law_codes}
+        return build_relationship_quality_artifact(
+            selected_scope=selected_scope,
+            classifier_policy_version=version,
+            generated_at=_utc_timestamp(),
+            counts_by_relation_type=_collect_reference_relation_counts(self.client, law_codes=law_codes),
+            counts_by_resolution_status=_collect_reference_status_counts(self.client, law_codes=law_codes),
+            sample_edges_by_relation_type=_collect_sample_edges_by_relation_type(
+                self.client,
+                law_codes=law_codes,
+                limit=5,
+            ),
+            sample_reference_evidence=_collect_reference_evidence(
+                self.client,
+                law_codes=law_codes,
+                statuses=list(RESOLUTION_STATUSES),
+                limit=10,
+            ),
+            top_unresolved_targets=_collect_top_unresolved_targets(self.client, law_codes=law_codes, limit=10),
+            source_to_relation_coverage=_collect_source_to_relation_coverage(
+                self.client,
+                law_codes=law_codes,
+            ),
+            fanout_summary=_collect_relationship_fanout_summary(self.client, law_codes=law_codes, limit=10),
+            temporal_metadata_completeness=_collect_temporal_metadata_completeness(
+                self.client,
+                law_codes=law_codes,
+                selected_scope=selected_scope,
+            ),
+        )
 
     def verify_scope(self, *, law_codes: list[str] | None = None) -> VerificationReport:
         parameters = {"law_codes": law_codes or []}
@@ -272,6 +405,7 @@ class GraphDataRepository:
         fanout_limit: int,
         node_limit: int,
     ) -> StructuralRetrievalResult:
+        allowed_relation_types = sorted(normalize_allowed_relation_types(allowed_relation_types))
         rows = self.client.read(
             "MATCH (start:LegalSection {legal_section_id: $legal_section_id}) "
             "OPTIONAL MATCH (start)-[r]->(neighbor:LegalSection) "
@@ -316,6 +450,405 @@ def _filter_preview(preview: dict[str, Any], law_codes: list[str] | None) -> dic
     scoped["source_fragments"] = source_fragments
     scoped["source_scope"] = {"source_families": ["law"], "law_codes": sorted(allowed)}
     return scoped
+
+
+def _collect_relationship_source(client: Any, *, law_codes: list[str]) -> dict[str, Any]:
+    parameters = {"law_codes": law_codes}
+    source_fragment_rows = client.read(
+        "MATCH (sf:SourceFragment)-[:MAPS_TO]->(lf:LegalFragment)<-[:HAS_LEGAL_FRAGMENT]-(s:LegalSection) "
+        "WHERE sf.law_code IN $law_codes "
+        "RETURN sf.source_fragment_id AS source_fragment_id, "
+        "sf.source_document_id AS source_document_id, "
+        "sf.law_code AS law_code, "
+        "sf.section_reference AS section_reference, "
+        "sf.title AS title, "
+        "sf.body_text AS body_text, "
+        "sf.checksum AS checksum, "
+        "s.legal_section_id AS source_legal_section_id, "
+        "lf.legal_fragment_id AS source_legal_fragment_id "
+        "ORDER BY law_code, section_reference, source_fragment_id",
+        parameters,
+    )
+    legal_section_rows = client.read(
+        "MATCH (s:LegalSection) "
+        "WHERE s.law_code IN $law_codes "
+        "RETURN s.legal_section_id AS legal_section_id, "
+        "s.legal_act_id AS legal_act_id, "
+        "s.law_code AS law_code, "
+        "s.section_reference AS section_reference, "
+        "s.normalized_reference AS normalized_reference, "
+        "s.title AS title, "
+        "s.valid_from AS valid_from, "
+        "s.valid_to AS valid_to, "
+        "s.version_identity AS version_identity "
+        "ORDER BY law_code, normalized_reference, legal_section_id",
+        parameters,
+    )
+    source_document_rows = client.read(
+        "MATCH (d:SourceDocument) "
+        "WHERE d.law_code IN $law_codes "
+        "RETURN d.source_document_id AS source_document_id, "
+        "d.source_family AS source_family, "
+        "d.jurisdiction AS jurisdiction, "
+        "d.language AS language, "
+        "d.law_code AS law_code, "
+        "d.source_uri AS source_uri, "
+        "d.local_reference AS local_reference, "
+        "d.publication_date AS publication_date, "
+        "d.effective_date AS effective_date, "
+        "d.retrieved_at AS retrieved_at, "
+        "d.checksum AS checksum "
+        "ORDER BY source_document_id",
+        parameters,
+    )
+    source_documents = {
+        str(row.get("source_document_id", "")): dict(row)
+        for row in source_document_rows
+        if row.get("source_document_id")
+    }
+    return {
+        "source_fragments": [dict(row) for row in source_fragment_rows],
+        "legal_sections": [dict(row) for row in legal_section_rows],
+        "source_documents": source_documents,
+    }
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _count_records(records: list[dict[str, Any]], key: str, allowed_keys: tuple[str, ...]) -> dict[str, int]:
+    counts = {allowed_key: 0 for allowed_key in allowed_keys}
+    for record in records:
+        value = str(record.get(key) or "")
+        if value in counts:
+            counts[value] += 1
+    return counts
+
+
+def _complete_counts(raw_counts: dict[str, int], allowed_keys: tuple[str, ...]) -> dict[str, int]:
+    return {key: int(raw_counts.get(key, 0) or 0) for key in allowed_keys}
+
+
+def _collect_classifier_policy_version(client: Any, law_codes: list[str]) -> str:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+        "RETURN collect(DISTINCT n.classifier_policy_version) AS versions",
+        {"law_codes": law_codes},
+    )
+    versions = sorted(str(item) for item in (rows[0].get("versions", []) if rows else []) if item)
+    return versions[0] if versions else CLASSIFIER_POLICY_VERSION
+
+
+def _collect_reference_relation_counts(client: Any, *, law_codes: list[str]) -> dict[str, int]:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+        "RETURN coalesce(n.primary_relation_type, n.relation_type, 'CITES') AS relation_type, "
+        "count(n) AS count "
+        "ORDER BY relation_type",
+        {"law_codes": law_codes},
+    )
+    counts = {str(row.get("relation_type") or ""): int(row.get("count", 0) or 0) for row in rows}
+    return _complete_counts(counts, RELATION_TYPES)
+
+
+def _collect_reference_status_counts(client: Any, *, law_codes: list[str]) -> dict[str, int]:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+        "RETURN coalesce(n.resolution_status, 'unresolved') AS resolution_status, "
+        "count(n) AS count "
+        "ORDER BY resolution_status",
+        {"law_codes": law_codes},
+    )
+    counts = {str(row.get("resolution_status") or ""): int(row.get("count", 0) or 0) for row in rows}
+    return _complete_counts(counts, RESOLUTION_STATUSES)
+
+
+def _collect_reference_ids(client: Any, *, law_codes: list[str], limit: int) -> list[str]:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+        "RETURN n.legal_reference_id AS id "
+        "ORDER BY id LIMIT $limit",
+        {"law_codes": law_codes, "limit": limit},
+    )
+    return [str(row.get("id")) for row in rows if row.get("id")]
+
+
+def _collect_relationship_edge_ids(client: Any, *, law_codes: list[str], limit: int) -> list[str]:
+    rows = client.read(
+        "MATCH (s:LegalSection)-[r]->(t:LegalSection) "
+        "WHERE type(r) IN $relation_types "
+        "AND (size($law_codes) = 0 OR s.law_code IN $law_codes) "
+        "RETURN r.legal_reference_id AS id "
+        "ORDER BY id LIMIT $limit",
+        {"law_codes": law_codes, "relation_types": list(RELATION_TYPES), "limit": limit},
+    )
+    return [str(row.get("id")) for row in rows if row.get("id")]
+
+
+def _collect_reference_evidence(
+    client: Any,
+    *,
+    law_codes: list[str],
+    statuses: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE (size($law_codes) = 0 OR n.law_code IN $law_codes) "
+        "AND n.resolution_status IN $statuses "
+        "RETURN n.legal_reference_id AS legal_reference_id, "
+        "n.source_legal_section_id AS source_legal_section_id, "
+        "n.source_legal_fragment_id AS source_legal_fragment_id, "
+        "n.source_fragment_id AS source_fragment_id, "
+        "n.law_code AS law_code, "
+        "n.target_law_code AS target_law_code, "
+        "n.target_section_reference AS target_section_reference, "
+        "n.target_legal_section_id AS target_legal_section_id, "
+        "n.primary_relation_type AS primary_relation_type, "
+        "n.relation_type AS relation_type, "
+        "n.resolution_status AS resolution_status, "
+        "n.classifier_policy_version AS classifier_policy_version, "
+        "n.raw_reference_text AS raw_reference_text, "
+        "n.normalized_reference_text AS normalized_reference_text, "
+        "n.context_checksum AS context_checksum, "
+        "n.temporal_evidence_status AS temporal_evidence_status, "
+        "coalesce(n.subsection_anchor_json, '') AS subsection_anchor_json, "
+        "coalesce(n.secondary_relation_signals_json, '') AS secondary_relation_signals_json, "
+        "coalesce(n.unresolved_target_evidence_json, '') AS unresolved_target_evidence_json "
+        "ORDER BY n.legal_reference_id LIMIT $limit",
+        {"law_codes": law_codes, "statuses": statuses, "limit": limit},
+    )
+    evidence: list[dict[str, Any]] = []
+    for row in rows:
+        evidence.append(
+            {
+                "legal_reference_id": row.get("legal_reference_id", ""),
+                "source_legal_section_id": row.get("source_legal_section_id", ""),
+                "source_legal_fragment_id": row.get("source_legal_fragment_id", ""),
+                "source_fragment_id": row.get("source_fragment_id", ""),
+                "law_code": row.get("law_code", ""),
+                "target_law_code": row.get("target_law_code", ""),
+                "target_section_reference": row.get("target_section_reference", ""),
+                "target_legal_section_id": row.get("target_legal_section_id", ""),
+                "primary_relation_type": row.get("primary_relation_type") or row.get("relation_type", ""),
+                "resolution_status": row.get("resolution_status", ""),
+                "classifier_policy_version": row.get("classifier_policy_version", ""),
+                "raw_reference_text": row.get("raw_reference_text", ""),
+                "normalized_reference_text": row.get("normalized_reference_text", ""),
+                "context_checksum": row.get("context_checksum", ""),
+                "temporal_evidence_status": row.get("temporal_evidence_status", ""),
+                "subsection_anchor": _json_property(row.get("subsection_anchor_json")),
+                "secondary_relation_signals": _json_property(row.get("secondary_relation_signals_json"), []),
+                "unresolved_target_evidence": _json_property(row.get("unresolved_target_evidence_json")),
+            }
+        )
+    return evidence
+
+
+def _collect_sample_edges_by_relation_type(
+    client: Any,
+    *,
+    law_codes: list[str],
+    limit: int,
+) -> dict[str, list[dict[str, Any]]]:
+    samples: dict[str, list[dict[str, Any]]] = {}
+    for relation_type in RELATION_TYPES:
+        rows = client.read(
+            "MATCH (s:LegalSection)-[r]->(t:LegalSection) "
+            "WHERE type(r) = $relation_type "
+            "AND (size($law_codes) = 0 OR s.law_code IN $law_codes) "
+            "RETURN s.legal_section_id AS source_legal_section_id, "
+            "t.legal_section_id AS target_legal_section_id, "
+            "r.legal_reference_id AS legal_reference_id, "
+            "r.classifier_policy_version AS classifier_policy_version, "
+            "r.temporal_evidence_status AS temporal_evidence_status "
+            "ORDER BY legal_reference_id LIMIT $limit",
+            {"law_codes": law_codes, "relation_type": relation_type, "limit": limit},
+        )
+        samples[relation_type] = [
+            {
+                "relation_type": relation_type,
+                "source_legal_section_id": row.get("source_legal_section_id", ""),
+                "target_legal_section_id": row.get("target_legal_section_id", ""),
+                "legal_reference_id": row.get("legal_reference_id", ""),
+                "classifier_policy_version": row.get("classifier_policy_version", ""),
+                "temporal_evidence_status": row.get("temporal_evidence_status", ""),
+            }
+            for row in rows
+        ]
+    return samples
+
+
+def _collect_top_unresolved_targets(client: Any, *, law_codes: list[str], limit: int) -> list[dict[str, Any]]:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE (size($law_codes) = 0 OR n.law_code IN $law_codes) "
+        "AND n.resolution_status <> 'resolved' "
+        "RETURN n.target_law_code AS target_law_code, "
+        "n.target_section_reference AS target_section_reference, "
+        "n.resolution_status AS resolution_status, "
+        "count(n) AS count "
+        "ORDER BY count DESC, target_law_code, target_section_reference, resolution_status "
+        "LIMIT $limit",
+        {"law_codes": law_codes, "limit": limit},
+    )
+    return [
+        {
+            "target_law_code": row.get("target_law_code", ""),
+            "target_section_reference": row.get("target_section_reference", ""),
+            "resolution_status": row.get("resolution_status", ""),
+            "count": int(row.get("count", 0) or 0),
+        }
+        for row in rows
+    ]
+
+
+def _collect_source_to_relation_coverage(client: Any, *, law_codes: list[str]) -> dict[str, Any]:
+    source_rows = client.read(
+        "MATCH (sf:SourceFragment) "
+        "WHERE size($law_codes) = 0 OR sf.law_code IN $law_codes "
+        "RETURN sf.law_code AS law_code, count(sf) AS source_fragment_count "
+        "ORDER BY law_code",
+        {"law_codes": law_codes},
+    )
+    relation_rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+        "RETURN n.law_code AS law_code, "
+        "coalesce(n.primary_relation_type, n.relation_type, 'CITES') AS relation_type, "
+        "count(n) AS count "
+        "ORDER BY law_code, relation_type",
+        {"law_codes": law_codes},
+    )
+    coverage: dict[str, Any] = {
+        "selected_law_codes": sorted(law_codes),
+        "by_law_code": {},
+    }
+    for row in source_rows:
+        law_code = str(row.get("law_code", ""))
+        coverage["by_law_code"][law_code] = {
+            "source_fragment_count": int(row.get("source_fragment_count", 0) or 0),
+            "reference_count": 0,
+            "counts_by_relation_type": _complete_counts({}, RELATION_TYPES),
+        }
+    for row in relation_rows:
+        law_code = str(row.get("law_code", ""))
+        relation_type = str(row.get("relation_type") or "")
+        count = int(row.get("count", 0) or 0)
+        law_coverage = coverage["by_law_code"].setdefault(
+            law_code,
+            {
+                "source_fragment_count": 0,
+                "reference_count": 0,
+                "counts_by_relation_type": _complete_counts({}, RELATION_TYPES),
+            },
+        )
+        if relation_type in RELATION_TYPES:
+            law_coverage["counts_by_relation_type"][relation_type] += count
+            law_coverage["reference_count"] += count
+    return coverage
+
+
+def _collect_relationship_fanout_summary(client: Any, *, law_codes: list[str], limit: int) -> dict[str, Any]:
+    rows = client.read(
+        "MATCH (s:LegalSection)-[r]->(:LegalSection) "
+        "WHERE type(r) IN $relation_types "
+        "AND (size($law_codes) = 0 OR s.law_code IN $law_codes) "
+        "WITH s.legal_section_id AS legal_section_id, count(r) AS fanout "
+        "RETURN count(legal_section_id) AS source_section_count, "
+        "coalesce(max(fanout), 0) AS max_fanout, "
+        "coalesce(avg(fanout), 0.0) AS avg_fanout, "
+        "collect({legal_section_id: legal_section_id, fanout: fanout})[0..$limit] AS top_fanout_sections",
+        {"law_codes": law_codes, "relation_types": list(RELATION_TYPES), "limit": limit},
+    )
+    row = rows[0] if rows else {}
+    return {
+        "source_section_count": int(row.get("source_section_count", 0) or 0),
+        "max_fanout": int(row.get("max_fanout", 0) or 0),
+        "avg_fanout": float(row.get("avg_fanout", 0.0) or 0.0),
+        "top_fanout_sections": [
+            {"legal_section_id": str(item.get("legal_section_id", "")), "fanout": int(item.get("fanout", 0) or 0)}
+            for item in row.get("top_fanout_sections", [])
+            if isinstance(item, dict)
+        ],
+    }
+
+
+def _collect_temporal_metadata_completeness(
+    client: Any,
+    *,
+    law_codes: list[str],
+    selected_scope: dict[str, Any],
+) -> dict[str, Any]:
+    fields = (
+        "effective_from",
+        "effective_until",
+        "publication_date",
+        "source_version_id",
+        "source_revision_marker",
+        "temporal_context_text",
+        "temporal_context_checksum",
+    )
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        "WHERE size($law_codes) = 0 OR n.law_code IN $law_codes "
+        "RETURN coalesce(n.primary_relation_type, n.relation_type, 'CITES') AS relation_type, "
+        "coalesce(n.temporal_evidence_status, 'not_applicable') AS temporal_evidence_status, "
+        "n.effective_from AS effective_from, "
+        "n.effective_until AS effective_until, "
+        "n.publication_date AS publication_date, "
+        "n.source_version_id AS source_version_id, "
+        "n.source_revision_marker AS source_revision_marker, "
+        "n.temporal_context_text AS temporal_context_text, "
+        "n.temporal_context_checksum AS temporal_context_checksum "
+        "ORDER BY relation_type",
+        {"law_codes": law_codes},
+    )
+    counts_by_status = _complete_counts({}, TEMPORAL_EVIDENCE_STATUSES)
+    counts_by_relation_type = {
+        relation_type: {"total": 0, "with_any_temporal_metadata": 0, "missing_required_temporal_fields": 0}
+        for relation_type in RELATION_TYPES
+    }
+    missing_field_summary = {field: 0 for field in fields}
+    for row in rows:
+        relation_type = str(row.get("relation_type") or "CITES")
+        if relation_type not in counts_by_relation_type:
+            continue
+        status = str(row.get("temporal_evidence_status") or "not_applicable")
+        if status not in counts_by_status:
+            status = "not_applicable"
+        counts_by_status[status] += 1
+        relation_counts = counts_by_relation_type[relation_type]
+        relation_counts["total"] += 1
+        missing_fields = [field for field in fields if not row.get(field)]
+        if len(missing_fields) < len(fields):
+            relation_counts["with_any_temporal_metadata"] += 1
+        relation_counts["missing_required_temporal_fields"] += len(missing_fields)
+        for field in missing_fields:
+            missing_field_summary[field] += 1
+    return {
+        "selected_scope": selected_scope,
+        "counts_by_temporal_evidence_status": counts_by_status,
+        "counts_by_relation_type": counts_by_relation_type,
+        "missing_field_summary": missing_field_summary,
+        "total_reference_evidence_count": len(rows),
+    }
+
+
+def _json_property(value: Any, default: Any | None = None) -> Any:
+    if default is None:
+        default = {}
+    if not value:
+        return default
+    try:
+        return json.loads(str(value))
+    except json.JSONDecodeError:
+        return {"raw": value}
 
 
 def _total_records(report: VerificationReport) -> int:

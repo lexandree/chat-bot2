@@ -85,6 +85,24 @@ Expected result:
 - fanout summary
 - temporal metadata completeness
 - deferred strategy for `EXCLUDES_IF`, `AMENDS`, and `SUPERSEDED_BY`
+- no generated answer fields such as `answer_text`, `answer`, or
+  `generated_answer`
+
+Required top-level artifact fields:
+
+- `artifact_id`
+- `selected_scope`
+- `classifier_policy_version`
+- `generated_at`
+- `counts_by_relation_type`
+- `counts_by_resolution_status`
+- `sample_edges_by_relation_type`
+- `sample_reference_evidence`
+- `top_unresolved_targets`
+- `source_to_relation_coverage`
+- `fanout_summary`
+- `temporal_metadata_completeness`
+- `deferred_relation_strategy`
 
 ## 6. Framework Boundary Check
 
@@ -92,7 +110,8 @@ Microsoft GraphRAG and Neo4j GraphRAG are design references in `003`.
 
 Acceptance does not require running either framework. Relationship acceptance is
 based on deterministic refresh, verification, quality artifacts, and documented
-framework boundaries.
+framework boundaries. Framework sidecar output is not a trusted graph writer,
+not a legacy migration path, and not part of relationship-quality acceptance.
 
 Future external graph-method research, including Microsoft GraphRAG sidecars or
 other framework comparison adapters, belongs in a separate feature after the
@@ -100,6 +119,9 @@ other framework comparison adapters, belongs in a separate feature after the
 must remain research evidence until a review-gated feature turns findings into
 deterministic fixtures, adjusted parser/classifier rules, documented taxonomy
 strategy, or candidate-only semantic workflows.
+
+No chatbot UX, answer generation, GraphRAG inference, old graph migration, or
+legacy comparison is part of this feature's implementation or acceptance path.
 
 ## 7. Validation
 
@@ -115,6 +137,31 @@ Live checks remain opt-in:
 export RUN_LIVE_NEO4J_TESTS=true
 python -m pytest tests/integration -m neo4j
 ```
+
+Latest validation on 2026-04-29:
+
+- `python -m compileall src tests`: passed.
+- `python -m pytest tests/unit`: 67 passed.
+- `python -m pytest tests/smoke`: 4 passed.
+- `RUN_LIVE_NEO4J_TESTS=true python -m pytest tests/integration -m neo4j`:
+  6 passed, 1 skipped, 1 deselected.
+- `python -m pytest tests/integration` without live flags: 8 skipped, confirming
+  live resources are opt-in.
+
+Default unit and smoke suites were run without live Neo4j, live Jina, paid APIs,
+remote notebooks, private corpora, GraphRAG sidecars, chatbot UX, or answer
+generation dependencies. Static boundary tests also verified that relationship
+source imports no chatbot, LLM extraction, or GraphRAG sidecar runtime modules
+and that acceptance docs do not promote legacy comparison or framework output
+as a source of truth.
+
+Real data smoke on 2026-04-29 used `data/legal_xml/AufenthG.xml`,
+`data/legal_xml/AsylG.xml`, and `data/legal_xml/BeschV.xml` to generate
+`data/import_preview/legal_xml_preview_003_smoke.json`. The selected scope
+loaded 356 source fragments/legal sections, produced 1804 relationship evidence
+records, resolved 1666 references into typed edges, left 138 references
+unresolved, and generated
+`data/relationship_quality/real_data_003_smoke.json`.
 
 ## 8. Completion Evidence
 

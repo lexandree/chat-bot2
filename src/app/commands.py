@@ -77,6 +77,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--fanout", type=int, default=25)
     run_parser.add_argument("--node-limit", type=int, default=100)
 
+    relationships_parser = subparsers.add_parser("relationships")
+    relationships_subparsers = relationships_parser.add_subparsers(dest="action")
+    refresh_parser = relationships_subparsers.add_parser("refresh")
+    refresh_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
+    refresh_parser.add_argument("--classifier-policy", default="legal-ref-context-v1")
+    relationship_verify_parser = relationships_subparsers.add_parser("verify")
+    relationship_verify_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
+    relationship_verify_parser.add_argument("--classifier-policy", default="")
+    quality_parser = relationships_subparsers.add_parser("quality")
+    quality_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
+    quality_parser.add_argument("--classifier-policy", default="")
+    quality_parser.add_argument("--output", required=True)
+
     embeddings_parser = subparsers.add_parser("embeddings")
     embeddings_subparsers = embeddings_parser.add_subparsers(dest="action")
     write_parser = embeddings_subparsers.add_parser("write")
@@ -246,7 +259,52 @@ def handle_traversal_command(args: argparse.Namespace, settings: FoundationSetti
     return 0, report.as_dict()
 
 
-def dispatch(argv: Sequence[str] | None = None, *, settings: FoundationSettings | None = None) -> tuple[int, dict[str, object]]:
+def handle_relationships_command(
+    args: argparse.Namespace,
+    settings: FoundationSettings,
+    *,
+    repository_factory=None,
+) -> tuple[int, dict[str, object]]:
+    client = None
+    if repository_factory is not None:
+        repo = repository_factory(settings)
+    else:
+        client = _graph_client_from_settings(settings)
+        repo = GraphDataRepository(client)
+    try:
+        if args.action == "refresh":
+            report = repo.refresh_relationships(
+                law_codes=args.law_codes,
+                classifier_policy_version=args.classifier_policy,
+            )
+            return (0 if report.status == "completed" else 1), to_plain_dict(report)
+        if args.action == "verify":
+            report = repo.verify_relationships(
+                law_codes=args.law_codes,
+                classifier_policy_version=args.classifier_policy,
+            )
+            return 0, to_plain_dict(report)
+        if args.action == "quality":
+            artifact = repo.relationship_quality_artifact(
+                law_codes=args.law_codes,
+                classifier_policy_version=args.classifier_policy,
+            )
+            output_path = write_json_artifact(args.output, artifact)
+            payload = artifact.as_dict()
+            payload["relationship_quality_artifact_path"] = str(output_path)
+            return 0, payload
+        raise ValueError(f"unknown relationships action: {args.action}")
+    finally:
+        if client is not None:
+            client.close()
+
+
+def dispatch(
+    argv: Sequence[str] | None = None,
+    *,
+    settings: FoundationSettings | None = None,
+    graph_repository_factory=None,
+) -> tuple[int, dict[str, object]]:
     parser = build_parser()
     args = parser.parse_args(argv)
     effective_settings = settings or load_settings()
@@ -264,6 +322,12 @@ def dispatch(argv: Sequence[str] | None = None, *, settings: FoundationSettings 
         return handle_references_command(args, effective_settings)
     if args.group == "traversal" and args.action == "run":
         return handle_traversal_command(args, effective_settings)
+    if args.group == "relationships":
+        return handle_relationships_command(
+            args,
+            effective_settings,
+            repository_factory=graph_repository_factory,
+        )
     parser.error("unknown command")
     raise AssertionError("unreachable")
 

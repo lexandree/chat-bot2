@@ -8,8 +8,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from graph.types import (
+    DEFERRED_RELATION_TYPES,
     GraphSnapshotArtifact,
     LegacyAufenthGBaselineGraphSnapshotArtifact,
+    RELATION_TYPES,
+    RESOLUTION_STATUSES,
+    RelationshipQualityArtifact,
+    TEMPORAL_EVIDENCE_STATUSES,
     SnapshotComparisonReport,
     to_plain_dict,
 )
@@ -35,7 +40,7 @@ def to_artifact_dict(record: Any) -> dict[str, Any]:
 
 
 def ensure_no_answer_fields(payload: Mapping[str, Any]) -> None:
-    present = FORBIDDEN_ANSWER_FIELDS.intersection(payload)
+    present = _find_forbidden_answer_fields(payload)
     if present:
         raise ValueError(f"structural retrieval artifact contains forbidden answer fields: {sorted(present)}")
 
@@ -44,6 +49,52 @@ def structural_retrieval_artifact(record: Any) -> dict[str, Any]:
     payload = to_artifact_dict(record)
     ensure_no_answer_fields(payload)
     return payload
+
+
+def relationship_quality_artifact(record: Any) -> dict[str, Any]:
+    payload = to_artifact_dict(record)
+    ensure_no_answer_fields(payload)
+    return payload
+
+
+def build_relationship_quality_artifact(
+    *,
+    selected_scope: dict[str, Any],
+    classifier_policy_version: str,
+    generated_at: str,
+    counts_by_relation_type: dict[str, int],
+    counts_by_resolution_status: dict[str, int],
+    sample_edges_by_relation_type: dict[str, list[dict[str, Any]]],
+    sample_reference_evidence: list[dict[str, Any]],
+    top_unresolved_targets: list[dict[str, Any]],
+    source_to_relation_coverage: dict[str, Any],
+    fanout_summary: dict[str, Any],
+    temporal_metadata_completeness: dict[str, Any],
+    deferred_relation_strategy: dict[str, Any] | None = None,
+) -> RelationshipQualityArtifact:
+    normalized_payload = {
+        "selected_scope": _sorted_mapping(selected_scope),
+        "classifier_policy_version": classifier_policy_version,
+        "counts_by_relation_type": _complete_counts(counts_by_relation_type, RELATION_TYPES),
+        "counts_by_resolution_status": _complete_counts(counts_by_resolution_status, RESOLUTION_STATUSES),
+        "sample_edges_by_relation_type": _normalize_samples_by_relation(sample_edges_by_relation_type),
+        "sample_reference_evidence": _normalize_sample_list(sample_reference_evidence),
+        "top_unresolved_targets": _normalize_sample_list(top_unresolved_targets),
+        "source_to_relation_coverage": _sorted_mapping(source_to_relation_coverage),
+        "fanout_summary": _sorted_mapping(fanout_summary),
+        "temporal_metadata_completeness": _normalize_temporal_completeness(
+            temporal_metadata_completeness,
+            selected_scope=selected_scope,
+        ),
+        "deferred_relation_strategy": _deferred_relation_strategy(deferred_relation_strategy),
+    }
+    ensure_no_answer_fields(normalized_payload)
+    artifact_id = _stable_digest(normalized_payload, prefix="relationship-quality")
+    return RelationshipQualityArtifact(
+        artifact_id=artifact_id,
+        generated_at=generated_at,
+        **normalized_payload,
+    )
 
 
 def build_graph_snapshot_artifact(
@@ -155,6 +206,118 @@ def write_json_artifact(path: str | Path, payload: Mapping[str, Any] | Any) -> P
         encoding="utf-8",
     )
     return output
+
+
+def _find_forbidden_answer_fields(value: Any) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, Mapping):
+        found.update(FORBIDDEN_ANSWER_FIELDS.intersection(str(key) for key in value.keys()))
+        for child in value.values():
+            found.update(_find_forbidden_answer_fields(child))
+    elif isinstance(value, list | tuple):
+        for child in value:
+            found.update(_find_forbidden_answer_fields(child))
+    return found
+
+
+def _complete_counts(counts: Mapping[str, int], keys: tuple[str, ...]) -> dict[str, int]:
+    return {key: int(counts.get(key, 0) or 0) for key in keys}
+
+
+def _normalize_samples_by_relation(
+    samples: Mapping[str, list[dict[str, Any]]],
+    *,
+    limit: int = 5,
+) -> dict[str, list[dict[str, Any]]]:
+    return {
+        relation_type: _normalize_sample_list(samples.get(relation_type, []), limit=limit)
+        for relation_type in RELATION_TYPES
+    }
+
+
+def _normalize_sample_list(samples: list[dict[str, Any]], *, limit: int = 10) -> list[dict[str, Any]]:
+    return [
+        _sorted_mapping(item)
+        for item in sorted(samples, key=_stable_item)[:limit]
+    ]
+
+
+def _sorted_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for key in sorted(value):
+        item = value[key]
+        if isinstance(item, Mapping):
+            normalized[str(key)] = _sorted_mapping(item)
+        elif isinstance(item, list):
+            normalized[str(key)] = [
+                _sorted_mapping(child) if isinstance(child, Mapping) else child for child in item
+            ]
+        else:
+            normalized[str(key)] = item
+    return normalized
+
+
+def _normalize_temporal_completeness(
+    payload: Mapping[str, Any],
+    *,
+    selected_scope: dict[str, Any],
+) -> dict[str, Any]:
+    counts_by_status = _complete_counts(
+        payload.get("counts_by_temporal_evidence_status", {})
+        if isinstance(payload.get("counts_by_temporal_evidence_status"), Mapping)
+        else {},
+        TEMPORAL_EVIDENCE_STATUSES,
+    )
+    raw_relation_counts = (
+        payload.get("counts_by_relation_type")
+        if isinstance(payload.get("counts_by_relation_type"), Mapping)
+        else {}
+    )
+    relation_counts: dict[str, dict[str, int]] = {}
+    for relation_type in RELATION_TYPES:
+        raw = raw_relation_counts.get(relation_type, {}) if isinstance(raw_relation_counts, Mapping) else {}
+        raw = raw if isinstance(raw, Mapping) else {}
+        relation_counts[relation_type] = {
+            "total": int(raw.get("total", 0) or 0),
+            "with_any_temporal_metadata": int(raw.get("with_any_temporal_metadata", 0) or 0),
+            "missing_required_temporal_fields": int(raw.get("missing_required_temporal_fields", 0) or 0),
+        }
+    missing_field_summary = payload.get("missing_field_summary", {})
+    if not isinstance(missing_field_summary, Mapping):
+        missing_field_summary = {}
+    return {
+        "selected_scope": _sorted_mapping(payload.get("selected_scope", selected_scope)),
+        "counts_by_temporal_evidence_status": counts_by_status,
+        "counts_by_relation_type": relation_counts,
+        "missing_field_summary": {
+            field: int(missing_field_summary.get(field, 0) or 0)
+            for field in (
+                "effective_from",
+                "effective_until",
+                "publication_date",
+                "source_version_id",
+                "source_revision_marker",
+                "temporal_context_text",
+                "temporal_context_checksum",
+            )
+        },
+        "total_reference_evidence_count": int(payload.get("total_reference_evidence_count", 0) or 0),
+    }
+
+
+def _deferred_relation_strategy(payload: dict[str, Any] | None) -> dict[str, Any]:
+    raw = payload or {}
+    strategy = {
+        relation_type: raw.get(
+            relation_type,
+            {
+                "strategy": "recognized_and_counted_when_observed",
+                "trusted_edge_support": "deferred_until_source_strategy_is_sufficient",
+            },
+        )
+        for relation_type in DEFERRED_RELATION_TYPES
+    }
+    return _sorted_mapping(strategy)
 
 
 def _stable_digest(payload: Mapping[str, Any], *, prefix: str) -> str:
