@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from graph.types import DeletionReport, EmbeddingRunReport, LoadRunReport, VerificationReport
+from graph.types import DeletionReport, EmbeddingRunReport, LoadRunReport, UNIT_STATUSES, VerificationReport
 from retrieval.embedding_profile import EmbeddingProfile
 
 
@@ -25,6 +25,11 @@ def build_load_report(
         legal_section_count=len(structural_graph.get("legal_sections", [])),
         legal_reference_count=len(references),
         unresolved_reference_count=sum(1 for item in references if item.get("resolution_status") != "resolved"),
+        counts_by_source_unit_status=_count_records(
+            structural_graph.get("legal_sections", []),
+            "unit_status",
+            UNIT_STATUSES,
+        ),
     )
 
 
@@ -44,12 +49,25 @@ def build_verification_report(
         legal_fragment_count=counts.get("LegalFragment", 0),
         legal_reference_count=counts.get("LegalReference", 0),
         unresolved_reference_count=counts.get("UnresolvedLegalReference", 0),
+        counts_by_source_unit_status={
+            status: int(counts.get(f"LegalSection:{status}", 0) or 0)
+            for status in UNIT_STATUSES
+        },
         embedding_count=int(embedding.get("embedding_count", 0) or 0),
         embedding_profile_ids=[item for item in embedding.get("profile_ids", []) if item],
         vector_dimensions=[int(item) for item in embedding.get("vector_dimensions", []) if item],
         backend_names=[item for item in embedding.get("backend_names", []) if item],
         candidate_review_placeholders_present=True,
     )
+
+
+def _count_records(records: list[dict[str, Any]], key: str, allowed_keys: tuple[str, ...]) -> dict[str, int]:
+    counts = {allowed_key: 0 for allowed_key in allowed_keys}
+    for record in records:
+        value = str(record.get(key) or "")
+        if value in counts:
+            counts[value] += 1
+    return counts
 
 
 def build_deletion_report(

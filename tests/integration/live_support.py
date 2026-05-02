@@ -27,7 +27,7 @@ def build_live_relationship_test_preview() -> dict[str, Any]:
         ),
         (
             "2",
-            "Begriffe",
+            "(weggefallen)",
             "Aufenthalt im Sinne des § 1 TestRelG ist der tatsaechliche Aufenthalt.",
         ),
         (
@@ -68,6 +68,7 @@ def build_live_relationship_test_preview() -> dict[str, Any]:
                 "body_text": body_text,
                 "order_index": int(index),
                 "checksum": sha256_text(body_text),
+                "status_marker_text": "(weggefallen)" if index == "2" else "",
             }
         )
     return {

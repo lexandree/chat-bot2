@@ -27,6 +27,10 @@ class LegalXmlSection:
     body_text: str
     source_uri: str
     publication_date: str = ""
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    build_date: str = ""
+    status_marker_text: str = ""
 
 
 def normalize_whitespace(text: str) -> str:
@@ -54,6 +58,14 @@ def _first_text(node: ET.Element | None, name: str) -> str:
     if child is None:
         return ""
     return normalize_whitespace("".join(child.itertext()))
+
+
+def _first_text_any(node: ET.Element | None, names: tuple[str, ...]) -> str:
+    for name in names:
+        value = _first_text(node, name)
+        if value:
+            return value
+    return ""
 
 
 def _parse_root(path: Path) -> ET.Element:
@@ -93,6 +105,10 @@ def parse_legal_xml_file(
         except LegalXmlImportError:
             continue
         title = _first_text(metadata, "titel")
+        source_version_id = _first_text_any(metadata, ("fassung", "version", "source-version-id"))
+        source_revision_marker = _first_text_any(metadata, ("standangabe", "stand", "revision"))
+        build_date = _first_text_any(metadata, ("build-date", "build_date", "datenstand"))
+        status_marker_text = _first_text_any(metadata, ("status", "status-marker", "status_marker"))
         text_node = norm.find("textdaten/text")
         body_text = normalize_whitespace("".join(text_node.itertext())) if text_node is not None else ""
         if not body_text:
@@ -109,6 +125,10 @@ def parse_legal_xml_file(
                 body_text=body_text,
                 source_uri=str(source_path),
                 publication_date=publication_date,
+                source_version_id=source_version_id,
+                source_revision_marker=source_revision_marker,
+                build_date=build_date,
+                status_marker_text=status_marker_text,
             )
         )
     return sections

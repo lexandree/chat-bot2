@@ -34,6 +34,10 @@ def build_structural_legal_graph(preview: dict[str, Any]) -> dict[str, list[dict
         law_code = str(source_fragment["law_code"])
         section_reference = str(source_fragment["section_reference"])
         document = _source_document_for_fragment(preview, str(source_fragment["source_document_id"]))
+        source_status = _source_status(source_fragment, document)
+        source_version_id = _source_version_id(source_fragment, document)
+        source_revision_marker = _source_revision_marker(source_fragment, document)
+        build_date = _build_date(source_fragment, document)
         legal_acts.setdefault(
             law_code,
             LegalAct(
@@ -60,6 +64,16 @@ def build_structural_legal_graph(preview: dict[str, Any]) -> dict[str, list[dict
                 valid_from=str(document.get("effective_date", "")),
                 version_identity="current",
                 is_current=True,
+                unit_status=source_status["unit_status"],
+                status_marker_text=source_status["status_marker_text"],
+                source_document_id=str(source_fragment.get("source_document_id", "")),
+                source_fragment_id=str(source_fragment.get("source_fragment_id", "")),
+                source_version_id=source_version_id,
+                source_revision_marker=source_revision_marker,
+                build_date=build_date,
+                content_checksum=str(
+                    source_fragment.get("checksum") or sha256_text(str(source_fragment.get("body_text", "")))
+                ),
             ),
         )
         fragment_id = legal_fragment_id(law_code, section_reference, 1)
@@ -189,30 +203,50 @@ def _resolve_candidate(
     *,
     ordinal: int,
     selected_law_codes: set[str],
-    section_index: dict[tuple[str, str], list[str]],
+    section_index: dict[tuple[str, str], list[dict[str, str]]],
 ) -> LegalReference:
-    target_law_code = candidate.target_law_code or candidate.law_code
-    target_section_reference = normalize_section_reference(candidate.target_section_reference)
+    target_law_code = candidate.target_law_code
+    target_section_reference = (
+        normalize_section_reference(candidate.target_section_reference)
+        if candidate.target_section_reference
+        else ""
+    )
     target_key = (target_law_code, target_section_reference)
     target_candidates = section_index.get(target_key, [])
     target_legal_section_id = ""
     unresolved_target_evidence: dict[str, Any] = {}
-    if target_law_code not in selected_law_codes:
+    target_unit_status = ""
+    unresolved_reason = ""
+    if not target_law_code and target_section_reference:
+        resolution_status = "unresolved"
+        unresolved_reason = "target_without_law_code"
+        unresolved_target_evidence = _unresolved_evidence(candidate, reason=unresolved_reason)
+    elif not target_section_reference:
+        resolution_status = "unresolved"
+        unresolved_reason = "parse_incomplete"
+        unresolved_target_evidence = _unresolved_evidence(candidate, reason=unresolved_reason)
+    elif target_law_code not in selected_law_codes:
         resolution_status = "out_of_scope"
-        unresolved_target_evidence = _unresolved_evidence(candidate, reason="out_of_scope")
+        target_unit_status = "out_of_scope_law"
+        unresolved_reason = "out_of_scope_law"
+        unresolved_target_evidence = _unresolved_evidence(candidate, reason=unresolved_reason)
     elif len(target_candidates) == 1:
         resolution_status = "resolved"
-        target_legal_section_id = target_candidates[0]
+        target_legal_section_id = target_candidates[0]["legal_section_id"]
+        target_unit_status = target_candidates[0]["unit_status"] or "active"
     elif len(target_candidates) > 1:
         resolution_status = "ambiguous"
+        unresolved_reason = "ambiguous_target"
         unresolved_target_evidence = _unresolved_evidence(
             candidate,
-            reason="ambiguous",
-            candidate_legal_section_ids=target_candidates,
+            reason=unresolved_reason,
+            candidate_legal_section_ids=[item["legal_section_id"] for item in target_candidates],
         )
     else:
         resolution_status = "unresolved"
-        unresolved_target_evidence = _unresolved_evidence(candidate, reason="not_found")
+        target_unit_status = "missing_target_in_corpus"
+        unresolved_reason = "missing_target_in_corpus"
+        unresolved_target_evidence = _unresolved_evidence(candidate, reason=unresolved_reason)
 
     return LegalReference(
         legal_reference_id=_legal_reference_id(candidate, ordinal=ordinal),
@@ -225,6 +259,8 @@ def _resolve_candidate(
         raw_reference_text=candidate.raw_reference_text,
         normalized_reference_text=candidate.normalized_reference_text,
         target_legal_section_id=target_legal_section_id,
+        target_unit_status=target_unit_status,
+        unresolved_reason=unresolved_reason,
         subsection_anchor=candidate.subsection_anchor,
         context_before=candidate.context_before,
         context_text=candidate.context_text,
@@ -241,14 +277,15 @@ def _resolve_candidate(
         publication_date=candidate.publication_date,
         source_version_id=candidate.source_version_id,
         source_revision_marker=candidate.source_revision_marker,
+        build_date=candidate.build_date,
         temporal_context_text=candidate.temporal_context_text,
         temporal_context_checksum=candidate.temporal_context_checksum,
         temporal_evidence_status=candidate.temporal_evidence_status,
     )
 
 
-def _section_index(legal_sections: Iterable[dict[str, Any]]) -> dict[tuple[str, str], list[str]]:
-    index: dict[tuple[str, str], list[str]] = {}
+def _section_index(legal_sections: Iterable[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, str]]]:
+    index: dict[tuple[str, str], list[dict[str, str]]] = {}
     for section in legal_sections:
         law_code = str(section.get("law_code", ""))
         reference = normalize_section_reference(
@@ -256,9 +293,18 @@ def _section_index(legal_sections: Iterable[dict[str, Any]]) -> dict[tuple[str, 
         )
         section_id = str(section.get("legal_section_id", ""))
         if law_code and reference and section_id:
-            index.setdefault((law_code, reference), []).append(section_id)
+            index.setdefault((law_code, reference), []).append(
+                {
+                    "legal_section_id": section_id,
+                    "unit_status": str(section.get("unit_status") or "active"),
+                }
+            )
     for key, values in list(index.items()):
-        index[key] = sorted(set(values))
+        deduped = {
+            item["legal_section_id"]: item
+            for item in values
+        }
+        index[key] = [deduped[section_id] for section_id in sorted(deduped)]
     return index
 
 
@@ -289,6 +335,7 @@ def _temporal_metadata(fragment: dict[str, Any], document: dict[str, Any]) -> di
         "source_revision_marker": str(
             fragment.get("source_revision_marker") or document.get("source_revision_marker") or ""
         ),
+        "build_date": _build_date(fragment, document),
         "temporal_metadata_expected": bool(
             fragment.get("temporal_metadata_expected") or document.get("temporal_metadata_expected") or False
         ),
@@ -303,7 +350,7 @@ def _unresolved_evidence(
 ) -> dict[str, Any]:
     evidence: dict[str, Any] = {
         "reason": reason,
-        "target_law_code": candidate.target_law_code or candidate.law_code,
+        "target_law_code": candidate.target_law_code,
         "target_section_reference": candidate.target_section_reference,
         "raw_reference_text": candidate.raw_reference_text,
         "normalized_reference_text": candidate.normalized_reference_text,
@@ -334,3 +381,62 @@ def _source_document_for_fragment(preview: dict[str, Any], source_document_id: s
         if document.get("source_document_id") == source_document_id:
             return document
     return {}
+
+
+_INACTIVE_MARKERS = ("(weggefallen)", "weggefallen", "aufgehoben", "außer kraft", "ausser kraft")
+
+
+def _source_status(fragment: dict[str, Any], document: dict[str, Any]) -> dict[str, str]:
+    for value in (
+        fragment.get("status_marker_text"),
+        fragment.get("unit_status_marker"),
+        fragment.get("source_status"),
+        document.get("status_marker_text"),
+        document.get("source_status"),
+        fragment.get("title"),
+    ):
+        marker = _inactive_marker(str(value or ""))
+        if marker:
+            return {"unit_status": "inactive", "status_marker_text": marker}
+    body_marker = _leading_body_status_marker(str(fragment.get("body_text", "")))
+    if body_marker:
+        return {"unit_status": "inactive", "status_marker_text": body_marker}
+    return {"unit_status": "active", "status_marker_text": ""}
+
+
+def _inactive_marker(value: str) -> str:
+    normalized = value.strip()
+    lowered = normalized.lower()
+    for marker in _INACTIVE_MARKERS:
+        if marker in lowered:
+            return normalized
+    return ""
+
+
+def _leading_body_status_marker(body_text: str) -> str:
+    normalized = " ".join(body_text.split())
+    lowered = normalized.lower()
+    for marker in _INACTIVE_MARKERS:
+        if lowered == marker or lowered.startswith(f"{marker}.") or lowered.startswith(f"{marker};"):
+            first_clause = normalized.split(".", 1)[0].split(";", 1)[0].strip()
+            if first_clause.lower() == marker:
+                return first_clause
+    return ""
+
+
+def _source_version_id(fragment: dict[str, Any], document: dict[str, Any]) -> str:
+    return str(fragment.get("source_version_id") or document.get("source_version_id") or "")
+
+
+def _source_revision_marker(fragment: dict[str, Any], document: dict[str, Any]) -> str:
+    return str(fragment.get("source_revision_marker") or document.get("source_revision_marker") or "")
+
+
+def _build_date(fragment: dict[str, Any], document: dict[str, Any]) -> str:
+    return str(
+        fragment.get("build_date")
+        or document.get("build_date")
+        or fragment.get("publication_date")
+        or document.get("publication_date")
+        or ""
+    )

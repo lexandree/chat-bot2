@@ -23,6 +23,7 @@ def test_load_report_counts_source_legal_and_unresolved_records() -> None:
     assert report.legal_section_count == 2
     assert report.legal_reference_count == 0
     assert report.unresolved_reference_count == 0
+    assert report.counts_by_source_unit_status == {"active": 2, "inactive": 0}
 
 
 def test_relationship_refresh_report_counts_and_failure_visibility() -> None:
@@ -39,6 +40,8 @@ def test_relationship_refresh_report_counts_and_failure_visibility() -> None:
         status="failed",
         counts_by_relation_type={"CITES": 2},
         counts_by_resolution_status={"resolved": 1, "unresolved": 1},
+        counts_by_target_unit_status={"active": 1, "missing_target_in_corpus": 1},
+        counts_by_unresolved_reason={"missing_target_in_corpus": 1},
         errors=["boom"],
     )
 
@@ -46,6 +49,8 @@ def test_relationship_refresh_report_counts_and_failure_visibility() -> None:
     assert report.created_reference_count == 2
     assert report.created_edge_count == 1
     assert report.failed_count == 1
+    assert report.counts_by_target_unit_status["missing_target_in_corpus"] == 1
+    assert report.counts_by_unresolved_reason["missing_target_in_corpus"] == 1
     assert report.errors == ["boom"]
 
 
@@ -59,6 +64,8 @@ def test_verification_report_assembly_includes_embedding_metadata_fields() -> No
             "LegalSection": 2,
             "LegalFragment": 2,
             "LegalReference": 1,
+            "LegalSection:active": 1,
+            "LegalSection:inactive": 1,
         },
         embedding={
             "embedding_count": 3,
@@ -72,6 +79,7 @@ def test_verification_report_assembly_includes_embedding_metadata_fields() -> No
     assert report.embedding_profile_ids == ["jina_v5_q8_1024_norm_v1"]
     assert report.vector_dimensions == [1024]
     assert report.backend_names == ["local_embedding_endpoint"]
+    assert report.counts_by_source_unit_status == {"active": 1, "inactive": 1}
 
 
 def test_deletion_report_records_scope_and_removed_count() -> None:

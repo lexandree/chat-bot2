@@ -9,6 +9,12 @@ class FakeQualityClient:
     def read(self, query: str, parameters: dict[str, Any]) -> list[dict[str, Any]]:
         if "collect(DISTINCT n.classifier_policy_version)" in query:
             return [{"versions": ["legal-ref-context-v1"]}]
+        if "MATCH (s:LegalSection)" in query and "coalesce(s.unit_status, 'active')" in query:
+            return [{"unit_status": "active", "count": 1}, {"unit_status": "inactive", "count": 1}]
+        if "AS target_unit_status, count(*) AS count" in query:
+            return [{"target_unit_status": "active", "count": 1}]
+        if "AND coalesce(n.unresolved_reason" in query:
+            return [{"unresolved_reason": "missing_target_in_corpus", "count": 1}]
         if "n.law_code AS law_code" in query and "coalesce(n.primary_relation_type" in query:
             return [{"law_code": "TestG", "relation_type": "CITES", "count": 1}]
         if "coalesce(n.primary_relation_type" in query and "count(n) AS count" in query:
@@ -38,6 +44,8 @@ class FakeQualityClient:
                     "target_law_code": "TestG",
                     "target_section_reference": "§ 2",
                     "target_legal_section_id": "legal-section:TestG:2:current",
+                    "target_unit_status": "active",
+                    "unresolved_reason": "",
                     "primary_relation_type": "CITES",
                     "relation_type": "CITES",
                     "resolution_status": "resolved",
@@ -45,6 +53,9 @@ class FakeQualityClient:
                     "raw_reference_text": "§ 2 TestG",
                     "normalized_reference_text": "§ 2",
                     "context_checksum": "abc",
+                    "source_version_id": "v1",
+                    "source_revision_marker": "build-2026-04-30",
+                    "build_date": "2026-04-30",
                     "temporal_evidence_status": "available",
                     "subsection_anchor_json": '{"section_reference":"§ 2"}',
                     "secondary_relation_signals_json": "[]",
@@ -53,6 +64,23 @@ class FakeQualityClient:
             ]
         if "n.resolution_status <> 'resolved'" in query:
             return []
+        if "n.unresolved_reason = 'missing_target_in_corpus'" in query:
+            return [
+                {
+                    "target_law_code": "TestG",
+                    "target_section_reference": "§ 99",
+                    "reason": "missing_target_in_corpus",
+                    "count": 1,
+                    "source_samples": [
+                        {
+                            "legal_reference_id": "legal-reference:missing",
+                            "source_legal_section_id": "legal-section:TestG:3:current",
+                            "source_fragment_id": "source-fragment:TestG:3",
+                            "raw_reference_text": "§ 99 TestG",
+                        }
+                    ],
+                }
+            ]
         if "MATCH (sf:SourceFragment)" in query:
             return [{"law_code": "TestG", "source_fragment_count": 2}]
         if "WITH s.legal_section_id AS legal_section_id" in query:
@@ -91,8 +119,12 @@ def test_relationship_quality_repository_collection_uses_graph_state() -> None:
     assert payload["classifier_policy_version"] == "legal-ref-context-v1"
     assert payload["counts_by_relation_type"]["CITES"] == 1
     assert payload["counts_by_resolution_status"]["resolved"] == 1
+    assert payload["counts_by_source_unit_status"]["inactive"] == 1
+    assert payload["counts_by_target_unit_status"]["active"] == 1
+    assert payload["counts_by_unresolved_reason"]["missing_target_in_corpus"] == 1
     assert payload["sample_edges_by_relation_type"]["CITES"][0]["legal_reference_id"] == "legal-reference:1"
     assert payload["sample_reference_evidence"][0]["subsection_anchor"] == {"section_reference": "§ 2"}
+    assert payload["top_missing_targets"][0]["reason"] == "missing_target_in_corpus"
     assert payload["source_to_relation_coverage"]["by_law_code"]["TestG"]["reference_count"] == 1
     assert payload["fanout_summary"]["max_fanout"] == 1
     assert payload["temporal_metadata_completeness"]["counts_by_temporal_evidence_status"]["available"] == 1

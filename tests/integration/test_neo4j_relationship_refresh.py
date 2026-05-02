@@ -54,6 +54,10 @@ def test_live_neo4j_relationship_refresh_idempotency_and_status_counts() -> None
     assert verified.counts_by_resolution_status["resolved"] == 2
     assert verified.counts_by_resolution_status["unresolved"] == 1
     assert verified.counts_by_resolution_status["out_of_scope"] == 1
+    assert first.counts_by_target_unit_status["inactive"] == 1
+    assert first.counts_by_unresolved_reason["missing_target_in_corpus"] == 1
+    assert verified.counts_by_target_unit_status["inactive"] == 1
+    assert verified.counts_by_unresolved_reason["out_of_scope_law"] == 1
     assert verified.counts_by_relation_type["CITES"] >= 1
     assert verified.counts_by_relation_type["DEFINES"] >= 1
 

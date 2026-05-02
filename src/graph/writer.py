@@ -14,6 +14,8 @@ TEMPORAL_EDGE_PROPERTIES = (
     "effective_until",
     "publication_date",
     "source_version_id",
+    "source_revision_marker",
+    "build_date",
     "temporal_evidence_status",
 )
 
@@ -99,6 +101,7 @@ class GraphWriter:
                 "classifier_policy_version": record.get("classifier_policy_version", ""),
                 "source_legal_section_id": record.get("source_legal_section_id", ""),
                 "target_legal_section_id": record.get("target_legal_section_id", ""),
+                "target_unit_status": record.get("target_unit_status", ""),
                 **{key: record.get(key, "") for key in TEMPORAL_EDGE_PROPERTIES},
             }
             self.client.write(

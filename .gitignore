@@ -24,6 +24,7 @@ data/import_preview/load_reports/
 data/snapshots/*.json
 data/comparisons/*.json
 data/relationship_quality/*.json
+data/corpus_readiness/*.json
 data/**/.gitkeep
 tmp/
 *.tmp

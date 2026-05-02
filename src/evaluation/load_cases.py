@@ -8,13 +8,19 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from graph.types import (
+    CorpusReadinessArtifact,
     DEFERRED_RELATION_TYPES,
     GraphSnapshotArtifact,
     LegacyAufenthGBaselineGraphSnapshotArtifact,
     RELATION_TYPES,
     RESOLUTION_STATUSES,
     RelationshipQualityArtifact,
+    STRUCTURE_CLASSES,
+    STRUCTURE_CLASS_RULES_VERSION,
+    TARGET_UNIT_STATUSES,
     TEMPORAL_EVIDENCE_STATUSES,
+    UNIT_STATUSES,
+    UNRESOLVED_REASONS,
     SnapshotComparisonReport,
     to_plain_dict,
 )
@@ -57,6 +63,12 @@ def relationship_quality_artifact(record: Any) -> dict[str, Any]:
     return payload
 
 
+def corpus_readiness_artifact(record: Any) -> dict[str, Any]:
+    payload = to_artifact_dict(record)
+    ensure_no_answer_fields(payload)
+    return payload
+
+
 def build_relationship_quality_artifact(
     *,
     selected_scope: dict[str, Any],
@@ -70,16 +82,24 @@ def build_relationship_quality_artifact(
     source_to_relation_coverage: dict[str, Any],
     fanout_summary: dict[str, Any],
     temporal_metadata_completeness: dict[str, Any],
+    counts_by_source_unit_status: dict[str, int] | None = None,
+    counts_by_target_unit_status: dict[str, int] | None = None,
+    counts_by_unresolved_reason: dict[str, int] | None = None,
+    top_missing_targets: list[dict[str, Any]] | None = None,
     deferred_relation_strategy: dict[str, Any] | None = None,
 ) -> RelationshipQualityArtifact:
     normalized_payload = {
         "selected_scope": _sorted_mapping(selected_scope),
         "classifier_policy_version": classifier_policy_version,
         "counts_by_relation_type": _complete_counts(counts_by_relation_type, RELATION_TYPES),
+        "counts_by_source_unit_status": _complete_counts(counts_by_source_unit_status or {}, UNIT_STATUSES),
+        "counts_by_target_unit_status": _complete_counts(counts_by_target_unit_status or {}, TARGET_UNIT_STATUSES),
         "counts_by_resolution_status": _complete_counts(counts_by_resolution_status, RESOLUTION_STATUSES),
+        "counts_by_unresolved_reason": _complete_counts(counts_by_unresolved_reason or {}, UNRESOLVED_REASONS),
         "sample_edges_by_relation_type": _normalize_samples_by_relation(sample_edges_by_relation_type),
         "sample_reference_evidence": _normalize_sample_list(sample_reference_evidence),
         "top_unresolved_targets": _normalize_sample_list(top_unresolved_targets),
+        "top_missing_targets": _normalize_top_missing_targets(top_missing_targets or []),
         "source_to_relation_coverage": _sorted_mapping(source_to_relation_coverage),
         "fanout_summary": _sorted_mapping(fanout_summary),
         "temporal_metadata_completeness": _normalize_temporal_completeness(
@@ -91,6 +111,50 @@ def build_relationship_quality_artifact(
     ensure_no_answer_fields(normalized_payload)
     artifact_id = _stable_digest(normalized_payload, prefix="relationship-quality")
     return RelationshipQualityArtifact(
+        artifact_id=artifact_id,
+        generated_at=generated_at,
+        **normalized_payload,
+    )
+
+
+def build_corpus_readiness_artifact(
+    *,
+    selected_scope: dict[str, Any],
+    generated_at: str,
+    counts_by_unit_status: dict[str, int],
+    counts_by_structure_class: dict[str, int],
+    active_unit_samples: list[dict[str, Any]],
+    inactive_unit_samples: list[dict[str, Any]],
+    complexity_summary: dict[str, Any],
+    excluded_semantic_candidates: dict[str, Any] | None = None,
+    structure_class_rules_version: str = STRUCTURE_CLASS_RULES_VERSION,
+) -> CorpusReadinessArtifact:
+    normalized_payload = {
+        "selected_scope": _sorted_mapping(selected_scope),
+        "structure_class_rules_version": structure_class_rules_version,
+        "counts_by_unit_status": _complete_counts(counts_by_unit_status, UNIT_STATUSES),
+        "counts_by_structure_class": _complete_counts(counts_by_structure_class, STRUCTURE_CLASSES),
+        "active_unit_samples": _normalize_sample_list(active_unit_samples),
+        "inactive_unit_samples": _normalize_sample_list(inactive_unit_samples),
+        "complexity_summary": _sorted_mapping(
+            {
+                "structure_class_rules_version": structure_class_rules_version,
+                **dict(complexity_summary),
+            }
+        ),
+        "excluded_semantic_candidates": _sorted_mapping(
+            excluded_semantic_candidates
+            or {
+                "LegalNorm": 0,
+                "Condition": 0,
+                "LegalEffect": 0,
+                "Exception": 0,
+            }
+        ),
+    }
+    ensure_no_answer_fields(normalized_payload)
+    artifact_id = _stable_digest(normalized_payload, prefix="corpus-readiness")
+    return CorpusReadinessArtifact(
         artifact_id=artifact_id,
         generated_at=generated_at,
         **normalized_payload,
@@ -240,6 +304,35 @@ def _normalize_sample_list(samples: list[dict[str, Any]], *, limit: int = 10) ->
         _sorted_mapping(item)
         for item in sorted(samples, key=_stable_item)[:limit]
     ]
+
+
+def _normalize_top_missing_targets(samples: list[dict[str, Any]], *, limit: int = 10) -> list[dict[str, Any]]:
+    normalized = []
+    for item in samples:
+        if str(item.get("reason", "")) != "missing_target_in_corpus":
+            continue
+        normalized.append(
+            _sorted_mapping(
+                {
+                    "target_law_code": str(item.get("target_law_code", "")),
+                    "target_section_reference": str(item.get("target_section_reference", "")),
+                    "reason": "missing_target_in_corpus",
+                    "count": int(item.get("count", 0) or 0),
+                    "source_samples": _normalize_sample_list(
+                        list(item.get("source_samples", [])) if isinstance(item.get("source_samples"), list) else [],
+                        limit=5,
+                    ),
+                }
+            )
+        )
+    return sorted(
+        normalized,
+        key=lambda item: (
+            -int(item["count"]),
+            item["target_law_code"],
+            item["target_section_reference"],
+        ),
+    )[:limit]
 
 
 def _sorted_mapping(value: Mapping[str, Any]) -> dict[str, Any]:

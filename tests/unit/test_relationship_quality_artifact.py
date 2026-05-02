@@ -3,7 +3,14 @@ from __future__ import annotations
 import pytest
 
 from evaluation.load_cases import build_relationship_quality_artifact, relationship_quality_artifact
-from graph.types import RELATION_TYPES, RESOLUTION_STATUSES, TEMPORAL_EVIDENCE_STATUSES
+from graph.types import (
+    RELATION_TYPES,
+    RESOLUTION_STATUSES,
+    TARGET_UNIT_STATUSES,
+    TEMPORAL_EVIDENCE_STATUSES,
+    UNIT_STATUSES,
+    UNRESOLVED_REASONS,
+)
 
 
 def test_relationship_quality_artifact_shape_and_all_relation_counts() -> None:
@@ -15,6 +22,9 @@ def test_relationship_quality_artifact_shape_and_all_relation_counts() -> None:
     assert payload["counts_by_relation_type"]["CITES"] == 1
     assert payload["counts_by_relation_type"]["SUPERSEDED_BY"] == 0
     assert set(payload["counts_by_resolution_status"]) == set(RESOLUTION_STATUSES)
+    assert set(payload["counts_by_source_unit_status"]) == set(UNIT_STATUSES)
+    assert set(payload["counts_by_target_unit_status"]) == set(TARGET_UNIT_STATUSES)
+    assert set(payload["counts_by_unresolved_reason"]) == set(UNRESOLVED_REASONS)
 
 
 def test_relationship_quality_artifact_samples_are_bounded_deterministic_and_no_answer_fields() -> None:
@@ -68,6 +78,58 @@ def test_temporal_metadata_completeness_minimum_shape() -> None:
         "temporal_context_text",
         "temporal_context_checksum",
     }
+
+
+def test_relationship_quality_artifact_top_missing_targets_are_filtered_and_bounded() -> None:
+    artifact = _artifact(
+        counts_by_source_unit_status={"active": 2, "inactive": 1},
+        counts_by_target_unit_status={"active": 1, "inactive": 1, "missing_target_in_corpus": 2},
+        counts_by_unresolved_reason={"missing_target_in_corpus": 2, "ambiguous_target": 1},
+        top_missing_targets=[
+            {
+                "target_law_code": "TestG",
+                "target_section_reference": "§ 99",
+                "reason": "missing_target_in_corpus",
+                "count": 2,
+                "source_samples": [
+                    {
+                        "legal_reference_id": "legal-reference:2",
+                        "source_legal_section_id": "legal-section:TestG:3:current",
+                        "source_fragment_id": "source-fragment:TestG:3",
+                        "raw_reference_text": "§ 99 TestG",
+                    }
+                ],
+            },
+            {
+                "target_law_code": "TestG",
+                "target_section_reference": "§ 6",
+                "reason": "ambiguous_target",
+                "count": 1,
+                "source_samples": [],
+            },
+        ],
+    )
+    payload = artifact.as_dict()
+
+    assert payload["counts_by_source_unit_status"]["inactive"] == 1
+    assert payload["counts_by_target_unit_status"]["missing_target_in_corpus"] == 2
+    assert payload["counts_by_unresolved_reason"]["ambiguous_target"] == 1
+    assert payload["top_missing_targets"] == [
+        {
+            "count": 2,
+            "reason": "missing_target_in_corpus",
+            "source_samples": [
+                {
+                    "legal_reference_id": "legal-reference:2",
+                    "raw_reference_text": "§ 99 TestG",
+                    "source_fragment_id": "source-fragment:TestG:3",
+                    "source_legal_section_id": "legal-section:TestG:3:current",
+                }
+            ],
+            "target_law_code": "TestG",
+            "target_section_reference": "§ 99",
+        }
+    ]
 
 
 def _artifact(**overrides):

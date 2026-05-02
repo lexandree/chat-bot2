@@ -10,7 +10,7 @@ import pytest
 
 from app.commands import dispatch
 from app.settings import FoundationSettings
-from evaluation.load_cases import build_relationship_quality_artifact
+from evaluation.load_cases import build_corpus_readiness_artifact, build_relationship_quality_artifact
 
 
 pytestmark = pytest.mark.smoke
@@ -139,6 +139,30 @@ def test_cli_relationships_quality_writes_artifact_with_injected_repository(tmp_
     assert "answer_text" not in artifact
 
 
+def test_cli_corpus_readiness_writes_artifact_with_injected_repository(tmp_path: Path) -> None:
+    output_path = tmp_path / "corpus_readiness.json"
+
+    exit_code, payload = dispatch(
+        [
+            "corpus",
+            "readiness",
+            "--law-code",
+            "TestG",
+            "--output",
+            str(output_path),
+        ],
+        settings=FoundationSettings(),
+        graph_repository_factory=lambda settings: FakeRelationshipRepository(),
+    )
+
+    artifact = json.loads(output_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert payload["corpus_readiness_artifact_path"] == str(output_path)
+    assert artifact["counts_by_unit_status"]["active"] == 1
+    assert artifact["counts_by_structure_class"]["simple_paragraph"] == 1
+    assert "answer_text" not in artifact
+
+
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = {
         "PATH": os.environ.get("PATH", ""),
@@ -168,4 +192,15 @@ class FakeRelationshipRepository:
             source_to_relation_coverage={},
             fanout_summary={},
             temporal_metadata_completeness={},
+        )
+
+    def corpus_readiness_artifact(self, *, law_codes: list[str]):
+        return build_corpus_readiness_artifact(
+            selected_scope={"law_codes": law_codes},
+            generated_at="2026-01-01T00:00:00Z",
+            counts_by_unit_status={"active": 1},
+            counts_by_structure_class={"simple_paragraph": 1},
+            active_unit_samples=[{"legal_section_id": "legal-section:TestG:1:current"}],
+            inactive_unit_samples=[],
+            complexity_summary={"total_unit_count": 1},
         )

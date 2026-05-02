@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dokumente>
+  <norm>
+    <metadaten>
+      <jurabk>StatusG</jurabk>
+      <kurzue>Statusgesetz</kurzue>
+      <enbez>§ 1</enbez>
+      <titel>Aktive Vorschrift</titel>
+      <ausfertigung-datum>2026-01-01</ausfertigung-datum>
+      <standangabe>build-2026-04-30</standangabe>
+      <fassung>v1</fassung>
+    </metadaten>
+    <textdaten>
+      <text>
+        <Content>Diese Vorschrift bleibt aktiv und verweist auf § 2 StatusG.</Content>
+      </text>
+    </textdaten>
+  </norm>
+  <norm>
+    <metadaten>
+      <jurabk>StatusG</jurabk>
+      <kurzue>Statusgesetz</kurzue>
+      <enbez>§ 2</enbez>
+      <titel>(weggefallen)</titel>
+      <ausfertigung-datum>2026-01-01</ausfertigung-datum>
+      <standangabe>build-2026-04-30</standangabe>
+      <fassung>v1</fassung>
+    </metadaten>
+    <textdaten>
+      <text>
+        <Content>(weggefallen)</Content>
+      </text>
+    </textdaten>
+  </norm>
+  <norm>
+    <metadaten>
+      <jurabk>StatusG</jurabk>
+      <kurzue>Statusgesetz</kurzue>
+      <enbez>§ 3</enbez>
+      <titel>Aufgehobene Vorschrift</titel>
+      <ausfertigung-datum>2026-01-01</ausfertigung-datum>
+      <status>aufgehoben</status>
+      <standangabe>build-2026-04-30</standangabe>
+      <fassung>v1</fassung>
+    </metadaten>
+    <textdaten>
+      <text>
+        <Content>aufgehoben.</Content>
+      </text>
+    </textdaten>
+  </norm>
+  <norm>
+    <metadaten>
+      <jurabk>StatusG</jurabk>
+      <kurzue>Statusgesetz</kurzue>
+      <enbez>§ 4</enbez>
+      <titel>Explanatory Marker Text</titel>
+      <ausfertigung-datum>2026-01-01</ausfertigung-datum>
+      <standangabe>build-2026-04-30</standangabe>
+      <fassung>v1</fassung>
+    </metadaten>
+    <textdaten>
+      <text>
+        <Content>Diese Vorschrift bleibt aktiv. Die frühere Fassung wurde aufgehoben.</Content>
+      </text>
+    </textdaten>
+  </norm>
+  <norm>
+    <metadaten>
+      <jurabk>StatusG</jurabk>
+      <kurzue>Statusgesetz</kurzue>
+      <enbez>§ 5</enbez>
+      <titel>Leading Body Marker</titel>
+      <ausfertigung-datum>2026-01-01</ausfertigung-datum>
+      <standangabe>build-2026-04-30</standangabe>
+      <fassung>v1</fassung>
+    </metadaten>
+    <textdaten>
+      <text>
+        <Content>außer Kraft.</Content>
+      </text>
+    </textdaten>
+  </norm>
+</dokumente>

@@ -15,5 +15,34 @@
       "fanout_limit": 25,
       "node_limit": 100
     }
+  ],
+  "corpus_boundary": [
+    {
+      "case_id": "inactive_existing_target",
+      "source_law_code": "TestG",
+      "source_section_reference": "§ 1",
+      "target_law_code": "TestG",
+      "target_section_reference": "§ 2",
+      "expected_resolution_status": "resolved",
+      "expected_target_unit_status": "inactive"
+    },
+    {
+      "case_id": "missing_target_in_corpus",
+      "source_law_code": "TestG",
+      "source_section_reference": "§ 3",
+      "target_law_code": "TestG",
+      "target_section_reference": "§ 99",
+      "expected_resolution_status": "unresolved",
+      "expected_unresolved_reason": "missing_target_in_corpus"
+    },
+    {
+      "case_id": "out_of_scope_law",
+      "source_law_code": "TestG",
+      "source_section_reference": "§ 4",
+      "target_law_code": "OtherG",
+      "target_section_reference": "§ 1",
+      "expected_resolution_status": "out_of_scope",
+      "expected_unresolved_reason": "out_of_scope_law"
+    }
   ]
 }

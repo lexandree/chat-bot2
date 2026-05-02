@@ -90,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     quality_parser.add_argument("--classifier-policy", default="")
     quality_parser.add_argument("--output", required=True)
 
+    corpus_parser = subparsers.add_parser("corpus")
+    corpus_subparsers = corpus_parser.add_subparsers(dest="action")
+    readiness_parser = corpus_subparsers.add_parser("readiness")
+    readiness_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
+    readiness_parser.add_argument("--output", required=True)
+
     embeddings_parser = subparsers.add_parser("embeddings")
     embeddings_subparsers = embeddings_parser.add_subparsers(dest="action")
     write_parser = embeddings_subparsers.add_parser("write")
@@ -299,6 +305,31 @@ def handle_relationships_command(
             client.close()
 
 
+def handle_corpus_command(
+    args: argparse.Namespace,
+    settings: FoundationSettings,
+    *,
+    repository_factory=None,
+) -> tuple[int, dict[str, object]]:
+    client = None
+    if repository_factory is not None:
+        repo = repository_factory(settings)
+    else:
+        client = _graph_client_from_settings(settings)
+        repo = GraphDataRepository(client)
+    try:
+        if args.action == "readiness":
+            artifact = repo.corpus_readiness_artifact(law_codes=args.law_codes)
+            output_path = write_json_artifact(args.output, artifact)
+            payload = artifact.as_dict()
+            payload["corpus_readiness_artifact_path"] = str(output_path)
+            return 0, payload
+        raise ValueError(f"unknown corpus action: {args.action}")
+    finally:
+        if client is not None:
+            client.close()
+
+
 def dispatch(
     argv: Sequence[str] | None = None,
     *,
@@ -324,6 +355,12 @@ def dispatch(
         return handle_traversal_command(args, effective_settings)
     if args.group == "relationships":
         return handle_relationships_command(
+            args,
+            effective_settings,
+            repository_factory=graph_repository_factory,
+        )
+    if args.group == "corpus":
+        return handle_corpus_command(
             args,
             effective_settings,
             repository_factory=graph_repository_factory,

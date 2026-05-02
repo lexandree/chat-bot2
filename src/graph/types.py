@@ -24,8 +24,26 @@ MANDATORY_CLASSIFIER_RELATION_TYPES = (
 )
 DEFERRED_RELATION_TYPES = ("EXCLUDES_IF", "AMENDS", "SUPERSEDED_BY")
 RESOLUTION_STATUSES = ("resolved", "out_of_scope", "unresolved", "ambiguous")
+UNRESOLVED_REASONS = (
+    "missing_target_in_corpus",
+    "out_of_scope_law",
+    "ambiguous_target",
+    "parse_incomplete",
+    "target_without_law_code",
+)
+UNIT_STATUSES = ("active", "inactive")
+TARGET_UNIT_STATUSES = ("active", "inactive", "missing_target_in_corpus", "out_of_scope_law")
 TEMPORAL_EVIDENCE_STATUSES = ("available", "partial", "not_available", "not_applicable")
 CLASSIFIER_POLICY_VERSION = "legal-ref-context-v1"
+STRUCTURE_CLASS_RULES_VERSION = "structure-class-rules-v1"
+STRUCTURE_CLASSES = (
+    "inactive_skipped",
+    "mixed_content",
+    "definition_heavy",
+    "list_heavy",
+    "simple_paragraph",
+    "unknown",
+)
 
 
 def to_plain_dict(value: Any) -> Any:
@@ -66,6 +84,9 @@ class SourceDocument:
     publication_date: str = ""
     effective_date: str = ""
     retrieved_at: str = ""
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    build_date: str = ""
     freshness_metadata: dict[str, Any] = field(default_factory=dict)
     checksum: str = ""
 
@@ -80,6 +101,10 @@ class SourceFragment:
     body_text: str
     order_index: int
     checksum: str
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    build_date: str = ""
+    status_marker_text: str = ""
 
 
 @dataclass(slots=True)
@@ -107,6 +132,14 @@ class LegalSection:
     valid_to: str = ""
     version_identity: str = "current"
     is_current: bool = True
+    unit_status: Literal["active", "inactive"] = "active"
+    status_marker_text: str = ""
+    source_document_id: str = ""
+    source_fragment_id: str = ""
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    build_date: str = ""
+    content_checksum: str = ""
 
 
 @dataclass(slots=True)
@@ -131,6 +164,8 @@ class LegalReference:
     raw_reference_text: str = ""
     normalized_reference_text: str = ""
     target_legal_section_id: str = ""
+    target_unit_status: str = ""
+    unresolved_reason: str = ""
     subsection_anchor: dict[str, Any] = field(default_factory=dict)
     context_before: str = ""
     context_text: str = ""
@@ -147,6 +182,7 @@ class LegalReference:
     publication_date: str = ""
     source_version_id: str = ""
     source_revision_marker: str = ""
+    build_date: str = ""
     temporal_context_text: str = ""
     temporal_context_checksum: str = ""
     temporal_evidence_status: Literal["available", "partial", "not_available", "not_applicable"] = (
@@ -165,6 +201,7 @@ class ParsedReferenceCandidate:
     normalized_reference_text: str
     target_law_code: str
     target_section_reference: str
+    target_law_code_explicit: bool = False
     subsection_anchor: dict[str, Any] = field(default_factory=dict)
     context_before: str = ""
     context_text: str = ""
@@ -178,6 +215,7 @@ class ParsedReferenceCandidate:
     publication_date: str = ""
     source_version_id: str = ""
     source_revision_marker: str = ""
+    build_date: str = ""
     temporal_context_text: str = ""
     temporal_context_checksum: str = ""
     temporal_evidence_status: Literal["available", "partial", "not_available", "not_applicable"] = (
@@ -206,6 +244,8 @@ class RelationshipRefreshReport:
     status: Literal["completed", "failed"] = "completed"
     counts_by_relation_type: dict[str, int] = field(default_factory=dict)
     counts_by_resolution_status: dict[str, int] = field(default_factory=dict)
+    counts_by_target_unit_status: dict[str, int] = field(default_factory=dict)
+    counts_by_unresolved_reason: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -216,6 +256,8 @@ class RelationshipVerificationReport:
     classifier_policy_version: str
     counts_by_relation_type: dict[str, int]
     counts_by_resolution_status: dict[str, int]
+    counts_by_target_unit_status: dict[str, int] = field(default_factory=dict)
+    counts_by_unresolved_reason: dict[str, int] = field(default_factory=dict)
     sample_reference_ids: list[str] = field(default_factory=list)
     sample_edge_ids: list[str] = field(default_factory=list)
     unresolved_reference_evidence: list[dict[str, Any]] = field(default_factory=list)
@@ -229,10 +271,14 @@ class RelationshipQualityArtifact:
     classifier_policy_version: str
     generated_at: str
     counts_by_relation_type: dict[str, int]
+    counts_by_source_unit_status: dict[str, int]
+    counts_by_target_unit_status: dict[str, int]
     counts_by_resolution_status: dict[str, int]
+    counts_by_unresolved_reason: dict[str, int]
     sample_edges_by_relation_type: dict[str, list[dict[str, Any]]]
     sample_reference_evidence: list[dict[str, Any]]
     top_unresolved_targets: list[dict[str, Any]]
+    top_missing_targets: list[dict[str, Any]]
     source_to_relation_coverage: dict[str, Any]
     fanout_summary: dict[str, Any]
     temporal_metadata_completeness: dict[str, Any]
@@ -270,6 +316,7 @@ class LoadRunReport:
     legal_section_count: int = 0
     legal_reference_count: int = 0
     unresolved_reference_count: int = 0
+    counts_by_source_unit_status: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -300,6 +347,7 @@ class VerificationReport:
     legal_fragment_count: int = 0
     legal_reference_count: int = 0
     unresolved_reference_count: int = 0
+    counts_by_source_unit_status: dict[str, int] = field(default_factory=dict)
     embedding_count: int = 0
     embedding_profile_ids: list[str] = field(default_factory=list)
     vector_dimensions: list[int] = field(default_factory=list)
@@ -331,6 +379,26 @@ class StructuralRetrievalResult:
     node_limit: int
     visited_count: int
     unresolved_target_evidence: list[dict[str, Any]] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = to_plain_dict(self)
+        for forbidden in ("answer_text", "answer", "generated_answer"):
+            payload.pop(forbidden, None)
+        return payload
+
+
+@dataclass(slots=True)
+class CorpusReadinessArtifact:
+    artifact_id: str
+    selected_scope: dict[str, Any]
+    generated_at: str
+    structure_class_rules_version: str
+    counts_by_unit_status: dict[str, int]
+    counts_by_structure_class: dict[str, int]
+    active_unit_samples: list[dict[str, Any]]
+    inactive_unit_samples: list[dict[str, Any]]
+    complexity_summary: dict[str, Any]
+    excluded_semantic_candidates: dict[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
         payload = to_plain_dict(self)

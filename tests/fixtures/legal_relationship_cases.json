@@ -60,6 +60,45 @@
       "section_reference": "§ 6",
       "title": "Ausnahmen",
       "body_text": "Abweichend von § 2 TestG kann die Behörde eine Ausnahme zulassen."
+    },
+    {
+      "case_id": "missing_target_in_corpus_reference",
+      "expected_primary_relation_type": "CITES",
+      "expected_unresolved_reason": "missing_target_in_corpus",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:7:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:7:1",
+      "source_fragment_id": "source-fragment:TestG:7",
+      "section_reference": "§ 7",
+      "title": "Missing Target",
+      "body_text": "Die Einzelheiten ergeben sich aus § 99 TestG."
+    },
+    {
+      "case_id": "out_of_scope_law_reference",
+      "expected_primary_relation_type": "CITES",
+      "expected_unresolved_reason": "out_of_scope_law",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:8:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:8:1",
+      "source_fragment_id": "source-fragment:TestG:8",
+      "section_reference": "§ 8",
+      "title": "External Target",
+      "body_text": "Die Einzelheiten ergeben sich aus § 1 OtherG."
+    },
+    {
+      "case_id": "resolved_inactive_target_reference",
+      "expected_primary_relation_type": "CITES",
+      "expected_target_unit_status": "inactive",
+      "default_law_code": "TestG",
+      "law_code": "TestG",
+      "source_legal_section_id": "legal-section:TestG:9:current",
+      "source_legal_fragment_id": "legal-fragment:TestG:9:1",
+      "source_fragment_id": "source-fragment:TestG:9",
+      "section_reference": "§ 9",
+      "title": "Inactive Target",
+      "body_text": "Die Einzelheiten ergeben sich aus § 2 TestG."
     }
   ]
 }

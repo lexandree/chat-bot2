@@ -116,6 +116,7 @@ def parse_explicit_legal_references(
     publication_date: str = "",
     source_version_id: str = "",
     source_revision_marker: str = "",
+    build_date: str = "",
     temporal_metadata_expected: bool = False,
     context_window_chars: int = CONTEXT_WINDOW_CHARS,
 ) -> list[ParsedReferenceCandidate]:
@@ -126,7 +127,8 @@ def parse_explicit_legal_references(
         raw_reference_text = match.group(0).strip()
         target_section_reference = normalize_section_reference(f"§ {match.group('section')}")
         normalized_reference_text = _normalized_reference_text(match, target_section_reference)
-        target_law_code = match.group("law") or default_law_code or law_code
+        explicit_law = match.group("law")
+        target_law_code = explicit_law or default_law_code or law_code
         context_before, context_text, context_after = _context_window(
             text,
             match.start(),
@@ -175,6 +177,7 @@ def parse_explicit_legal_references(
                 normalized_reference_text=normalized_reference_text,
                 target_law_code=target_law_code,
                 target_section_reference=target_section_reference,
+                target_law_code_explicit=bool(explicit_law),
                 subsection_anchor=_subsection_anchor(match, target_section_reference),
                 context_before=context_before,
                 context_text=context_text,
@@ -188,6 +191,7 @@ def parse_explicit_legal_references(
                 publication_date=publication_date,
                 source_version_id=source_version_id,
                 source_revision_marker=source_revision_marker,
+                build_date=build_date,
                 temporal_context_text=temporal_context_text,
                 temporal_context_checksum=temporal_context_checksum,
                 temporal_evidence_status=temporal_evidence_status,

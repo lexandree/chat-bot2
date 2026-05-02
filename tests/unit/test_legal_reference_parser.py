@@ -39,8 +39,21 @@ def test_parse_reference_without_law_uses_default_law_code() -> None:
     references = parse_explicit_legal_references("Nach § 2 gilt dies.", default_law_code="AufenthG")
 
     assert references[0].target_law_code == "AufenthG"
+    assert references[0].target_law_code_explicit is False
     assert references[0].primary_relation_type == "CITES"
     assert references[0].relation_type == "CITES"
+
+
+def test_parse_reference_preserves_explicit_law_code_flag_and_build_date() -> None:
+    reference = parse_explicit_legal_references(
+        "Nach § 2 TestG gilt dies.",
+        default_law_code="OtherG",
+        build_date="2026-04-30",
+    )[0]
+
+    assert reference.target_law_code == "TestG"
+    assert reference.target_law_code_explicit is True
+    assert reference.build_date == "2026-04-30"
 
 
 def test_parse_reference_does_not_treat_following_title_word_as_law_code() -> None:

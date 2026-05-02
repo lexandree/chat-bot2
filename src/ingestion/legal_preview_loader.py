@@ -86,6 +86,9 @@ def build_preview_from_manifest(
                     "source_uri": section.source_uri,
                     "title": section.law_title,
                     "publication_date": section.publication_date,
+                    "source_version_id": section.source_version_id,
+                    "source_revision_marker": section.source_revision_marker,
+                    "build_date": section.build_date,
                     "checksum": sha256_text(section.source_uri + section.law_code + section.law_title),
                 },
             )
@@ -99,6 +102,10 @@ def build_preview_from_manifest(
                 "body_text": section.body_text,
                 "order_index": len(fragments) + 1,
                 "checksum": sha256_text(section.body_text),
+                "source_version_id": section.source_version_id,
+                "source_revision_marker": section.source_revision_marker,
+                "build_date": section.build_date,
+                "status_marker_text": section.status_marker_text,
             }
             fragments.append(fragment_payload)
     source_documents = sorted(source_documents_by_id.values(), key=lambda item: item["source_document_id"])
