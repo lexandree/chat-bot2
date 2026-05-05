@@ -122,6 +122,12 @@ SELECTION_POLICY = "semantic_qa_cluster_latest_usable_answer"
 QUESTION_EMBEDDING_PREFIX = "Query: "
 ANSWER_EMBEDDING_PREFIX = "Document: "
 BOT_ANSWER_MARKING_POLICY = "all_reply_answers_kept_with_bot_source_markers"
+QUESTION_TRIGGER_WINDOW_MESSAGES = 10
+QUESTION_TRIGGER_WINDOW_SECONDS = 600
+TRIGGER_BOT_WINDOW_SECONDS = 120
+TRIGGER_TEXT_MAX_CHARS = 80
+TRIGGER_TEXT_MAX_WORDS = 8
+MAX_ANSWER_CANDIDATES_PER_QUESTION = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,6 +355,7 @@ def _extract_candidates_for_export(
     for message in messages:
         if message.reply_to_message_id:
             replies_by_parent[message.reply_to_message_id].append(message)
+    message_index_by_id = {message.message_id: index for index, message in enumerate(messages)}
     candidates = []
     for message in messages:
         topic_labels, law_codes, topic_score = _topic_signals(message.text)
@@ -363,13 +370,17 @@ def _extract_candidates_for_export(
         if not is_question or attention_score < min_attention_score:
             continue
         redaction_flags = redact_text(message.text)[1]
-        answer_candidates = [
-            _answer_payload(reply, export_id=export_id)
-            for reply in replies[:5]
-        ]
+        answer_candidates, trigger_evidence = _collect_answer_candidates(
+            export_id=export_id,
+            question=message,
+            messages=messages,
+            message_index_by_id=message_index_by_id,
+            replies_by_parent=replies_by_parent,
+        )
         answer_source_counts = _answer_source_counts(answer_candidates)
         source_message_ids = [
             message.message_id,
+            *[str(trigger["trigger_message_id"]) for trigger in trigger_evidence],
             *[str(answer["message_id"]) for answer in answer_candidates],
         ]
         answer_status = _answer_candidate_status(answer_candidates)
@@ -407,9 +418,14 @@ def _extract_candidates_for_export(
             "reply_count": len(replies),
             "answer_candidate_status": answer_status,
             "answer_candidates": answer_candidates,
+            "trigger_evidence": trigger_evidence,
+            "trigger_evidence_count": len(trigger_evidence),
+            "answer_link_counts": _answer_link_counts(answer_candidates),
             "answer_source_counts": answer_source_counts,
             "known_wiki_bot_answer_candidate_count": answer_source_counts.get("known_wiki_bot", 0),
             "other_bot_answer_candidate_count": answer_source_counts.get("other_bot", 0),
+            "known_bot_answer_via_trigger_count": _known_bot_answer_via_trigger_count(answer_candidates),
+            "trigger_linking_policy": _trigger_linking_policy(),
             "bot_answer_marking_policy": BOT_ANSWER_MARKING_POLICY,
             "source_message_ids": source_message_ids,
             "pii_redaction_status": redaction_flags,
@@ -439,10 +455,135 @@ def _extract_candidates_for_export(
     return candidates
 
 
+def _collect_answer_candidates(
+    *,
+    export_id: str,
+    question: TelegramMessage,
+    messages: list[TelegramMessage],
+    message_index_by_id: Mapping[str, int],
+    replies_by_parent: Mapping[str, list[TelegramMessage]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    answer_candidates: list[dict[str, Any]] = []
+    trigger_evidence_by_id: dict[str, dict[str, Any]] = {}
+    seen_answer_message_ids: set[str] = set()
+
+    def add_answer(
+        answer: TelegramMessage,
+        *,
+        answer_link_type: str,
+        link_confidence: str,
+        trigger: TelegramMessage | None = None,
+    ) -> None:
+        if answer.message_id in seen_answer_message_ids:
+            return
+        payload = _answer_payload(
+            answer,
+            export_id=export_id,
+            answer_link_type=answer_link_type,
+            link_confidence=link_confidence,
+            trigger=trigger,
+            question=question,
+        )
+        answer_candidates.append(payload)
+        seen_answer_message_ids.add(answer.message_id)
+
+    def add_trigger(
+        trigger: TelegramMessage,
+        *,
+        trigger_link_type: str,
+        link_confidence: str,
+        linked_bot_message_id: str = "",
+    ) -> None:
+        current = trigger_evidence_by_id.get(trigger.message_id)
+        if current is not None and current["link_confidence"] == "high":
+            return
+        trigger_evidence_by_id[trigger.message_id] = _trigger_evidence_payload(
+            trigger,
+            question=question,
+            trigger_link_type=trigger_link_type,
+            link_confidence=link_confidence,
+            linked_bot_message_id=linked_bot_message_id,
+        )
+
+    direct_replies = sorted(
+        replies_by_parent.get(question.message_id, []),
+        key=lambda item: (item.date, item.message_id),
+    )
+    for reply in direct_replies:
+        bot_replies_to_trigger = [
+            child
+            for child in sorted(replies_by_parent.get(reply.message_id, []), key=lambda item: (item.date, item.message_id))
+            if child.author_bot_kind == "known_wiki_bot"
+        ]
+        if _is_trigger_message(reply) and bot_replies_to_trigger:
+            for bot_reply in bot_replies_to_trigger:
+                add_trigger(
+                    reply,
+                    trigger_link_type="direct_reply_trigger",
+                    link_confidence="high",
+                    linked_bot_message_id=bot_reply.message_id,
+                )
+                add_answer(
+                    bot_reply,
+                    answer_link_type="bot_reply_to_trigger",
+                    link_confidence="high",
+                    trigger=reply,
+                )
+            continue
+        add_answer(reply, answer_link_type="direct_reply_to_question", link_confidence="high")
+
+    question_index = message_index_by_id.get(question.message_id)
+    question_timestamp = _message_timestamp(question)
+    if question_index is not None and question_timestamp is not None:
+        upper_index = min(len(messages), question_index + QUESTION_TRIGGER_WINDOW_MESSAGES + 1)
+        for trigger in messages[question_index + 1 : upper_index]:
+            if trigger.message_id == question.message_id:
+                continue
+            if trigger.author_bot_kind == "known_wiki_bot":
+                continue
+            if _is_question(trigger.text) and trigger.message_id != question.message_id:
+                break
+            if not _is_trigger_message(trigger):
+                continue
+            if trigger.reply_to_message_id and trigger.reply_to_message_id != question.message_id:
+                continue
+            question_to_trigger_seconds = _seconds_between(question, trigger)
+            if question_to_trigger_seconds is None or question_to_trigger_seconds > QUESTION_TRIGGER_WINDOW_SECONDS:
+                continue
+            linked_bot_answers = _known_bot_answers_for_trigger(
+                trigger=trigger,
+                messages=messages,
+                message_index_by_id=message_index_by_id,
+                replies_by_parent=replies_by_parent,
+            )
+            for bot_answer, answer_link_type in linked_bot_answers:
+                add_trigger(
+                    trigger,
+                    trigger_link_type="nearby_trigger",
+                    link_confidence="medium",
+                    linked_bot_message_id=bot_answer.message_id,
+                )
+                add_answer(
+                    bot_answer,
+                    answer_link_type=answer_link_type,
+                    link_confidence="medium",
+                    trigger=trigger,
+                )
+
+    return (
+        answer_candidates[:MAX_ANSWER_CANDIDATES_PER_QUESTION],
+        sorted(trigger_evidence_by_id.values(), key=lambda item: (item["trigger_date"], item["trigger_message_id"])),
+    )
+
+
 def _answer_payload(
     message: TelegramMessage,
     *,
     export_id: str,
+    answer_link_type: str,
+    link_confidence: str,
+    trigger: TelegramMessage | None = None,
+    question: TelegramMessage | None = None,
 ) -> dict[str, Any]:
     if message.author_bot_kind == "known_wiki_bot":
         answer_source_type = "known_wiki_bot"
@@ -459,6 +600,8 @@ def _answer_payload(
         answer_source_markers = ["human_reply"]
         answer_candidate_priority = "normal"
         marking_reason = ""
+    if answer_link_type in {"bot_reply_to_trigger", "bot_after_trigger"}:
+        answer_source_markers = sorted(set(answer_source_markers) | {"via_trigger"})
     return {
         "answer_candidate_id": _answer_candidate_id(export_id, message.message_id, message.text),
         "message_id": message.message_id,
@@ -472,6 +615,13 @@ def _answer_payload(
         "author_bot_kind": message.author_bot_kind,
         "known_bot_usernames": list(message.author_bot_usernames),
         "marking_reason": marking_reason,
+        "answer_link_type": answer_link_type,
+        "link_confidence": link_confidence,
+        "trigger_message_id": trigger.message_id if trigger else "",
+        "trigger_author_hash": trigger.author_hash if trigger else "",
+        "trigger_date": trigger.date if trigger else "",
+        "question_to_trigger_seconds": _seconds_between(question, trigger) if question and trigger else None,
+        "trigger_to_bot_seconds": _seconds_between(trigger, message) if trigger else None,
         "pii_redaction_status": redact_text(message.text)[1],
     }
 
@@ -479,6 +629,73 @@ def _answer_payload(
 def _is_question(text: str) -> bool:
     lowered = text.lower()
     return any(marker in lowered for marker in QUESTION_MARKERS)
+
+
+def _is_trigger_message(message: TelegramMessage) -> bool:
+    if message.author_bot_kind != "none":
+        return False
+    text = message.text.strip()
+    if not text or _is_question(text):
+        return False
+    words = [word for word in text.split() if word]
+    return len(text) <= TRIGGER_TEXT_MAX_CHARS and len(words) <= TRIGGER_TEXT_MAX_WORDS
+
+
+def _known_bot_answers_for_trigger(
+    *,
+    trigger: TelegramMessage,
+    messages: list[TelegramMessage],
+    message_index_by_id: Mapping[str, int],
+    replies_by_parent: Mapping[str, list[TelegramMessage]],
+) -> list[tuple[TelegramMessage, str]]:
+    answers: list[tuple[TelegramMessage, str]] = []
+    seen: set[str] = set()
+    for reply in sorted(replies_by_parent.get(trigger.message_id, []), key=lambda item: (item.date, item.message_id)):
+        if reply.author_bot_kind == "known_wiki_bot":
+            answers.append((reply, "bot_reply_to_trigger"))
+            seen.add(reply.message_id)
+
+    trigger_index = message_index_by_id.get(trigger.message_id)
+    if trigger_index is None:
+        return answers
+    for message in messages[trigger_index + 1 : trigger_index + QUESTION_TRIGGER_WINDOW_MESSAGES + 1]:
+        if message.message_id in seen:
+            continue
+        if message.author_bot_kind != "known_wiki_bot":
+            if _is_question(message.text) or _is_trigger_message(message):
+                break
+            continue
+        trigger_to_bot_seconds = _seconds_between(trigger, message)
+        if trigger_to_bot_seconds is None:
+            continue
+        if trigger_to_bot_seconds > TRIGGER_BOT_WINDOW_SECONDS:
+            break
+        if message.reply_to_message_id and message.reply_to_message_id != trigger.message_id:
+            continue
+        answers.append((message, "bot_after_trigger"))
+        seen.add(message.message_id)
+    return answers
+
+
+def _trigger_evidence_payload(
+    trigger: TelegramMessage,
+    *,
+    question: TelegramMessage,
+    trigger_link_type: str,
+    link_confidence: str,
+    linked_bot_message_id: str,
+) -> dict[str, Any]:
+    return {
+        "trigger_message_id": trigger.message_id,
+        "trigger_date": trigger.date,
+        "trigger_author_hash": trigger.author_hash,
+        "trigger_text_redacted": trigger.text_redacted,
+        "trigger_link_type": trigger_link_type,
+        "link_confidence": link_confidence,
+        "linked_bot_message_id": linked_bot_message_id,
+        "question_to_trigger_seconds": _seconds_between(question, trigger),
+        "pii_redaction_status": redact_text(trigger.text)[1],
+    }
 
 
 def _topic_signals(text: str) -> tuple[list[str], list[str], int]:
@@ -530,6 +747,30 @@ def _answer_candidate_status(answer_candidates: list[dict[str, Any]]) -> str:
 def _answer_source_counts(answer_candidates: list[dict[str, Any]]) -> dict[str, int]:
     counts = Counter(str(item.get("answer_source_type", "unknown")) for item in answer_candidates)
     return dict(sorted(counts.items()))
+
+
+def _answer_link_counts(answer_candidates: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(str(item.get("answer_link_type", "unknown")) for item in answer_candidates)
+    return dict(sorted(counts.items()))
+
+
+def _known_bot_answer_via_trigger_count(answer_candidates: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for item in answer_candidates
+        if item.get("answer_source_type") == "known_wiki_bot"
+        and item.get("answer_link_type") in {"bot_reply_to_trigger", "bot_after_trigger"}
+    )
+
+
+def _trigger_linking_policy() -> dict[str, Any]:
+    return {
+        "question_trigger_window_messages": QUESTION_TRIGGER_WINDOW_MESSAGES,
+        "question_trigger_window_seconds": QUESTION_TRIGGER_WINDOW_SECONDS,
+        "trigger_bot_window_seconds": TRIGGER_BOT_WINDOW_SECONDS,
+        "trigger_text_max_chars": TRIGGER_TEXT_MAX_CHARS,
+        "trigger_text_max_words": TRIGGER_TEXT_MAX_WORDS,
+    }
 
 
 def _confidence_tier(
@@ -654,6 +895,23 @@ def _normalize_author_identity(value: str) -> str:
     return SPACE_RE.sub(" ", value.lower()).strip()
 
 
+def _message_timestamp(message: TelegramMessage | None) -> datetime | None:
+    if message is None or not message.date:
+        return None
+    try:
+        return datetime.fromisoformat(message.date.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _seconds_between(start: TelegramMessage | None, end: TelegramMessage | None) -> int | None:
+    start_timestamp = _message_timestamp(start)
+    end_timestamp = _message_timestamp(end)
+    if start_timestamp is None or end_timestamp is None:
+        return None
+    return int((end_timestamp - start_timestamp).total_seconds())
+
+
 def _deduplicate_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_key: dict[str, dict[str, Any]] = {}
     for candidate in candidates:
@@ -717,6 +975,9 @@ def _embedding_batch_items(candidate: Mapping[str, Any]) -> list[dict[str, Any]]
                 "source_message_id": str(answer.get("message_id", "")),
                 "text_role": "answer",
                 "answer_source_type": str(answer.get("answer_source_type", "")),
+                "answer_link_type": str(answer.get("answer_link_type", "")),
+                "link_confidence": str(answer.get("link_confidence", "")),
+                "trigger_message_id": str(answer.get("trigger_message_id", "")),
                 "date": str(answer.get("date", "")),
                 "embedding_prefix": ANSWER_EMBEDDING_PREFIX.strip(),
                 "embedding_input_text": ANSWER_EMBEDDING_PREFIX + text,
@@ -739,9 +1000,12 @@ def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "input": {
             "question_text_redacted": candidate.get("question_text_redacted", ""),
             "answer_candidates": candidate.get("answer_candidates", []),
+            "trigger_evidence": candidate.get("trigger_evidence", []),
+            "answer_link_counts": candidate.get("answer_link_counts", {}),
             "answer_source_counts": candidate.get("answer_source_counts", {}),
             "known_wiki_bot_answer_candidate_count": candidate.get("known_wiki_bot_answer_candidate_count", 0),
             "other_bot_answer_candidate_count": candidate.get("other_bot_answer_candidate_count", 0),
+            "known_bot_answer_via_trigger_count": candidate.get("known_bot_answer_via_trigger_count", 0),
             "topic_labels": candidate.get("topic_labels", []),
             "law_code_candidates": candidate.get("law_code_candidates", []),
             "bot_mentions": candidate.get("bot_mentions", []),
@@ -791,9 +1055,20 @@ def _build_summary(
         for answer in candidate.get("answer_candidates", [])
         if isinstance(answer, Mapping)
     )
+    answer_link_counts = Counter(
+        str(answer.get("answer_link_type", "unknown"))
+        for candidate in candidates
+        for answer in candidate.get("answer_candidates", [])
+        if isinstance(answer, Mapping)
+    )
     answer_candidate_count = sum(len(candidate.get("answer_candidates", [])) for candidate in candidates)
+    trigger_evidence_count = sum(len(candidate.get("trigger_evidence", [])) for candidate in candidates)
     known_wiki_bot_answer_count = answer_source_counts.get("known_wiki_bot", 0)
     other_bot_answer_count = answer_source_counts.get("other_bot", 0)
+    known_bot_answer_via_trigger_count = sum(
+        int(candidate.get("known_bot_answer_via_trigger_count", 0) or 0)
+        for candidate in candidates
+    )
     return {
         "artifact_type": "tg_qa_extraction_summary",
         "generated_at": _utc_timestamp(),
@@ -812,8 +1087,12 @@ def _build_summary(
         "bot_mention_candidate_count": bot_mention_count,
         "answer_candidate_count": answer_candidate_count,
         "answer_source_counts": dict(sorted(answer_source_counts.items())),
+        "answer_link_counts": dict(sorted(answer_link_counts.items())),
+        "trigger_evidence_count": trigger_evidence_count,
         "known_wiki_bot_answer_candidate_count": known_wiki_bot_answer_count,
         "other_bot_answer_candidate_count": other_bot_answer_count,
+        "known_bot_answer_via_trigger_count": known_bot_answer_via_trigger_count,
+        "trigger_linking_policy": _trigger_linking_policy(),
         "bot_answer_marking_policy": BOT_ANSWER_MARKING_POLICY,
         "candidate_output_path": str(output_path or ""),
         "summary_output_path": str(summary_output_path or ""),

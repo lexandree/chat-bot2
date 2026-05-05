@@ -204,16 +204,22 @@ def test_cli_evaluation_tg_qa_writes_candidates_summary_and_llm_batch(tmp_path: 
     assert exit_code == 0
     assert payload["status"] == "completed"
     assert payload["emitted_candidate_count"] == 2
-    assert payload["known_wiki_bot_answer_candidate_count"] == 1
+    assert payload["known_wiki_bot_answer_candidate_count"] == 2
     assert payload["other_bot_answer_candidate_count"] == 1
+    assert payload["known_bot_answer_via_trigger_count"] == 2
     assert summary["trust_boundary"] == "telegram_answers_are_evaluation_material_not_legal_truth"
     assert summary["embedding_batch_output_path"] == str(embedding_output)
     assert candidates[0]["answer_candidate_status"] == "strong"
     assert candidates[0]["selection_status"] == "pending_embedding_cluster"
     assert candidates[0]["review_route"] == "embedding_cluster_selection"
-    assert candidates[0]["answer_source_counts"] == {"human_reply": 2, "known_wiki_bot": 1, "other_bot": 1}
+    assert candidates[0]["answer_source_counts"] == {"human_reply": 2, "known_wiki_bot": 2, "other_bot": 1}
+    assert candidates[0]["answer_link_counts"]["bot_reply_to_trigger"] == 1
+    assert candidates[0]["answer_link_counts"]["bot_after_trigger"] == 1
+    assert candidates[0]["trigger_evidence_count"] == 2
     assert candidates[0]["answer_candidates"][2]["known_bot_usernames"] == ["@berlin_wiki_bot"]
+    assert candidates[0]["answer_candidates"][2]["answer_link_type"] == "bot_reply_to_trigger"
     assert candidates[0]["answer_candidates"][3]["answer_candidate_priority"] == "low"
+    assert candidates[0]["answer_candidates"][4]["answer_link_type"] == "bot_after_trigger"
     assert candidates[0]["bot_mentions"] == ["@berlin_wiki_bot"]
     assert candidates[1]["quality_flags"] == ["low_topic_relevance", "missing_answer_candidate"]
     assert embedding_items[0]["cluster_usage"] == ["question_cluster", "qa_cluster"]

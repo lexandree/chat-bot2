@@ -25,8 +25,11 @@ Expected result:
 - raw Telegram text is not written to tracked source files
 - emitted candidate texts are redacted
 - wiki bot mentions are retained as weak metadata
-- answer candidates are direct replies, not trusted legal answers
-- all direct replies remain in `answer_candidates`
+- answer candidates are direct replies or trigger-linked wiki-bot replies, not
+  trusted legal answers
+- trigger messages are kept as `trigger_evidence`, not answer candidates
+- answer candidates include link metadata such as `answer_link_type`,
+  `link_confidence`, and trigger timing fields when applicable
 - known wiki-bot and other bot-like replies are marked with
   `answer_source_type`, `answer_source_markers`, and
   `answer_candidate_priority`

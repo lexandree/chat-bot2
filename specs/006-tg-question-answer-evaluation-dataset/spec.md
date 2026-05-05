@@ -44,9 +44,10 @@ Outputs:
 ### Stage 1: Candidate Extraction
 
 Deterministic local extraction reads Telegram exports, normalizes text,
-redacts obvious PII, finds question candidates, links direct reply answers, and
-emits candidate metadata. This stage may assign deterministic quality tiers and
-routes, but it must not select final expected answers.
+redacts obvious PII, finds question candidates, links direct reply answers,
+links admin-triggered wiki-bot answers, and emits candidate metadata. This
+stage may assign deterministic quality tiers and routes, but it must not select
+final expected answers.
 
 Stage 1 candidate records must include:
 
@@ -66,6 +67,11 @@ Stage 1 candidate records must include:
   `answer_source_markers`, `answer_candidate_priority`, and `marking_reason`
 - answer source counts, including known wiki-bot and other bot-like reply counts
 - `bot_answer_marking_policy`
+- answer link metadata: `answer_link_type`, `link_confidence`,
+  `trigger_message_id`, `trigger_author_hash`, `trigger_date`,
+  `question_to_trigger_seconds`, and `trigger_to_bot_seconds`
+- trigger evidence records for short non-question messages that caused or likely
+  caused known wiki-bot answers
 
 ### Stage 2: Question And Answer Embeddings
 
@@ -132,6 +138,10 @@ evidence.
 - Treat other bot-like replies as marked low-priority answer candidates rather
   than deleting or silently ignoring them.
 - Collect direct reply answers as candidate answer evidence.
+- Link known wiki-bot answers that are invoked by short trigger messages:
+  direct `question -> trigger -> bot reply` chains are high confidence; nearby
+  `question ... trigger ... bot answer` chains are medium confidence.
+- Keep trigger messages as link evidence, not answer candidates.
 - Label current-theme relevance for migration/asylum/employment topics.
 - Emit JSONL records with source message ids, quality tier, cascade route,
   placeholder cluster ids, and review status.
