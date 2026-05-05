@@ -15,6 +15,7 @@ from evaluation.load_cases import (
     build_snapshot_comparison_report,
     write_json_artifact,
 )
+from evaluation.tg_qa_dataset import extract_tg_qa_dataset
 from ingestion.legal_preview_loader import build_preview_from_manifest_path, write_preview_artifact
 from ingestion.verification import build_embedding_run_report
 from retrieval.embedding_backend import build_local_embedding_backend
@@ -115,6 +116,18 @@ def build_parser() -> argparse.ArgumentParser:
     readiness_parser = corpus_subparsers.add_parser("readiness")
     readiness_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
     readiness_parser.add_argument("--output", required=True)
+
+    evaluation_parser = subparsers.add_parser("evaluation")
+    evaluation_subparsers = evaluation_parser.add_subparsers(dest="action")
+    tg_qa_parser = evaluation_subparsers.add_parser("tg-qa")
+    tg_qa_parser.add_argument("--input", action="append", dest="inputs", required=True)
+    tg_qa_parser.add_argument("--bot-catalog", default="")
+    tg_qa_parser.add_argument("--output", required=True)
+    tg_qa_parser.add_argument("--summary-output", required=True)
+    tg_qa_parser.add_argument("--llm-batch-output", default="")
+    tg_qa_parser.add_argument("--max-messages-per-export", type=int, default=0)
+    tg_qa_parser.add_argument("--max-candidates", type=int, default=500)
+    tg_qa_parser.add_argument("--min-attention-score", type=int, default=6)
 
     embeddings_parser = subparsers.add_parser("embeddings")
     embeddings_subparsers = embeddings_parser.add_subparsers(dest="action")
@@ -387,6 +400,24 @@ def handle_corpus_command(
             client.close()
 
 
+def handle_evaluation_command(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+    if args.action == "tg-qa":
+        result = extract_tg_qa_dataset(
+            input_paths=args.inputs,
+            bot_catalog_path=args.bot_catalog or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            llm_batch_output_path=args.llm_batch_output or None,
+            max_messages_per_export=args.max_messages_per_export,
+            max_candidates=args.max_candidates,
+            min_attention_score=args.min_attention_score,
+        )
+        payload = dict(result.summary)
+        payload["status"] = "completed"
+        return 0, payload
+    raise ValueError(f"unknown evaluation action: {args.action}")
+
+
 def dispatch(
     argv: Sequence[str] | None = None,
     *,
@@ -426,6 +457,8 @@ def dispatch(
             effective_settings,
             repository_factory=graph_repository_factory,
         )
+    if args.group == "evaluation":
+        return handle_evaluation_command(args)
     parser.error("unknown command")
     raise AssertionError("unreachable")
 

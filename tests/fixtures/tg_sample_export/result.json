@@ -1,0 +1,63 @@
+{
+  "name": "Sample Migration Chat",
+  "type": "public_supergroup",
+  "id": 1001,
+  "messages": [
+    {
+      "id": 1,
+      "type": "service",
+      "date": "2026-01-01T09:00:00",
+      "actor": "System",
+      "action": "invite_members"
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2026-01-01T09:01:00",
+      "from": "Person One",
+      "from_id": "user111",
+      "text": "Всем привет"
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2026-01-01T09:02:00",
+      "from": "Question Author",
+      "from_id": "user222",
+      "text": [
+        "Подскажите, можно ли работать по § 16d AufenthG и нужна ли Zustimmung BA? ",
+        {
+          "type": "mention",
+          "text": "@berlin_wiki_bot"
+        },
+        " Писать можно на test@example.com или +49 151 12345678"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "message",
+      "date": "2026-01-01T09:04:00",
+      "from": "Answer One",
+      "from_id": "user333",
+      "reply_to_message_id": 3,
+      "text": "Смотрите разрешение на работу и условия Beschäftigung. Вот ссылка: https://example.invalid/wiki"
+    },
+    {
+      "id": 5,
+      "type": "message",
+      "date": "2026-01-01T09:05:00",
+      "from": "Answer Two",
+      "from_id": "user444",
+      "reply_to_message_id": 3,
+      "text": "Если это Ausbildung или Anerkennung, обычно смотрят Aufenthaltstitel и ограничения в Zusatzblatt."
+    },
+    {
+      "id": 6,
+      "type": "message",
+      "date": "2026-01-01T09:10:00",
+      "from": "Other Author",
+      "from_id": "user555",
+      "text": "Как записаться на термин в Bürgeramt?"
+    }
+  ]
+}

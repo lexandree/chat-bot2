@@ -167,6 +167,47 @@ def test_cli_corpus_readiness_writes_artifact_with_injected_repository(tmp_path:
     assert "answer_text" not in artifact
 
 
+def test_cli_evaluation_tg_qa_writes_candidates_summary_and_llm_batch(tmp_path: Path) -> None:
+    output = tmp_path / "tg_qa_candidates.jsonl"
+    summary_output = tmp_path / "tg_qa_summary.json"
+    llm_output = tmp_path / "tg_qa_llm_batch.jsonl"
+
+    exit_code, payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa",
+            "--input",
+            "tests/fixtures/tg_sample_export",
+            "--bot-catalog",
+            "tests/fixtures/tg_wiki_bot_catalog_sample.json",
+            "--output",
+            str(output),
+            "--summary-output",
+            str(summary_output),
+            "--llm-batch-output",
+            str(llm_output),
+            "--max-candidates",
+            "20",
+            "--min-attention-score",
+            "6",
+        ],
+        settings=FoundationSettings(),
+    )
+
+    candidates = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    summary = json.loads(summary_output.read_text(encoding="utf-8"))
+    llm_items = [json.loads(line) for line in llm_output.read_text(encoding="utf-8").splitlines()]
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert payload["emitted_candidate_count"] == 2
+    assert summary["trust_boundary"] == "telegram_answers_are_evaluation_material_not_legal_truth"
+    assert candidates[0]["answer_candidate_status"] == "strong"
+    assert candidates[0]["bot_mentions"] == ["@berlin_wiki_bot"]
+    assert candidates[1]["quality_flags"] == ["low_topic_relevance", "missing_answer_candidate"]
+    assert llm_items[0]["task_type"] == "tg_qa_candidate_classification"
+    assert "test@example.com" not in output.read_text(encoding="utf-8")
+
+
 def test_cli_traversal_neighborhood_writes_seed_artifact_with_injected_repository(tmp_path: Path) -> None:
     cases = _load_cli_cases()
     output_path = tmp_path / "seed_neighborhood.json"

@@ -19,6 +19,7 @@ jina/.jina.env
 export/project_seed/.env
 export/jina/.jina.env
 data/legal_xml/*.xml
+data/tg/
 data/import_preview/*.json
 data/import_preview/load_reports/
 data/snapshots/*.json
@@ -26,6 +27,10 @@ data/comparisons/*.json
 data/relationship_quality/*.json
 data/corpus_readiness/*.json
 data/structural_workflows/*.json
+data/evaluation/tg_qa_candidates/*.jsonl
+data/evaluation/tg_qa_dataset/*.json
+data/evaluation/tg_qa_review/*.json
+data/evaluation/tg_qa_llm_batches/*.jsonl
 data/**/.gitkeep
 tmp/
 *.tmp

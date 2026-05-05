@@ -1,0 +1,13 @@
+{
+  "catalog_type": "telegram_wiki_bot_catalog_seed",
+  "bots": [
+    {
+      "name": "Ганс",
+      "usernames": ["@berlin_wiki_bot"],
+      "city": "Общенемецкий бот",
+      "scope_type": "germany_wide",
+      "responsible_usernames": ["@maintainer"],
+      "notes": ""
+    }
+  ]
+}

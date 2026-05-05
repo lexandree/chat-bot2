@@ -103,6 +103,7 @@ code automatically.
 - Python 3.12 in conda environment `chbot` + Neo4j official Python driver, pydantic/pydantic-settings, pytest, Python stdlib JSON/filesystem tooling (004-corpus-boundary-status)
 - Neo4j graph of record plus JSON file artifacts under `data/` for relationship-quality and corpus-readiness evidence (004-corpus-boundary-status)
 - Neo4j graph of record for source/legal/reference/edge state; generated JSON artifacts under `data/structural_workflows/` (005-structural-graph-workflows)
+- Python 3.12 in conda environment `chbot` + Python stdlib JSON/filesystem tooling, deterministic heuristics, optional external LLM batch JSONL contract without default live-service dependency (006-tg-question-answer-evaluation-dataset)
 
 ## Recent Changes
 - 001-legal-graph-foundation: Added Python 3.11+ in conda environment `chbot` + Neo4j official Python driver (`neo4j>=5.18`), `pydantic` plus `pydantic-settings` for typed env configuration, pytest, Python stdlib HTTP client for the Jina-compatible local embedding endpoint unless implementation evidence justifies a narrow HTTP dependency

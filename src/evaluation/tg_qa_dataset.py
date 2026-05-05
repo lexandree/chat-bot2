@@ -1,0 +1,594 @@
+"""Telegram export question/answer candidate extraction for evaluation datasets."""
+
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from hashlib import sha256
+import json
+from pathlib import Path
+import re
+from typing import Any, Iterable, Mapping
+
+
+QUESTION_MARKERS = (
+    "?",
+    "подскажите",
+    "скажите",
+    "как",
+    "какие",
+    "какой",
+    "какая",
+    "куда",
+    "где",
+    "когда",
+    "можно ли",
+    "нужно ли",
+    "есть ли",
+    "имею ли",
+    "что делать",
+    "кто знает",
+    "wie",
+    "was",
+    "wo",
+    "wann",
+    "kann ich",
+    "muss ich",
+    "brauche ich",
+)
+TOPIC_KEYWORDS = {
+    "migration_status": (
+        "aufenthg",
+        "aufenthalt",
+        "aufenthaltstitel",
+        "aufenthaltserlaubnis",
+        "niederlassungserlaubnis",
+        "fiktion",
+        "fiktionsbescheinigung",
+        "ausländerbehörde",
+        "abh",
+        "внж",
+        "пмж",
+        "вид на жительство",
+        "карта",
+        "blue card",
+        "blaue karte",
+        "виза",
+        "visum",
+        "familiennachzug",
+    ),
+    "asylum": (
+        "asyl",
+        "asylg",
+        "bamf",
+        "dublin",
+        "flüchtling",
+        "бежен",
+        "убежище",
+        "азил",
+    ),
+    "employment": (
+        "beschäftigung",
+        "beschv",
+        "arbeit",
+        "arbeitserlaubnis",
+        "работа",
+        "работать",
+        "работодатель",
+        "job",
+        "zustimmung ba",
+        "bundesagentur",
+        "ausbildung",
+        "anerkennung",
+        "16d",
+    ),
+}
+LAW_CODE_KEYWORDS = {
+    "AufenthG": (
+        "aufenthg",
+        "aufenthalt",
+        "aufenthaltstitel",
+        "aufenthaltserlaubnis",
+        "niederlassung",
+        "fiktion",
+        "familiennachzug",
+        "blue card",
+        "blaue karte",
+        "внж",
+        "пмж",
+        "виза",
+    ),
+    "AsylG": ("asylg", "asyl", "bamf", "dublin", "бежен", "убежище", "азил"),
+    "BeschV": (
+        "beschv",
+        "beschäftigung",
+        "arbeitserlaubnis",
+        "zustimmung ba",
+        "bundesagentur",
+        "работа",
+        "работать",
+        "ausbildung",
+        "anerkennung",
+        "16d",
+    ),
+}
+URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
+USERNAME_RE = re.compile(r"(?<!\w)@[A-Za-z0-9_]{4,32}\b")
+PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{6,}\d)(?!\w)")
+SPACE_RE = re.compile(r"\s+")
+
+
+@dataclass(frozen=True, slots=True)
+class BotCatalogEntry:
+    name: str
+    usernames: tuple[str, ...]
+    city: str
+    scope_type: str
+    responsible_usernames: tuple[str, ...] = ()
+    notes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TelegramMessage:
+    export_id: str
+    message_id: str
+    date: str
+    author_hash: str
+    text: str
+    text_redacted: str
+    reply_to_message_id: str = ""
+    bot_mentions: tuple[str, ...] = ()
+
+
+@dataclass(slots=True)
+class TgQaExtractionResult:
+    candidates: list[dict[str, Any]]
+    summary: dict[str, Any]
+    llm_batch_items: list[dict[str, Any]] = field(default_factory=list)
+
+
+def extract_tg_qa_dataset(
+    *,
+    input_paths: list[str | Path],
+    bot_catalog_path: str | Path | None = None,
+    output_path: str | Path | None = None,
+    summary_output_path: str | Path | None = None,
+    llm_batch_output_path: str | Path | None = None,
+    max_messages_per_export: int = 0,
+    max_candidates: int = 500,
+    min_attention_score: int = 6,
+) -> TgQaExtractionResult:
+    export_paths = resolve_export_paths(input_paths)
+    bot_catalog = load_bot_catalog(bot_catalog_path) if bot_catalog_path else []
+    messages_by_export: dict[str, list[TelegramMessage]] = {}
+    processed_message_count = 0
+    raw_text_message_count = 0
+    for export_path in export_paths:
+        export_id = export_path.parent.name
+        raw_messages = _load_export_messages(export_path, limit=max_messages_per_export)
+        processed_message_count += len(raw_messages)
+        normalized = [
+            message
+            for raw in raw_messages
+            if (message := _normalize_message(raw, export_id=export_id, bot_catalog=bot_catalog)) is not None
+        ]
+        raw_text_message_count += len(normalized)
+        messages_by_export[export_id] = normalized
+    candidates: list[dict[str, Any]] = []
+    for export_path in export_paths:
+        export_id = export_path.parent.name
+        candidates.extend(
+            _extract_candidates_for_export(
+                export_id=export_id,
+                messages=messages_by_export.get(export_id, []),
+                min_attention_score=min_attention_score,
+            )
+        )
+    candidates = _deduplicate_candidates(candidates)
+    candidates = sorted(candidates, key=_candidate_sort_key)[:max_candidates]
+    llm_batch_items = [_llm_batch_item(candidate) for candidate in candidates]
+    summary = _build_summary(
+        export_paths=export_paths,
+        bot_catalog_path=bot_catalog_path,
+        processed_message_count=processed_message_count,
+        text_message_count=raw_text_message_count,
+        candidates=candidates,
+        output_path=output_path,
+        summary_output_path=summary_output_path,
+        llm_batch_output_path=llm_batch_output_path,
+    )
+    if output_path:
+        _write_jsonl(output_path, candidates)
+    if summary_output_path:
+        _write_json(summary_output_path, summary)
+    if llm_batch_output_path:
+        _write_jsonl(llm_batch_output_path, llm_batch_items)
+    return TgQaExtractionResult(candidates=candidates, summary=summary, llm_batch_items=llm_batch_items)
+
+
+def resolve_export_paths(input_paths: list[str | Path]) -> list[Path]:
+    resolved: list[Path] = []
+    for raw_path in input_paths:
+        path = Path(raw_path)
+        if path.is_file() and path.name == "result.json":
+            resolved.append(path)
+            continue
+        if path.is_dir() and (path / "result.json").exists():
+            resolved.append(path / "result.json")
+            continue
+        if path.is_dir():
+            resolved.extend(sorted(path.glob("**/result.json")))
+    unique = sorted({path.resolve(): path for path in resolved}.values())
+    if not unique:
+        raise ValueError("no Telegram result.json exports found")
+    return unique
+
+
+def load_bot_catalog(path: str | Path | None) -> list[BotCatalogEntry]:
+    if not path:
+        return []
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    entries = []
+    for item in payload.get("bots", []) if isinstance(payload, Mapping) else []:
+        if not isinstance(item, Mapping):
+            continue
+        usernames = tuple(str(username).lower() for username in item.get("usernames", []) if username)
+        entries.append(
+            BotCatalogEntry(
+                name=str(item.get("name", "")),
+                usernames=usernames,
+                city=str(item.get("city", "")),
+                scope_type=str(item.get("scope_type", "")),
+                responsible_usernames=tuple(
+                    str(username) for username in item.get("responsible_usernames", []) if username
+                ),
+                notes=str(item.get("notes", "")),
+            )
+        )
+    return entries
+
+
+def normalize_telegram_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return _clean_text(value)
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, Mapping):
+                parts.append(str(item.get("text", "")))
+        return _clean_text("".join(parts))
+    return _clean_text(str(value))
+
+
+def redact_text(text: str) -> tuple[str, list[str]]:
+    flags: list[str] = []
+    redacted = text
+    for pattern, replacement, flag in (
+        (URL_RE, "[URL]", "url_redacted"),
+        (EMAIL_RE, "[EMAIL]", "email_redacted"),
+        (PHONE_RE, "[PHONE]", "phone_redacted"),
+        (USERNAME_RE, "[USERNAME]", "username_redacted"),
+    ):
+        redacted, count = pattern.subn(replacement, redacted)
+        if count:
+            flags.append(flag)
+    return _clean_text(redacted), sorted(set(flags)) or ["none"]
+
+
+def _load_export_messages(path: Path, *, limit: int) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    messages = payload.get("messages", []) if isinstance(payload, Mapping) else []
+    messages = [item for item in messages if isinstance(item, dict)]
+    return messages[:limit] if limit > 0 else messages
+
+
+def _normalize_message(
+    raw: Mapping[str, Any],
+    *,
+    export_id: str,
+    bot_catalog: list[BotCatalogEntry],
+) -> TelegramMessage | None:
+    if raw.get("type") != "message":
+        return None
+    text = normalize_telegram_text(raw.get("text", ""))
+    if not text:
+        return None
+    text_redacted, _flags = redact_text(text)
+    author = str(raw.get("from_id") or raw.get("from") or raw.get("actor") or "unknown")
+    bot_mentions = _detect_bot_mentions(text, bot_catalog)
+    return TelegramMessage(
+        export_id=export_id,
+        message_id=str(raw.get("id", "")),
+        date=str(raw.get("date", "")),
+        author_hash=_stable_hash(f"tg-author:{author}"),
+        text=text,
+        text_redacted=text_redacted,
+        reply_to_message_id=str(raw.get("reply_to_message_id") or ""),
+        bot_mentions=tuple(bot_mentions),
+    )
+
+
+def _extract_candidates_for_export(
+    *,
+    export_id: str,
+    messages: list[TelegramMessage],
+    min_attention_score: int,
+) -> list[dict[str, Any]]:
+    replies_by_parent: dict[str, list[TelegramMessage]] = defaultdict(list)
+    for message in messages:
+        if message.reply_to_message_id:
+            replies_by_parent[message.reply_to_message_id].append(message)
+    candidates = []
+    for message in messages:
+        topic_labels, law_codes, topic_score = _topic_signals(message.text)
+        is_question = _is_question(message.text)
+        replies = sorted(replies_by_parent.get(message.message_id, []), key=lambda item: (item.date, item.message_id))
+        attention_score = _attention_score(
+            message=message,
+            is_question=is_question,
+            topic_score=topic_score,
+            reply_count=len(replies),
+        )
+        if not is_question or attention_score < min_attention_score:
+            continue
+        redaction_flags = redact_text(message.text)[1]
+        answer_candidates = [_answer_payload(reply) for reply in replies[:3]]
+        source_message_ids = [message.message_id, *[reply.message_id for reply in replies[:3]]]
+        answer_status = _answer_candidate_status(answer_candidates)
+        candidate = {
+            "candidate_id": _candidate_id(export_id, message.message_id, message.text),
+            "export_id": export_id,
+            "question_message_id": message.message_id,
+            "question_date": message.date,
+            "author_hash": message.author_hash,
+            "question_text_redacted": message.text_redacted,
+            "is_question": is_question,
+            "attention_score": attention_score,
+            "topic_relevance_score": topic_score,
+            "topic_labels": topic_labels,
+            "law_code_candidates": law_codes,
+            "bot_mentions": list(message.bot_mentions),
+            "reply_count": len(replies),
+            "answer_candidate_status": answer_status,
+            "answer_candidates": answer_candidates,
+            "source_message_ids": source_message_ids,
+            "pii_redaction_status": redaction_flags,
+            "review_status": "pending",
+            "llm_processing_status": "not_run",
+            "quality_flags": _quality_flags(
+                topic_labels=topic_labels,
+                answer_status=answer_status,
+                bot_mentions=message.bot_mentions,
+            ),
+        }
+        candidates.append(candidate)
+    return candidates
+
+
+def _answer_payload(message: TelegramMessage) -> dict[str, Any]:
+    return {
+        "message_id": message.message_id,
+        "date": message.date,
+        "author_hash": message.author_hash,
+        "text_redacted": message.text_redacted,
+        "bot_mentions": list(message.bot_mentions),
+        "pii_redaction_status": redact_text(message.text)[1],
+    }
+
+
+def _is_question(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in QUESTION_MARKERS)
+
+
+def _topic_signals(text: str) -> tuple[list[str], list[str], int]:
+    lowered = text.lower()
+    topic_labels = [
+        label
+        for label, keywords in TOPIC_KEYWORDS.items()
+        if any(keyword in lowered for keyword in keywords)
+    ]
+    law_codes = [
+        law_code
+        for law_code, keywords in LAW_CODE_KEYWORDS.items()
+        if any(keyword in lowered for keyword in keywords)
+    ]
+    score = min(6, len(topic_labels) * 2 + len(law_codes))
+    return sorted(topic_labels), sorted(law_codes), score
+
+
+def _attention_score(
+    *,
+    message: TelegramMessage,
+    is_question: bool,
+    topic_score: int,
+    reply_count: int,
+) -> int:
+    score = 0
+    if is_question:
+        score += 4
+    if "?" in message.text:
+        score += 2
+    text_length = len(message.text)
+    if 40 <= text_length <= 1500:
+        score += 1
+    score += topic_score
+    if message.bot_mentions:
+        score += 3
+    score += min(3, reply_count)
+    return score
+
+
+def _answer_candidate_status(answer_candidates: list[dict[str, Any]]) -> str:
+    if not answer_candidates:
+        return "no_answer"
+    if any(len(item.get("text_redacted", "")) >= 80 for item in answer_candidates):
+        return "strong"
+    return "partial"
+
+
+def _quality_flags(
+    *,
+    topic_labels: list[str],
+    answer_status: str,
+    bot_mentions: tuple[str, ...],
+) -> list[str]:
+    flags = []
+    if not topic_labels:
+        flags.append("low_topic_relevance")
+    if answer_status == "no_answer":
+        flags.append("missing_answer_candidate")
+    if bot_mentions:
+        flags.append("bot_mention_context")
+    return flags or ["none"]
+
+
+def _detect_bot_mentions(text: str, bot_catalog: list[BotCatalogEntry]) -> list[str]:
+    lowered = text.lower()
+    mentions = []
+    for entry in bot_catalog:
+        for username in entry.usernames:
+            if username and username.lower() in lowered:
+                mentions.append(username)
+    return sorted(set(mentions))
+
+
+def _deduplicate_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_key: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        key = _dedupe_key(str(candidate.get("question_text_redacted", "")))
+        current = by_key.get(key)
+        if current is None or _candidate_sort_key(candidate) < _candidate_sort_key(current):
+            by_key[key] = candidate
+    return list(by_key.values())
+
+
+def _candidate_sort_key(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (
+        -int(candidate.get("attention_score", 0) or 0),
+        -int(candidate.get("topic_relevance_score", 0) or 0),
+        str(candidate.get("export_id", "")),
+        str(candidate.get("question_message_id", "")),
+    )
+
+
+def _dedupe_key(text: str) -> str:
+    normalized = re.sub(r"[^a-zа-яё0-9 ]+", " ", text.lower(), flags=re.IGNORECASE)
+    normalized = SPACE_RE.sub(" ", normalized).strip()
+    return _stable_hash(normalized)
+
+
+def _candidate_id(export_id: str, message_id: str, text: str) -> str:
+    return f"tg-qa-candidate:{_stable_hash(f'{export_id}:{message_id}:{text}')}"
+
+
+def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "task_id": candidate["candidate_id"],
+        "task_type": "tg_qa_candidate_classification",
+        "runtime_hint": "openai_compatible_or_langchain_optional",
+        "system_instruction": (
+            "Classify the redacted Telegram Q/A candidate for evaluation dataset use. "
+            "Do not treat the answer as legal truth. Return JSON only."
+        ),
+        "input": {
+            "question_text_redacted": candidate.get("question_text_redacted", ""),
+            "answer_candidates": candidate.get("answer_candidates", []),
+            "topic_labels": candidate.get("topic_labels", []),
+            "law_code_candidates": candidate.get("law_code_candidates", []),
+            "bot_mentions": candidate.get("bot_mentions", []),
+        },
+        "expected_output_schema": {
+            "is_real_user_question": "boolean",
+            "current_topic_relevance": "none|low|medium|high",
+            "answer_candidate_quality": "none|partial|strong|conflicting",
+            "normalized_question": "string",
+            "short_answer_summary": "string",
+            "needs_human_review": "boolean",
+        },
+    }
+
+
+def _build_summary(
+    *,
+    export_paths: list[Path],
+    bot_catalog_path: str | Path | None,
+    processed_message_count: int,
+    text_message_count: int,
+    candidates: list[dict[str, Any]],
+    output_path: str | Path | None,
+    summary_output_path: str | Path | None,
+    llm_batch_output_path: str | Path | None,
+) -> dict[str, Any]:
+    status_counts = Counter(str(candidate.get("answer_candidate_status", "")) for candidate in candidates)
+    topic_counts = Counter(
+        label for candidate in candidates for label in candidate.get("topic_labels", [])
+    )
+    law_counts = Counter(
+        law_code for candidate in candidates for law_code in candidate.get("law_code_candidates", [])
+    )
+    bot_mention_count = sum(1 for candidate in candidates if candidate.get("bot_mentions"))
+    return {
+        "artifact_type": "tg_qa_extraction_summary",
+        "generated_at": _utc_timestamp(),
+        "input_exports": [str(path) for path in export_paths],
+        "bot_catalog_path": str(bot_catalog_path or ""),
+        "processed_message_count": processed_message_count,
+        "text_message_count": text_message_count,
+        "question_candidate_count": len(candidates),
+        "emitted_candidate_count": len(candidates),
+        "counts_by_answer_candidate_status": dict(sorted(status_counts.items())),
+        "counts_by_topic_label": dict(sorted(topic_counts.items())),
+        "counts_by_law_code_candidate": dict(sorted(law_counts.items())),
+        "bot_mention_candidate_count": bot_mention_count,
+        "candidate_output_path": str(output_path or ""),
+        "summary_output_path": str(summary_output_path or ""),
+        "llm_batch_output_path": str(llm_batch_output_path or ""),
+        "trust_boundary": "telegram_answers_are_evaluation_material_not_legal_truth",
+        "llm_processing_status": "not_run",
+    }
+
+
+def _write_jsonl(path: str | Path, records: Iterable[Mapping[str, Any]]) -> Path:
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    return output
+
+
+def _write_json(path: str | Path, record: Mapping[str, Any]) -> Path:
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return output
+
+
+def _clean_text(text: str) -> str:
+    return SPACE_RE.sub(" ", text).strip()
+
+
+def _stable_hash(value: str) -> str:
+    return sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def as_plain_dict(result: TgQaExtractionResult) -> dict[str, Any]:
+    return {
+        "candidates": result.candidates,
+        "summary": result.summary,
+        "llm_batch_items": result.llm_batch_items,
+    }
