@@ -33,6 +33,7 @@ from evaluation.load_cases import (
     build_graph_snapshot_artifact,
     build_legacy_baseline_graph_snapshot_artifact,
     build_relationship_quality_artifact,
+    build_structural_workflow_artifact,
 )
 from ingestion.legal_structure_builder import (
     build_relationship_evidence_from_records,
@@ -46,8 +47,13 @@ from ingestion.verification import (
 )
 from retrieval.embedding_service import EmbeddingInput, EmbeddingService
 from retrieval.legal_reference_resolver import ReferenceQuery
-from retrieval.legal_traversal import normalize_allowed_relation_types
+from retrieval.legal_traversal import (
+    TraversalEdge,
+    bounded_structural_traversal,
+    normalize_allowed_relation_types,
+)
 from graph.types import StructuralRetrievalResult
+from graph.types import StructuralWorkflowRequest
 
 
 class GraphFoundationRepository:
@@ -262,6 +268,88 @@ class GraphDataRepository:
             inactive_unit_samples=components["inactive_unit_samples"],
             complexity_summary=components["complexity_summary"],
             excluded_semantic_candidates=components["excluded_semantic_candidates"],
+        )
+
+    def structural_workflow_artifact(
+        self,
+        *,
+        workflow_mode: str,
+        seed_legal_section_ids: list[str] | None = None,
+        law_codes: list[str] | None = None,
+        allowed_relation_types: list[str] | None = None,
+        direction: str = "outgoing",
+        max_depth: int = 1,
+        fanout_limit: int = 25,
+        node_limit: int = 100,
+        edge_limit: int = 500,
+        source_sample_limit: int = 5,
+        include_boundary_stops: bool = True,
+        include_inactive_sections: bool = True,
+        missing_target_inventory_reference: dict[str, Any] | None = None,
+        source_relationship_quality_artifact: str = "",
+    ):
+        seed_ids = sorted({str(item) for item in (seed_legal_section_ids or []) if str(item)})
+        law_scope = sorted({str(item) for item in (law_codes or []) if str(item)})
+        relation_types = sorted(normalize_allowed_relation_types(allowed_relation_types or RELATION_TYPES))
+        request = StructuralWorkflowRequest(
+            workflow_mode=workflow_mode,
+            seed_legal_section_ids=seed_ids,
+            law_codes=law_scope,
+            direction=direction,
+            max_depth=max_depth,
+            allowed_relation_types=relation_types,
+            fanout_limit=fanout_limit,
+            node_limit=node_limit,
+            edge_limit=edge_limit,
+            source_sample_limit=source_sample_limit,
+            include_boundary_stops=include_boundary_stops,
+            include_inactive_sections=include_inactive_sections,
+        )
+        if workflow_mode == "seed_neighborhood":
+            components = _collect_seed_neighborhood_components(
+                self.client,
+                seed_legal_section_ids=seed_ids,
+                law_codes=law_scope,
+                allowed_relation_types=relation_types,
+                direction=direction,
+                max_depth=max_depth,
+                fanout_limit=fanout_limit,
+                node_limit=node_limit,
+                edge_limit=edge_limit,
+            )
+        elif workflow_mode == "law_scope_overview":
+            components = _collect_law_scope_overview_components(
+                self.client,
+                law_codes=law_scope,
+                allowed_relation_types=relation_types,
+                direction=direction,
+                node_limit=node_limit,
+                edge_limit=edge_limit,
+            )
+        else:
+            raise ValueError(f"unknown structural workflow mode: {workflow_mode}")
+        unresolved_references = []
+        if include_boundary_stops:
+            if workflow_mode == "seed_neighborhood":
+                unresolved_references = _collect_workflow_unresolved_references_by_sections(
+                    self.client,
+                    legal_section_ids=[item["legal_section_id"] for item in components["sections"]],
+                )
+            else:
+                unresolved_references = _collect_workflow_unresolved_references_by_law_code(
+                    self.client,
+                    law_codes=law_scope,
+                )
+        return build_structural_workflow_artifact(
+            workflow_request=request,
+            selected_scope={"source_families": ["law"], "law_codes": law_scope},
+            generated_at=_utc_timestamp(),
+            sections=components["sections"],
+            resolved_edges=components["resolved_edges"],
+            unresolved_references=unresolved_references,
+            traversal_metadata=components["traversal_metadata"],
+            missing_target_inventory_reference=missing_target_inventory_reference,
+            source_relationship_quality_artifact=source_relationship_quality_artifact,
         )
 
     def verify_scope(self, *, law_codes: list[str] | None = None) -> VerificationReport:
@@ -483,6 +571,383 @@ class GraphDataRepository:
             node_limit=node_limit,
             visited_count=min(visited, node_limit),
         )
+
+
+def _collect_seed_neighborhood_components(
+    client: Any,
+    *,
+    seed_legal_section_ids: list[str],
+    law_codes: list[str],
+    allowed_relation_types: list[str],
+    direction: str,
+    max_depth: int,
+    fanout_limit: int,
+    node_limit: int,
+    edge_limit: int,
+) -> dict[str, Any]:
+    if not seed_legal_section_ids:
+        raise ValueError("seed_neighborhood requires seed legal section ids")
+    candidate_edge_limit = max(edge_limit, node_limit * max(fanout_limit, 1), 1)
+    edge_rows = _collect_workflow_resolved_edge_rows(
+        client,
+        law_codes=law_codes,
+        allowed_relation_types=allowed_relation_types,
+        direction=direction,
+        limit=candidate_edge_limit,
+    )
+    edge_index = _workflow_edge_index(edge_rows)
+    traversal_edges = [
+        TraversalEdge(
+            source_id=row["source_legal_section_id"],
+            target_id=row["target_legal_section_id"],
+            relation_type=row["relation_type"],
+            source_references=[row["legal_reference_id"]] if row.get("legal_reference_id") else [],
+        )
+        for row in edge_rows
+    ]
+    traversal = bounded_structural_traversal(
+        seed_section_ids=seed_legal_section_ids,
+        edges=traversal_edges,
+        allowed_relation_types=allowed_relation_types,
+        direction=direction,
+        depth_limit=max_depth,
+        fanout_limit=fanout_limit,
+        node_limit=node_limit,
+        edge_limit=edge_limit,
+    )
+    sections = _collect_workflow_sections_by_ids(client, legal_section_ids=traversal.visited_section_ids)
+    found_section_ids = {section["legal_section_id"] for section in sections}
+    missing_seeds = sorted(set(seed_legal_section_ids).difference(found_section_ids))
+    if missing_seeds:
+        raise ValueError(f"seed legal section not found: {missing_seeds}")
+    role_by_id = {
+        section_id: "seed" if section_id in seed_legal_section_ids else "resolved_neighbor"
+        for section_id in traversal.visited_section_ids
+    }
+    section_records = [
+        _workflow_section_record(
+            section,
+            role=("inactive_context" if section.get("unit_status") == "inactive" and role_by_id[section["legal_section_id"]] != "seed" else role_by_id[section["legal_section_id"]]),
+            depth=traversal.section_depths.get(section["legal_section_id"], 0),
+        )
+        for section in sections
+    ]
+    resolved_edges = []
+    for traversed_edge in traversal.traversed_edges:
+        key = (
+            traversed_edge.source_id,
+            traversed_edge.target_id,
+            traversed_edge.relation_type,
+        )
+        resolved_edges.append(
+            _workflow_edge_record(
+                edge_index.get(key, []),
+                source_id=traversed_edge.source_id,
+                target_id=traversed_edge.target_id,
+                relation_type=traversed_edge.relation_type,
+                depth=traversed_edge.depth,
+                cycle_boundary=traversed_edge.cycle_boundary,
+                truncated=traversed_edge.truncated,
+            )
+        )
+    return {
+        "sections": section_records,
+        "resolved_edges": resolved_edges,
+        "traversal_metadata": {
+            "truncation_count": traversal.truncation_count,
+            "cycle_boundary_count": traversal.cycle_boundary_count,
+            "skipped_path_count": traversal.skipped_path_count,
+        },
+    }
+
+
+def _collect_law_scope_overview_components(
+    client: Any,
+    *,
+    law_codes: list[str],
+    allowed_relation_types: list[str],
+    direction: str,
+    node_limit: int,
+    edge_limit: int,
+) -> dict[str, Any]:
+    if not law_codes:
+        raise ValueError("law_scope_overview requires law codes")
+    scope_sections = _collect_workflow_sections_by_law_code(client, law_codes=law_codes, limit=node_limit + 1)
+    edge_rows = _collect_workflow_resolved_edge_rows(
+        client,
+        law_codes=law_codes,
+        allowed_relation_types=allowed_relation_types,
+        direction=direction,
+        limit=edge_limit + 1,
+    )
+    endpoint_ids = sorted(
+        {
+            row[item]
+            for row in edge_rows
+            for item in ("source_legal_section_id", "target_legal_section_id")
+            if row.get(item)
+        }
+    )
+    endpoint_sections = _collect_workflow_sections_by_ids(client, legal_section_ids=endpoint_ids)
+    section_by_id = {section["legal_section_id"]: section for section in endpoint_sections}
+    for section in scope_sections:
+        section_by_id.setdefault(section["legal_section_id"], section)
+    section_records = []
+    for section in section_by_id.values():
+        if section.get("law_code") in law_codes:
+            role = "scope_member"
+        elif section.get("unit_status") == "inactive":
+            role = "inactive_context"
+        else:
+            role = "cross_scope_context"
+        section_records.append(_workflow_section_record(section, role=role, depth=0))
+    resolved_edges = [
+        _workflow_edge_record(
+            [row],
+            source_id=row["source_legal_section_id"],
+            target_id=row["target_legal_section_id"],
+            relation_type=row["relation_type"],
+            depth=1,
+        )
+        for row in edge_rows
+    ]
+    return {
+        "sections": section_records,
+        "resolved_edges": resolved_edges,
+        "traversal_metadata": {
+            "truncation_count": 0,
+            "cycle_boundary_count": 0,
+            "skipped_path_count": 0,
+        },
+    }
+
+
+def _collect_workflow_sections_by_law_code(
+    client: Any,
+    *,
+    law_codes: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in client.read(
+            "MATCH (s:LegalSection) "
+            "WHERE s.law_code IN $law_codes "
+            "RETURN s.legal_section_id AS legal_section_id, "
+            "s.legal_act_id AS legal_act_id, "
+            "s.law_code AS law_code, "
+            "s.section_reference AS section_reference, "
+            "s.normalized_reference AS normalized_reference, "
+            "s.title AS title, "
+            "coalesce(s.unit_status, 'active') AS unit_status, "
+            "s.status_marker_text AS status_marker_text, "
+            "s.source_document_id AS source_document_id, "
+            "s.source_fragment_id AS source_fragment_id, "
+            "s.source_version_id AS source_version_id, "
+            "s.source_revision_marker AS source_revision_marker, "
+            "s.build_date AS build_date, "
+            "s.content_checksum AS content_checksum "
+            "ORDER BY s.law_code, s.normalized_reference, s.legal_section_id "
+            "LIMIT $limit",
+            {"law_codes": law_codes, "limit": limit},
+        )
+    ]
+
+
+def _collect_workflow_sections_by_ids(
+    client: Any,
+    *,
+    legal_section_ids: list[str],
+) -> list[dict[str, Any]]:
+    if not legal_section_ids:
+        return []
+    return [
+        dict(row)
+        for row in client.read(
+            "MATCH (s:LegalSection) "
+            "WHERE s.legal_section_id IN $legal_section_ids "
+            "RETURN s.legal_section_id AS legal_section_id, "
+            "s.legal_act_id AS legal_act_id, "
+            "s.law_code AS law_code, "
+            "s.section_reference AS section_reference, "
+            "s.normalized_reference AS normalized_reference, "
+            "s.title AS title, "
+            "coalesce(s.unit_status, 'active') AS unit_status, "
+            "s.status_marker_text AS status_marker_text, "
+            "s.source_document_id AS source_document_id, "
+            "s.source_fragment_id AS source_fragment_id, "
+            "s.source_version_id AS source_version_id, "
+            "s.source_revision_marker AS source_revision_marker, "
+            "s.build_date AS build_date, "
+            "s.content_checksum AS content_checksum "
+            "ORDER BY s.law_code, s.normalized_reference, s.legal_section_id",
+            {"legal_section_ids": legal_section_ids},
+        )
+    ]
+
+
+def _collect_workflow_resolved_edge_rows(
+    client: Any,
+    *,
+    law_codes: list[str],
+    allowed_relation_types: list[str],
+    direction: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = client.read(
+        "MATCH (s:LegalSection)-[r]->(t:LegalSection) "
+        "WHERE type(r) IN $allowed_relation_types "
+        "AND (size($law_codes) = 0 "
+        "OR ($direction = 'outgoing' AND s.law_code IN $law_codes) "
+        "OR ($direction = 'incoming' AND t.law_code IN $law_codes) "
+        "OR ($direction = 'both' AND (s.law_code IN $law_codes OR t.law_code IN $law_codes))) "
+        "OPTIONAL MATCH (s)-[:HAS_REFERENCE]->(ref:LegalReference {legal_reference_id: r.legal_reference_id}) "
+        "RETURN s.legal_section_id AS source_legal_section_id, "
+        "t.legal_section_id AS target_legal_section_id, "
+        "type(r) AS relation_type, "
+        "r.legal_reference_id AS legal_reference_id, "
+        "ref.source_fragment_id AS source_fragment_id, "
+        "coalesce(ref.target_law_code, t.law_code) AS target_law_code, "
+        "coalesce(ref.target_section_reference, t.section_reference) AS target_section_reference, "
+        "coalesce(r.target_unit_status, ref.target_unit_status, t.unit_status, 'active') AS target_unit_status, "
+        "coalesce(r.classifier_policy_version, ref.classifier_policy_version, '') AS classifier_policy_version, "
+        "coalesce(r.effective_from, ref.effective_from, '') AS effective_from, "
+        "coalesce(r.effective_until, ref.effective_until, '') AS effective_until, "
+        "coalesce(r.publication_date, ref.publication_date, '') AS publication_date, "
+        "coalesce(r.source_version_id, ref.source_version_id, '') AS source_version_id, "
+        "coalesce(r.source_revision_marker, ref.source_revision_marker, '') AS source_revision_marker, "
+        "coalesce(r.build_date, ref.build_date, '') AS build_date, "
+        "coalesce(r.temporal_evidence_status, ref.temporal_evidence_status, '') AS temporal_evidence_status "
+        "ORDER BY relation_type, source_legal_section_id, target_legal_section_id, legal_reference_id "
+        "LIMIT $limit",
+        {
+            "law_codes": law_codes,
+            "allowed_relation_types": allowed_relation_types,
+            "direction": direction,
+            "limit": limit,
+        },
+    )
+    return [dict(row) for row in rows if row.get("source_legal_section_id") and row.get("target_legal_section_id")]
+
+
+def _collect_workflow_unresolved_references_by_law_code(
+    client: Any,
+    *,
+    law_codes: list[str],
+) -> list[dict[str, Any]]:
+    return _collect_workflow_unresolved_references(
+        client,
+        where_clause="n.law_code IN $law_codes",
+        parameters={"law_codes": law_codes},
+    )
+
+
+def _collect_workflow_unresolved_references_by_sections(
+    client: Any,
+    *,
+    legal_section_ids: list[str],
+) -> list[dict[str, Any]]:
+    if not legal_section_ids:
+        return []
+    return _collect_workflow_unresolved_references(
+        client,
+        where_clause="n.source_legal_section_id IN $legal_section_ids",
+        parameters={"legal_section_ids": legal_section_ids},
+    )
+
+
+def _collect_workflow_unresolved_references(
+    client: Any,
+    *,
+    where_clause: str,
+    parameters: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows = client.read(
+        "MATCH (n:LegalReference) "
+        f"WHERE {where_clause} "
+        "AND n.resolution_status <> 'resolved' "
+        "RETURN n.legal_reference_id AS legal_reference_id, "
+        "n.source_legal_section_id AS source_legal_section_id, "
+        "n.source_fragment_id AS source_fragment_id, "
+        "n.raw_reference_text AS raw_reference_text, "
+        "n.normalized_reference_text AS normalized_reference_text, "
+        "n.target_law_code AS target_law_code, "
+        "n.target_section_reference AS target_section_reference, "
+        "n.unresolved_reason AS unresolved_reason, "
+        "n.resolution_status AS resolution_status "
+        "ORDER BY n.unresolved_reason, n.target_law_code, n.target_section_reference, n.source_legal_section_id, n.legal_reference_id",
+        parameters,
+    )
+    return [dict(row) for row in rows]
+
+
+def _workflow_section_record(row: dict[str, Any], *, role: str, depth: int) -> dict[str, Any]:
+    return {
+        "legal_section_id": str(row.get("legal_section_id") or ""),
+        "legal_act_id": str(row.get("legal_act_id") or ""),
+        "law_code": str(row.get("law_code") or ""),
+        "section_reference": str(row.get("section_reference") or ""),
+        "normalized_reference": str(row.get("normalized_reference") or ""),
+        "title": str(row.get("title") or ""),
+        "unit_status": str(row.get("unit_status") or "active"),
+        "status_marker_text": str(row.get("status_marker_text") or ""),
+        "source_document_id": str(row.get("source_document_id") or ""),
+        "source_fragment_id": str(row.get("source_fragment_id") or ""),
+        "source_version_id": str(row.get("source_version_id") or ""),
+        "source_revision_marker": str(row.get("source_revision_marker") or ""),
+        "build_date": str(row.get("build_date") or ""),
+        "content_checksum": str(row.get("content_checksum") or ""),
+        "role": role,
+        "depth": depth,
+    }
+
+
+def _workflow_edge_index(rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
+    index: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        key = (
+            str(row.get("source_legal_section_id") or ""),
+            str(row.get("target_legal_section_id") or ""),
+            str(row.get("relation_type") or ""),
+        )
+        index.setdefault(key, []).append(row)
+    return index
+
+
+def _workflow_edge_record(
+    rows: list[dict[str, Any]],
+    *,
+    source_id: str,
+    target_id: str,
+    relation_type: str,
+    depth: int,
+    cycle_boundary: bool = False,
+    truncated: bool = False,
+) -> dict[str, Any]:
+    legal_reference_ids = sorted({str(row.get("legal_reference_id") or "") for row in rows if row.get("legal_reference_id")})
+    source_fragment_ids = sorted({str(row.get("source_fragment_id") or "") for row in rows if row.get("source_fragment_id")})
+    first = rows[0] if rows else {}
+    return {
+        "source_legal_section_id": source_id,
+        "target_legal_section_id": target_id,
+        "relation_type": relation_type,
+        "depth": depth,
+        "legal_reference_ids": legal_reference_ids,
+        "source_fragment_ids": source_fragment_ids,
+        "target_law_code": str(first.get("target_law_code") or ""),
+        "target_section_reference": str(first.get("target_section_reference") or ""),
+        "target_unit_status": str(first.get("target_unit_status") or ""),
+        "classifier_policy_version": str(first.get("classifier_policy_version") or ""),
+        "effective_from": str(first.get("effective_from") or ""),
+        "effective_until": str(first.get("effective_until") or ""),
+        "publication_date": str(first.get("publication_date") or ""),
+        "source_version_id": str(first.get("source_version_id") or ""),
+        "source_revision_marker": str(first.get("source_revision_marker") or ""),
+        "build_date": str(first.get("build_date") or ""),
+        "temporal_evidence_status": str(first.get("temporal_evidence_status") or ""),
+        "cycle_boundary": cycle_boundary,
+        "truncated": truncated,
+    }
 
 
 def _filter_preview(preview: dict[str, Any], law_codes: list[str] | None) -> dict[str, Any]:

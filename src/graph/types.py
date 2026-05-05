@@ -44,6 +44,38 @@ STRUCTURE_CLASSES = (
     "simple_paragraph",
     "unknown",
 )
+STRUCTURAL_WORKFLOW_MODES = ("seed_neighborhood", "law_scope_overview")
+STRUCTURAL_WORKFLOW_DIRECTIONS = ("outgoing", "incoming", "both")
+STRUCTURAL_WORKFLOW_SECTION_ROLES = (
+    "seed",
+    "resolved_neighbor",
+    "scope_member",
+    "cross_scope_context",
+    "inactive_context",
+)
+MISSING_TARGET_INVENTORY_STATUSES = (
+    "not_provided",
+    "available",
+    "missing_file",
+    "stale",
+    "scope_mismatch",
+)
+INVENTORY_MATCH_STATUSES = ("matched", "not_found", "not_checked", "stale_inventory")
+STRUCTURAL_WORKFLOW_DEFAULT_BOUNDS = {
+    "direction": "outgoing",
+    "max_depth": 1,
+    "fanout_limit": 25,
+    "node_limit": 100,
+    "edge_limit": 500,
+    "source_sample_limit": 5,
+}
+STRUCTURAL_WORKFLOW_MAX_BOUNDS = {
+    "max_depth": 2,
+    "fanout_limit": 100,
+    "node_limit": 1000,
+    "edge_limit": 5000,
+    "source_sample_limit": 20,
+}
 
 
 def to_plain_dict(value: Any) -> Any:
@@ -379,6 +411,124 @@ class StructuralRetrievalResult:
     node_limit: int
     visited_count: int
     unresolved_target_evidence: list[dict[str, Any]] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = to_plain_dict(self)
+        for forbidden in ("answer_text", "answer", "generated_answer"):
+            payload.pop(forbidden, None)
+        return payload
+
+
+@dataclass(slots=True)
+class StructuralWorkflowRequest:
+    workflow_mode: str
+    seed_legal_section_ids: list[str] = field(default_factory=list)
+    law_codes: list[str] = field(default_factory=list)
+    direction: str = STRUCTURAL_WORKFLOW_DEFAULT_BOUNDS["direction"]
+    max_depth: int = STRUCTURAL_WORKFLOW_DEFAULT_BOUNDS["max_depth"]
+    allowed_relation_types: list[str] = field(default_factory=lambda: list(RELATION_TYPES))
+    fanout_limit: int = STRUCTURAL_WORKFLOW_DEFAULT_BOUNDS["fanout_limit"]
+    node_limit: int = STRUCTURAL_WORKFLOW_DEFAULT_BOUNDS["node_limit"]
+    edge_limit: int = STRUCTURAL_WORKFLOW_DEFAULT_BOUNDS["edge_limit"]
+    source_sample_limit: int = STRUCTURAL_WORKFLOW_DEFAULT_BOUNDS["source_sample_limit"]
+    include_boundary_stops: bool = True
+    include_inactive_sections: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        return to_plain_dict(self)
+
+
+@dataclass(slots=True)
+class WorkflowSectionNode:
+    legal_section_id: str
+    law_code: str
+    section_reference: str
+    unit_status: str
+    depth: int
+    role: str
+    legal_act_id: str = ""
+    normalized_reference: str = ""
+    title: str = ""
+    status_marker_text: str = ""
+    source_document_id: str = ""
+    source_fragment_id: str = ""
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    build_date: str = ""
+    content_checksum: str = ""
+
+
+@dataclass(slots=True)
+class ResolvedTraversalEdge:
+    source_legal_section_id: str
+    target_legal_section_id: str
+    relation_type: str
+    depth: int
+    legal_reference_ids: list[str]
+    source_fragment_ids: list[str] = field(default_factory=list)
+    target_law_code: str = ""
+    target_section_reference: str = ""
+    target_unit_status: str = ""
+    classifier_policy_version: str = ""
+    effective_from: str = ""
+    effective_until: str = ""
+    publication_date: str = ""
+    source_version_id: str = ""
+    source_revision_marker: str = ""
+    build_date: str = ""
+    temporal_evidence_status: str = ""
+    cycle_boundary: bool = False
+    truncated: bool = False
+
+
+@dataclass(slots=True)
+class CoverageBoundaryStop:
+    boundary_id: str
+    source_legal_section_id: str
+    source_fragment_id: str
+    legal_reference_id: str
+    raw_reference_text: str
+    normalized_reference_text: str | None
+    target_law_code: str
+    target_section_reference: str
+    reason: str
+    count: int
+    source_samples: list[dict[str, Any]]
+    inventory_match: str = "not_checked"
+
+
+@dataclass(slots=True)
+class WorkflowQualitySummary:
+    workflow_mode: str
+    visited_section_count: int
+    resolved_edge_count: int
+    resolved_edges_by_relation_type: dict[str, int]
+    boundary_stop_count: int
+    boundary_stops_by_reason: dict[str, int]
+    truncation_count: int
+    cycle_boundary_count: int
+    inactive_section_count: int
+    provenance_completeness: dict[str, Any]
+    missing_target_inventory_status: str
+    skipped_path_count: int = 0
+
+
+@dataclass(slots=True)
+class StructuralWorkflowArtifact:
+    artifact_id: str
+    artifact_type: str
+    generated_at: str
+    workflow_id: str
+    workflow_request: dict[str, Any]
+    selected_scope: dict[str, Any]
+    sections: list[dict[str, Any]]
+    resolved_edges: list[dict[str, Any]]
+    coverage_boundary_stops: list[dict[str, Any]]
+    quality_summary: dict[str, Any]
+    ordering_policy: dict[str, Any]
+    source_relationship_quality_artifact: str = ""
+    missing_target_inventory_reference: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         payload = to_plain_dict(self)

@@ -1,0 +1,62 @@
+{
+  "seed_neighborhood": {
+    "argv": [
+      "traversal",
+      "neighborhood",
+      "--workflow-mode",
+      "seed_neighborhood",
+      "--law-code",
+      "TestG",
+      "--seed-section-id",
+      "legal-section:TestG:1:current",
+      "--relation-type",
+      "CITES",
+      "--depth",
+      "1",
+      "--fanout",
+      "25",
+      "--node-limit",
+      "100",
+      "--edge-limit",
+      "500",
+      "--source-sample-limit",
+      "5"
+    ],
+    "expected_payload": {
+      "status": "completed",
+      "workflow_mode": "seed_neighborhood",
+      "visited_section_count": 2,
+      "resolved_edge_count": 1,
+      "boundary_stop_count": 1,
+      "missing_target_inventory_status": "not_provided"
+    }
+  },
+  "law_scope_overview": {
+    "argv": [
+      "traversal",
+      "neighborhood",
+      "--workflow-mode",
+      "law_scope_overview",
+      "--law-code",
+      "TestG",
+      "--law-code",
+      "OtherG",
+      "--relation-type",
+      "CITES",
+      "--relation-type",
+      "DEFINES",
+      "--node-limit",
+      "500",
+      "--edge-limit",
+      "2000"
+    ],
+    "expected_payload": {
+      "status": "completed",
+      "workflow_mode": "law_scope_overview",
+      "visited_section_count": 2,
+      "resolved_edge_count": 0,
+      "boundary_stop_count": 0,
+      "missing_target_inventory_status": "not_provided"
+    }
+  }
+}

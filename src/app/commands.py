@@ -76,6 +76,26 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--depth", type=int, default=1)
     run_parser.add_argument("--fanout", type=int, default=25)
     run_parser.add_argument("--node-limit", type=int, default=100)
+    neighborhood_parser = traversal_subparsers.add_parser("neighborhood")
+    neighborhood_parser.add_argument(
+        "--workflow-mode",
+        choices=["seed_neighborhood", "law_scope_overview"],
+        required=True,
+    )
+    neighborhood_parser.add_argument("--law-code", action="append", dest="law_codes")
+    neighborhood_parser.add_argument("--seed-section-id", action="append", dest="seed_section_ids")
+    neighborhood_parser.add_argument("--relation-type", action="append", dest="relation_types", required=True)
+    neighborhood_parser.add_argument("--direction", choices=["outgoing", "incoming", "both"], default="outgoing")
+    neighborhood_parser.add_argument("--depth", type=int, default=1)
+    neighborhood_parser.add_argument("--fanout", type=int, default=25)
+    neighborhood_parser.add_argument("--node-limit", type=int, default=100)
+    neighborhood_parser.add_argument("--edge-limit", type=int, default=500)
+    neighborhood_parser.add_argument("--source-sample-limit", type=int, default=5)
+    neighborhood_parser.add_argument("--output", required=True)
+    neighborhood_parser.add_argument("--missing-target-inventory", default="")
+    neighborhood_parser.add_argument("--source-relationship-quality-artifact", default="")
+    neighborhood_parser.add_argument("--include-boundary-stops", action="store_true", default=True)
+    neighborhood_parser.add_argument("--include-inactive-sections", action="store_true", default=True)
 
     relationships_parser = subparsers.add_parser("relationships")
     relationships_subparsers = relationships_parser.add_subparsers(dest="action")
@@ -250,19 +270,56 @@ def handle_references_command(args: argparse.Namespace, settings: FoundationSett
     return 0, report.as_dict()
 
 
-def handle_traversal_command(args: argparse.Namespace, settings: FoundationSettings) -> tuple[int, dict[str, object]]:
-    client = _graph_client_from_settings(settings)
+def handle_traversal_command(
+    args: argparse.Namespace,
+    settings: FoundationSettings,
+    *,
+    repository_factory=None,
+) -> tuple[int, dict[str, object]]:
+    client = None
+    if repository_factory is not None:
+        repo = repository_factory(settings)
+    else:
+        client = _graph_client_from_settings(settings)
+        repo = GraphDataRepository(client)
     try:
-        report = GraphDataRepository(client).traverse(
-            legal_section_id=args.legal_section_id,
-            allowed_relation_types=args.relation_types,
-            depth_limit=args.depth,
-            fanout_limit=args.fanout,
-            node_limit=args.node_limit,
-        )
+        if args.action == "run":
+            report = repo.traverse(
+                legal_section_id=args.legal_section_id,
+                allowed_relation_types=args.relation_types,
+                depth_limit=args.depth,
+                fanout_limit=args.fanout,
+                node_limit=args.node_limit,
+            )
+            return 0, report.as_dict()
+        if args.action == "neighborhood":
+            inventory_reference = _missing_target_inventory_reference(
+                args.missing_target_inventory,
+                law_codes=args.law_codes or [],
+            )
+            artifact = repo.structural_workflow_artifact(
+                workflow_mode=args.workflow_mode,
+                seed_legal_section_ids=args.seed_section_ids or [],
+                law_codes=args.law_codes or [],
+                allowed_relation_types=args.relation_types,
+                direction=args.direction,
+                max_depth=args.depth,
+                fanout_limit=args.fanout,
+                node_limit=args.node_limit,
+                edge_limit=args.edge_limit,
+                source_sample_limit=args.source_sample_limit,
+                include_boundary_stops=args.include_boundary_stops,
+                include_inactive_sections=args.include_inactive_sections,
+                missing_target_inventory_reference=inventory_reference,
+                source_relationship_quality_artifact=args.source_relationship_quality_artifact,
+            )
+            output_path = write_json_artifact(args.output, artifact)
+            payload = _structural_workflow_cli_payload(artifact.as_dict(), output_path)
+            return 0, payload
+        raise ValueError(f"unknown traversal action: {args.action}")
     finally:
-        client.close()
-    return 0, report.as_dict()
+        if client is not None:
+            client.close()
 
 
 def handle_relationships_command(
@@ -351,8 +408,12 @@ def dispatch(
         return handle_embeddings_command(args, effective_settings)
     if args.group == "references" and args.action == "resolve":
         return handle_references_command(args, effective_settings)
-    if args.group == "traversal" and args.action == "run":
-        return handle_traversal_command(args, effective_settings)
+    if args.group == "traversal":
+        return handle_traversal_command(
+            args,
+            effective_settings,
+            repository_factory=graph_repository_factory,
+        )
     if args.group == "relationships":
         return handle_relationships_command(
             args,
@@ -373,3 +434,65 @@ def main(argv: Sequence[str] | None = None) -> int:
     exit_code, payload = dispatch(argv)
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return exit_code
+
+
+def _missing_target_inventory_reference(path: str, *, law_codes: list[str]) -> dict[str, object]:
+    if not path:
+        return {"status": "not_provided", "path": "", "law_codes": law_codes, "targets": []}
+    inventory_path = Path(path)
+    if not inventory_path.exists():
+        return {"status": "missing_file", "path": str(inventory_path), "law_codes": law_codes, "targets": []}
+    try:
+        payload = json.loads(inventory_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"status": "stale", "path": str(inventory_path), "law_codes": law_codes, "targets": []}
+    selected_scope = payload.get("selected_scope", {}) if isinstance(payload, dict) else {}
+    inventory_law_codes = selected_scope.get("law_codes", []) if isinstance(selected_scope, dict) else []
+    if not inventory_law_codes and isinstance(payload, dict):
+        inventory_law_codes = payload.get("law_codes", [])
+    targets = []
+    if isinstance(payload, dict):
+        raw_targets = (
+            payload.get("items")
+            or payload.get("top_missing_targets")
+            or payload.get("targets")
+            or payload.get("missing_targets")
+            or []
+        )
+        if isinstance(raw_targets, list):
+            for item in raw_targets:
+                if not isinstance(item, dict):
+                    continue
+                targets.append(
+                    {
+                        "reason": item.get("reason") or item.get("unresolved_reason") or "missing_target_in_corpus",
+                        "target_law_code": item.get("target_law_code", ""),
+                        "target_section_reference": item.get("target_section_reference", ""),
+                    }
+                )
+    return {
+        "status": "available",
+        "path": str(inventory_path),
+        "generated_at": payload.get("generated_at", "") if isinstance(payload, dict) else "",
+        "law_codes": inventory_law_codes or law_codes,
+        "targets": targets,
+    }
+
+
+def _structural_workflow_cli_payload(artifact: dict[str, object], output_path: Path) -> dict[str, object]:
+    summary = artifact.get("quality_summary", {})
+    summary = summary if isinstance(summary, dict) else {}
+    return {
+        "status": "completed",
+        "workflow_mode": artifact.get("workflow_request", {}).get("workflow_mode", "")
+        if isinstance(artifact.get("workflow_request"), dict)
+        else "",
+        "structural_workflow_artifact_path": str(output_path),
+        "selected_scope": artifact.get("selected_scope", {}),
+        "visited_section_count": summary.get("visited_section_count", 0),
+        "resolved_edge_count": summary.get("resolved_edge_count", 0),
+        "boundary_stop_count": summary.get("boundary_stop_count", 0),
+        "boundary_stops_by_reason": summary.get("boundary_stops_by_reason", {}),
+        "missing_target_inventory_status": summary.get("missing_target_inventory_status", "not_provided"),
+        "warnings": artifact.get("warnings", []),
+    }

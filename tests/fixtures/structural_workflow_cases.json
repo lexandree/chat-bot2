@@ -1,0 +1,170 @@
+{
+  "seed_neighborhood": {
+    "workflow_request": {
+      "workflow_mode": "seed_neighborhood",
+      "seed_legal_section_ids": ["legal-section:TestG:1:current"],
+      "law_codes": ["TestG"],
+      "direction": "outgoing",
+      "max_depth": 1,
+      "allowed_relation_types": ["CITES"],
+      "fanout_limit": 1,
+      "node_limit": 3,
+      "edge_limit": 2,
+      "source_sample_limit": 1,
+      "include_boundary_stops": true,
+      "include_inactive_sections": true
+    },
+    "sections": [
+      {
+        "legal_section_id": "legal-section:TestG:1:current",
+        "law_code": "TestG",
+        "section_reference": "§ 1",
+        "normalized_reference": "1",
+        "title": "Seed",
+        "unit_status": "active",
+        "depth": 0,
+        "role": "seed",
+        "source_document_id": "source-document:TestG",
+        "source_fragment_id": "source-fragment:TestG:1",
+        "source_version_id": "fixture-v1",
+        "source_revision_marker": "rev-a",
+        "build_date": "2026-01-01",
+        "content_checksum": "checksum-seed"
+      },
+      {
+        "legal_section_id": "legal-section:TestG:2:current",
+        "law_code": "TestG",
+        "section_reference": "§ 2",
+        "normalized_reference": "2",
+        "title": "Neighbor",
+        "unit_status": "active",
+        "depth": 1,
+        "role": "resolved_neighbor",
+        "source_document_id": "source-document:TestG",
+        "source_fragment_id": "source-fragment:TestG:2",
+        "source_version_id": "fixture-v1",
+        "source_revision_marker": "rev-a",
+        "build_date": "2026-01-01",
+        "content_checksum": "checksum-neighbor"
+      },
+      {
+        "legal_section_id": "legal-section:TestG:9:current",
+        "law_code": "TestG",
+        "section_reference": "§ 9",
+        "normalized_reference": "9",
+        "title": "Inactive",
+        "unit_status": "inactive",
+        "depth": 1,
+        "role": "inactive_context",
+        "source_document_id": "source-document:TestG",
+        "source_fragment_id": "source-fragment:TestG:9",
+        "source_version_id": "fixture-v1",
+        "source_revision_marker": "rev-a",
+        "build_date": "2026-01-01",
+        "content_checksum": "checksum-inactive"
+      }
+    ],
+    "resolved_edges": [
+      {
+        "source_legal_section_id": "legal-section:TestG:1:current",
+        "target_legal_section_id": "legal-section:TestG:2:current",
+        "relation_type": "CITES",
+        "depth": 1,
+        "legal_reference_ids": ["legal-reference:TestG:1:2"],
+        "source_fragment_ids": ["source-fragment:TestG:1"],
+        "target_law_code": "TestG",
+        "target_section_reference": "§ 2",
+        "target_unit_status": "active",
+        "classifier_policy_version": "legal-ref-context-v1",
+        "temporal_evidence_status": "not_applicable"
+      },
+      {
+        "source_legal_section_id": "legal-section:TestG:2:current",
+        "target_legal_section_id": "legal-section:TestG:1:current",
+        "relation_type": "CITES",
+        "depth": 2,
+        "legal_reference_ids": ["legal-reference:TestG:2:1"],
+        "source_fragment_ids": ["source-fragment:TestG:2"],
+        "target_law_code": "TestG",
+        "target_section_reference": "§ 1",
+        "target_unit_status": "active",
+        "classifier_policy_version": "legal-ref-context-v1",
+        "temporal_evidence_status": "not_applicable",
+        "cycle_boundary": true
+      }
+    ],
+    "unresolved_references": [
+      {
+        "legal_reference_id": "legal-reference:TestG:1:99",
+        "source_legal_section_id": "legal-section:TestG:1:current",
+        "source_fragment_id": "source-fragment:TestG:1",
+        "raw_reference_text": "§ 99 TestG",
+        "normalized_reference_text": "§ 99 TestG",
+        "target_law_code": "TestG",
+        "target_section_reference": "§ 99",
+        "unresolved_reason": "missing_target_in_corpus",
+        "resolution_status": "unresolved"
+      },
+      {
+        "legal_reference_id": "legal-reference:TestG:2:99",
+        "source_legal_section_id": "legal-section:TestG:2:current",
+        "source_fragment_id": "source-fragment:TestG:2",
+        "raw_reference_text": "§ 99 TestG",
+        "normalized_reference_text": null,
+        "target_law_code": "TestG",
+        "target_section_reference": "§ 99",
+        "unresolved_reason": "missing_target_in_corpus",
+        "resolution_status": "unresolved"
+      }
+    ],
+    "traversal_metadata": {
+      "truncation_count": 1,
+      "cycle_boundary_count": 1,
+      "skipped_path_count": 1
+    }
+  },
+  "law_scope_overview": {
+    "workflow_request": {
+      "workflow_mode": "law_scope_overview",
+      "seed_legal_section_ids": [],
+      "law_codes": ["TestG", "OtherG"],
+      "direction": "outgoing",
+      "max_depth": 1,
+      "allowed_relation_types": ["CITES", "DEFINES"],
+      "fanout_limit": 25,
+      "node_limit": 10,
+      "edge_limit": 10,
+      "source_sample_limit": 5,
+      "include_boundary_stops": true,
+      "include_inactive_sections": true
+    },
+    "sections": [
+      {
+        "legal_section_id": "legal-section:TestG:1:current",
+        "law_code": "TestG",
+        "section_reference": "§ 1",
+        "normalized_reference": "1",
+        "title": "Scope",
+        "unit_status": "active",
+        "depth": 0,
+        "role": "scope_member",
+        "source_document_id": "source-document:TestG",
+        "source_fragment_id": "source-fragment:TestG:1"
+      },
+      {
+        "legal_section_id": "legal-section:OtherG:7:current",
+        "law_code": "OtherG",
+        "section_reference": "§ 7",
+        "normalized_reference": "7",
+        "title": "Other Scope",
+        "unit_status": "active",
+        "depth": 0,
+        "role": "scope_member",
+        "source_document_id": "source-document:OtherG",
+        "source_fragment_id": "source-fragment:OtherG:7"
+      }
+    ],
+    "resolved_edges": [],
+    "unresolved_references": []
+  }
+}
