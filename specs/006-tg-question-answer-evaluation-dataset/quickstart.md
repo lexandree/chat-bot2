@@ -26,9 +26,10 @@ Expected result:
 - emitted candidate texts are redacted
 - wiki bot mentions are retained as weak metadata
 - answer candidates are direct replies, not trusted legal answers
-- known wiki-bot authored replies are marked in
-  `marked_known_bot_answer_candidates`
-- other bot-like replies are counted but not treated as useful wiki-bot answers
+- all direct replies remain in `answer_candidates`
+- known wiki-bot and other bot-like replies are marked with
+  `answer_source_type`, `answer_source_markers`, and
+  `answer_candidate_priority`
 - question and answer texts are emitted separately for optional external
   vectorization
 - candidate records include quality tier, cascade route, cluster placeholders,
