@@ -121,7 +121,7 @@ SPACE_RE = re.compile(r"\s+")
 SELECTION_POLICY = "semantic_qa_cluster_latest_usable_answer"
 QUESTION_EMBEDDING_PREFIX = "Query: "
 ANSWER_EMBEDDING_PREFIX = "Document: "
-BOT_ANSWER_PARKING_POLICY = "known_wiki_bot_answers_parked_other_bots_ignored"
+BOT_ANSWER_MARKING_POLICY = "known_wiki_bot_answers_marked_other_bots_low_priority"
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,12 +370,12 @@ def _extract_candidates_for_export(
             _answer_payload(reply, export_id=export_id, answer_source_type="human_reply")
             for reply in human_replies[:3]
         ]
-        parked_bot_answer_candidates = [
+        marked_known_bot_answer_candidates = [
             _answer_payload(
                 reply,
                 export_id=export_id,
                 answer_source_type="known_wiki_bot",
-                parking_reason="known_wiki_bot_prepared_answer",
+                marking_reason="known_wiki_bot_prepared_answer",
             )
             for reply in known_bot_replies[:5]
         ]
@@ -385,24 +385,24 @@ def _extract_candidates_for_export(
             *[reply.message_id for reply in known_bot_replies[:5]],
         ]
         answer_status = _answer_candidate_status(answer_candidates)
-        parked_bot_answer_status = _parked_bot_answer_status(parked_bot_answer_candidates)
+        marked_known_bot_answer_status = _marked_known_bot_answer_status(marked_known_bot_answer_candidates)
         confidence_tier = _confidence_tier(
             attention_score=attention_score,
             topic_score=topic_score,
             answer_status=answer_status,
-            parked_bot_answer_status=parked_bot_answer_status,
+            marked_known_bot_answer_status=marked_known_bot_answer_status,
             bot_mentions=message.bot_mentions,
         )
         selection_status = _initial_selection_status(
             confidence_tier=confidence_tier,
             answer_status=answer_status,
-            parked_bot_answer_status=parked_bot_answer_status,
+            marked_known_bot_answer_status=marked_known_bot_answer_status,
         )
         review_route = _review_route(
             confidence_tier=confidence_tier,
             selection_status=selection_status,
             answer_status=answer_status,
-            parked_bot_answer_status=parked_bot_answer_status,
+            marked_known_bot_answer_status=marked_known_bot_answer_status,
         )
         candidate = {
             "candidate_id": _candidate_id(export_id, message.message_id, message.text),
@@ -421,10 +421,10 @@ def _extract_candidates_for_export(
             "reply_count": len(replies),
             "answer_candidate_status": answer_status,
             "answer_candidates": answer_candidates,
-            "parked_bot_answer_status": parked_bot_answer_status,
-            "parked_bot_answer_candidates": parked_bot_answer_candidates,
+            "marked_known_bot_answer_status": marked_known_bot_answer_status,
+            "marked_known_bot_answer_candidates": marked_known_bot_answer_candidates,
             "ignored_other_bot_reply_count": len(other_bot_replies),
-            "bot_answer_parking_policy": BOT_ANSWER_PARKING_POLICY,
+            "bot_answer_marking_policy": BOT_ANSWER_MARKING_POLICY,
             "source_message_ids": source_message_ids,
             "pii_redaction_status": redaction_flags,
             "confidence_tier": confidence_tier,
@@ -445,7 +445,7 @@ def _extract_candidates_for_export(
             "quality_flags": _quality_flags(
                 topic_labels=topic_labels,
                 answer_status=answer_status,
-                parked_bot_answer_status=parked_bot_answer_status,
+                marked_known_bot_answer_status=marked_known_bot_answer_status,
                 ignored_other_bot_reply_count=len(other_bot_replies),
                 bot_mentions=message.bot_mentions,
             ),
@@ -459,7 +459,7 @@ def _answer_payload(
     *,
     export_id: str,
     answer_source_type: str,
-    parking_reason: str = "",
+    marking_reason: str = "",
 ) -> dict[str, Any]:
     return {
         "answer_candidate_id": _answer_candidate_id(export_id, message.message_id, message.text),
@@ -471,7 +471,7 @@ def _answer_payload(
         "answer_source_type": answer_source_type,
         "author_bot_kind": message.author_bot_kind,
         "known_bot_usernames": list(message.author_bot_usernames),
-        "parking_reason": parking_reason,
+        "marking_reason": marking_reason,
         "pii_redaction_status": redact_text(message.text)[1],
     }
 
@@ -527,10 +527,10 @@ def _answer_candidate_status(answer_candidates: list[dict[str, Any]]) -> str:
     return "partial"
 
 
-def _parked_bot_answer_status(parked_bot_answer_candidates: list[dict[str, Any]]) -> str:
-    if not parked_bot_answer_candidates:
+def _marked_known_bot_answer_status(marked_known_bot_answer_candidates: list[dict[str, Any]]) -> str:
+    if not marked_known_bot_answer_candidates:
         return "none"
-    if any(len(item.get("text_redacted", "")) >= 80 for item in parked_bot_answer_candidates):
+    if any(len(item.get("text_redacted", "")) >= 80 for item in marked_known_bot_answer_candidates):
         return "available"
     return "partial"
 
@@ -540,22 +540,22 @@ def _confidence_tier(
     attention_score: int,
     topic_score: int,
     answer_status: str,
-    parked_bot_answer_status: str,
+    marked_known_bot_answer_status: str,
     bot_mentions: tuple[str, ...],
 ) -> str:
     if answer_status == "strong" and topic_score >= 3 and attention_score >= 10:
         return "high"
     if answer_status in {"strong", "partial"} and attention_score >= 7 and (topic_score > 0 or bot_mentions):
         return "medium"
-    if parked_bot_answer_status in {"available", "partial"} and attention_score >= 7:
+    if marked_known_bot_answer_status in {"available", "partial"} and attention_score >= 7:
         return "medium"
     if answer_status != "no_answer" or topic_score > 0 or bot_mentions:
         return "low"
     return "low"
 
 
-def _initial_selection_status(*, confidence_tier: str, answer_status: str, parked_bot_answer_status: str) -> str:
-    if answer_status == "no_answer" and parked_bot_answer_status == "none":
+def _initial_selection_status(*, confidence_tier: str, answer_status: str, marked_known_bot_answer_status: str) -> str:
+    if answer_status == "no_answer" and marked_known_bot_answer_status == "none":
         return "uncertain"
     if confidence_tier in {"high", "medium"}:
         return "pending_embedding_cluster"
@@ -567,11 +567,11 @@ def _review_route(
     confidence_tier: str,
     selection_status: str,
     answer_status: str,
-    parked_bot_answer_status: str,
+    marked_known_bot_answer_status: str,
 ) -> str:
     if selection_status == "pending_embedding_cluster" and answer_status == "no_answer":
         return "embedding_cluster_then_llm_review"
-    if selection_status == "pending_embedding_cluster" and parked_bot_answer_status != "none":
+    if selection_status == "pending_embedding_cluster" and marked_known_bot_answer_status != "none":
         return "embedding_cluster_then_llm_review"
     if selection_status == "pending_embedding_cluster" and confidence_tier == "high":
         return "embedding_cluster_selection"
@@ -586,7 +586,7 @@ def _quality_flags(
     *,
     topic_labels: list[str],
     answer_status: str,
-    parked_bot_answer_status: str,
+    marked_known_bot_answer_status: str,
     ignored_other_bot_reply_count: int,
     bot_mentions: tuple[str, ...],
 ) -> list[str]:
@@ -595,8 +595,8 @@ def _quality_flags(
         flags.append("low_topic_relevance")
     if answer_status == "no_answer":
         flags.append("missing_answer_candidate")
-    if parked_bot_answer_status != "none":
-        flags.append("known_bot_answer_parked")
+    if marked_known_bot_answer_status != "none":
+        flags.append("known_bot_answer_marked")
     if ignored_other_bot_reply_count:
         flags.append("other_bot_reply_ignored")
     if bot_mentions:
@@ -704,7 +704,7 @@ def _embedding_batch_items(candidate: Mapping[str, Any]) -> list[dict[str, Any]]
     ]
     answer_groups = [
         *candidate.get("answer_candidates", []),
-        *candidate.get("parked_bot_answer_candidates", []),
+        *candidate.get("marked_known_bot_answer_candidates", []),
     ]
     for answer in answer_groups:
         if not isinstance(answer, Mapping):
@@ -743,8 +743,8 @@ def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "input": {
             "question_text_redacted": candidate.get("question_text_redacted", ""),
             "answer_candidates": candidate.get("answer_candidates", []),
-            "parked_bot_answer_candidates": candidate.get("parked_bot_answer_candidates", []),
-            "parked_bot_answer_status": candidate.get("parked_bot_answer_status", ""),
+            "marked_known_bot_answer_candidates": candidate.get("marked_known_bot_answer_candidates", []),
+            "marked_known_bot_answer_status": candidate.get("marked_known_bot_answer_status", ""),
             "ignored_other_bot_reply_count": candidate.get("ignored_other_bot_reply_count", 0),
             "topic_labels": candidate.get("topic_labels", []),
             "law_code_candidates": candidate.get("law_code_candidates", []),
@@ -779,7 +779,7 @@ def _build_summary(
     llm_batch_output_path: str | Path | None,
 ) -> dict[str, Any]:
     status_counts = Counter(str(candidate.get("answer_candidate_status", "")) for candidate in candidates)
-    parked_bot_status_counts = Counter(str(candidate.get("parked_bot_answer_status", "")) for candidate in candidates)
+    marked_known_bot_status_counts = Counter(str(candidate.get("marked_known_bot_answer_status", "")) for candidate in candidates)
     confidence_counts = Counter(str(candidate.get("confidence_tier", "")) for candidate in candidates)
     selection_counts = Counter(str(candidate.get("selection_status", "")) for candidate in candidates)
     route_counts = Counter(str(candidate.get("review_route", "")) for candidate in candidates)
@@ -790,7 +790,7 @@ def _build_summary(
         law_code for candidate in candidates for law_code in candidate.get("law_code_candidates", [])
     )
     bot_mention_count = sum(1 for candidate in candidates if candidate.get("bot_mentions"))
-    parked_bot_answer_count = sum(len(candidate.get("parked_bot_answer_candidates", [])) for candidate in candidates)
+    marked_known_bot_answer_count = sum(len(candidate.get("marked_known_bot_answer_candidates", [])) for candidate in candidates)
     ignored_other_bot_reply_count = sum(int(candidate.get("ignored_other_bot_reply_count", 0) or 0) for candidate in candidates)
     return {
         "artifact_type": "tg_qa_extraction_summary",
@@ -802,16 +802,16 @@ def _build_summary(
         "question_candidate_count": len(candidates),
         "emitted_candidate_count": len(candidates),
         "counts_by_answer_candidate_status": dict(sorted(status_counts.items())),
-        "counts_by_parked_bot_answer_status": dict(sorted(parked_bot_status_counts.items())),
+        "counts_by_marked_known_bot_answer_status": dict(sorted(marked_known_bot_status_counts.items())),
         "counts_by_confidence_tier": dict(sorted(confidence_counts.items())),
         "counts_by_selection_status": dict(sorted(selection_counts.items())),
         "counts_by_review_route": dict(sorted(route_counts.items())),
         "counts_by_topic_label": dict(sorted(topic_counts.items())),
         "counts_by_law_code_candidate": dict(sorted(law_counts.items())),
         "bot_mention_candidate_count": bot_mention_count,
-        "parked_bot_answer_candidate_count": parked_bot_answer_count,
+        "marked_known_bot_answer_candidate_count": marked_known_bot_answer_count,
         "ignored_other_bot_reply_count": ignored_other_bot_reply_count,
-        "bot_answer_parking_policy": BOT_ANSWER_PARKING_POLICY,
+        "bot_answer_marking_policy": BOT_ANSWER_MARKING_POLICY,
         "candidate_output_path": str(output_path or ""),
         "summary_output_path": str(summary_output_path or ""),
         "embedding_batch_output_path": str(embedding_batch_output_path or ""),

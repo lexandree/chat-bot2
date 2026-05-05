@@ -204,14 +204,14 @@ def test_cli_evaluation_tg_qa_writes_candidates_summary_and_llm_batch(tmp_path: 
     assert exit_code == 0
     assert payload["status"] == "completed"
     assert payload["emitted_candidate_count"] == 2
-    assert payload["parked_bot_answer_candidate_count"] == 1
+    assert payload["marked_known_bot_answer_candidate_count"] == 1
     assert payload["ignored_other_bot_reply_count"] == 1
     assert summary["trust_boundary"] == "telegram_answers_are_evaluation_material_not_legal_truth"
     assert summary["embedding_batch_output_path"] == str(embedding_output)
     assert candidates[0]["answer_candidate_status"] == "strong"
     assert candidates[0]["selection_status"] == "pending_embedding_cluster"
     assert candidates[0]["review_route"] == "embedding_cluster_then_llm_review"
-    assert candidates[0]["parked_bot_answer_candidates"][0]["known_bot_usernames"] == ["@berlin_wiki_bot"]
+    assert candidates[0]["marked_known_bot_answer_candidates"][0]["known_bot_usernames"] == ["@berlin_wiki_bot"]
     assert candidates[0]["bot_mentions"] == ["@berlin_wiki_bot"]
     assert candidates[1]["quality_flags"] == ["low_topic_relevance", "missing_answer_candidate"]
     assert embedding_items[0]["cluster_usage"] == ["question_cluster", "qa_cluster"]

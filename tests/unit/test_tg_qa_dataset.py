@@ -80,12 +80,12 @@ def test_extract_tg_qa_dataset_from_minimal_sample(tmp_path: Path) -> None:
     assert candidate["answer_drift_status"] == "not_evaluated"
     assert candidate["answer_candidates"][0]["answer_candidate_id"].startswith("tg-answer-candidate:")
     assert candidate["answer_candidates"][0]["answer_source_type"] == "human_reply"
-    assert candidate["parked_bot_answer_status"] == "available"
-    assert candidate["parked_bot_answer_candidates"][0]["answer_source_type"] == "known_wiki_bot"
-    assert candidate["parked_bot_answer_candidates"][0]["known_bot_usernames"] == ["@berlin_wiki_bot"]
-    assert candidate["parked_bot_answer_candidates"][0]["parking_reason"] == "known_wiki_bot_prepared_answer"
+    assert candidate["marked_known_bot_answer_status"] == "available"
+    assert candidate["marked_known_bot_answer_candidates"][0]["answer_source_type"] == "known_wiki_bot"
+    assert candidate["marked_known_bot_answer_candidates"][0]["known_bot_usernames"] == ["@berlin_wiki_bot"]
+    assert candidate["marked_known_bot_answer_candidates"][0]["marking_reason"] == "known_wiki_bot_prepared_answer"
     assert candidate["ignored_other_bot_reply_count"] == 1
-    assert candidate["bot_answer_parking_policy"] == "known_wiki_bot_answers_parked_other_bots_ignored"
+    assert candidate["bot_answer_marking_policy"] == "known_wiki_bot_answers_marked_other_bots_low_priority"
     assert candidate["review_status"] == "pending"
     assert candidate["llm_processing_status"] == "not_run"
     assert off_topic["confidence_tier"] == "low"
@@ -100,11 +100,11 @@ def test_extract_tg_qa_dataset_from_minimal_sample(tmp_path: Path) -> None:
     assert summary["text_message_count"] == 7
     assert summary["emitted_candidate_count"] == 2
     assert summary["counts_by_answer_candidate_status"] == {"no_answer": 1, "strong": 1}
-    assert summary["counts_by_parked_bot_answer_status"] == {"available": 1, "none": 1}
+    assert summary["counts_by_marked_known_bot_answer_status"] == {"available": 1, "none": 1}
     assert summary["counts_by_confidence_tier"] == {"high": 1, "low": 1}
     assert summary["counts_by_selection_status"] == {"pending_embedding_cluster": 1, "uncertain": 1}
     assert summary["bot_mention_candidate_count"] == 1
-    assert summary["parked_bot_answer_candidate_count"] == 1
+    assert summary["marked_known_bot_answer_candidate_count"] == 1
     assert summary["ignored_other_bot_reply_count"] == 1
     assert summary["selection_policy"] == "semantic_qa_cluster_latest_usable_answer"
     assert written_candidates[0]["candidate_id"] == candidate["candidate_id"]
@@ -118,5 +118,5 @@ def test_extract_tg_qa_dataset_from_minimal_sample(tmp_path: Path) -> None:
         for item in embedding_items
     )
     assert llm_items[0]["task_id"] == candidate["candidate_id"]
-    assert llm_items[0]["input"]["parked_bot_answer_status"] == "available"
+    assert llm_items[0]["input"]["marked_known_bot_answer_status"] == "available"
     assert llm_items[0]["runtime_hint"] == "openai_compatible_or_langchain_optional"
