@@ -67,12 +67,30 @@ Responsibilities:
 - vectorize question items with query semantics;
 - vectorize answer items with document semantics;
 - optionally vectorize combined Q/A text for pair-level grouping;
+- reuse the existing project embedding contract instead of defining a parallel
+  one:
+  - `src/retrieval/embedding_profile.py`
+  - `src/retrieval/embedding_endpoint_client.py`
+  - `src/retrieval/embedding_backend.py`
+  - `src/retrieval/embedding_service.py`
+- preserve the validated Jina retrieval contract:
+  - `Query: ` for question items;
+  - `Document: ` for answer and Q/A-pair items;
+  - `1024` dimensions by default;
+  - normalized vectors;
+  - local Jina-compatible endpoint shape `/v1/embeddings`;
 - record provider, model, dimensions, normalization, prefixes, run id, and
   failure counts;
 - keep vectors and provider output outside tracked source.
 
 Default tests must use fixture vectors or deterministic fake vectors, not live
 embedding services.
+
+Reference documentation:
+
+- `TECHNICAL_SPEC.md`, section `Embedding Index`
+- `ARCHITECTURE.md`, section `Embedding Runtime`
+- `export/reference_docs/jina_embeddings_playbook.md`
 
 ### Stage 3: Similarity Search
 

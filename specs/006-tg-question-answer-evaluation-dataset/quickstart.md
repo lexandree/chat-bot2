@@ -60,5 +60,10 @@ The intended selection policy is:
 8. build the final dataset only from `auto_selected` and `review_approved`
    records.
 
+Embedding stages must reuse the existing Jina-compatible project contract:
+`Query: ` for question items, `Document: ` for answer and Q/A-pair items,
+normalized `1024`-dimensional vectors by default, and fixture/fake vectors for
+default tests. Live Jina checks remain explicit opt-in validation only.
+
 Only `auto_selected` and `review_approved` records are eligible for the final
 evaluation dataset. `uncertain` is a valid terminal status for dirty chat data.

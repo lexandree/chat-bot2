@@ -61,13 +61,17 @@ Required fields:
 
 External vectorization input.
 
+This item must preserve the existing Jina retrieval embedding semantics from
+`src/retrieval/embedding_profile.py`.
+
 Required fields:
 
 - `embedding_item_id`
 - `candidate_id`
 - `text_role`: `question`, `answer`, or `qa_pair`
 - `embedding_input_text`
-- `embedding_prefix`
+- `embedding_prefix`: `Query:` for `question`, `Document:` for `answer` and
+  `qa_pair`
 - `answer_candidate_id`
 - `answer_source_type`
 - `answer_link_type`
@@ -77,6 +81,10 @@ Required fields:
 ## EmbeddingRecord
 
 Vectorization output imported back into 006 artifacts.
+
+Embedding records are file artifacts for evaluation-dataset construction. They
+reuse the project Jina-compatible embedding contract but do not write vectors to
+Neo4j.
 
 Required fields:
 
@@ -88,6 +96,10 @@ Required fields:
 - `model`
 - `dimensions`
 - `normalized`
+- `query_prefix`
+- `document_prefix`
+- `routing_mode`
+- `backend_name`
 - `vector`
 - `embedding_status`
 - `failure_reason`

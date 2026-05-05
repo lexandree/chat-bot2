@@ -102,6 +102,16 @@ Embedding batch artifacts are external-service inputs and must remain ignored
 under `data/evaluation/`. They do not mutate the graph and do not create trusted
 legal facts.
 
+006 embeddings must reuse the existing project embedding contract:
+
+- profile/service/backend/client code in `src/retrieval/*embedding*`;
+- Jina retrieval semantics documented in `TECHNICAL_SPEC.md`,
+  `ARCHITECTURE.md`, and `export/reference_docs/jina_embeddings_playbook.md`;
+- `Query: ` prefix for question items;
+- `Document: ` prefix for answer and Q/A-pair items;
+- default `1024` dimensions and normalized vectors;
+- default tests use fixtures/fakes and must not require a live Jina endpoint.
+
 ### Stage 3: Similarity Search
 
 Similarity search consumes embedding records and emits neighbor evidence for

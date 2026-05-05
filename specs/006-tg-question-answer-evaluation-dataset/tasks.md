@@ -34,10 +34,11 @@
 - [x] T019 Emit question and answer embedding batch JSONL.
 - [ ] T020 Add optional Q/A-pair embedding batch items with explicit
   `text_role=qa_pair`.
-- [ ] T021 Define embedding profile metadata contract for 006 evaluation runs.
+- [ ] T021 Reuse existing `EmbeddingProfile` metadata contract for 006
+  evaluation runs instead of defining a parallel embedding profile.
 - [ ] T022 Implement embedding-record import from external JSONL output.
 - [ ] T023 Validate embedding dimensions, normalization, profile id, and failed
-  item reporting.
+  item reporting against the existing Jina-compatible embedding contract.
 - [ ] T024 Add fixture embedding records for default offline tests.
 - [ ] T025 Add embedding run summary artifact.
 
