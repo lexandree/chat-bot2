@@ -52,6 +52,24 @@
       "text": "Если это Ausbildung или Anerkennung, обычно смотрят Aufenthaltstitel и ограничения в Zusatzblatt."
     },
     {
+      "id": 7,
+      "type": "message",
+      "date": "2026-01-01T09:06:00",
+      "from": "Ганс",
+      "from_id": "user777",
+      "reply_to_message_id": 3,
+      "text": "Wiki: по вопросам работы с Aufenthaltstitel обычно проверяют Nebenbestimmungen, Zusatzblatt, Beschäftigung и требования Zustimmung der Bundesagentur für Arbeit."
+    },
+    {
+      "id": 8,
+      "type": "message",
+      "date": "2026-01-01T09:07:00",
+      "from": "RandomNotifierBot",
+      "from_id": "user888",
+      "reply_to_message_id": 3,
+      "text": "Автоматическое уведомление, которое не относится к wiki-ботам."
+    },
+    {
       "id": 6,
       "type": "message",
       "date": "2026-01-01T09:10:00",

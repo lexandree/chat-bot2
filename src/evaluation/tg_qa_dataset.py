@@ -121,6 +121,7 @@ SPACE_RE = re.compile(r"\s+")
 SELECTION_POLICY = "semantic_qa_cluster_latest_usable_answer"
 QUESTION_EMBEDDING_PREFIX = "Query: "
 ANSWER_EMBEDDING_PREFIX = "Document: "
+BOT_ANSWER_PARKING_POLICY = "known_wiki_bot_answers_parked_other_bots_ignored"
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +144,8 @@ class TelegramMessage:
     text_redacted: str
     reply_to_message_id: str = ""
     bot_mentions: tuple[str, ...] = ()
+    author_bot_kind: str = "none"
+    author_bot_usernames: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -320,6 +323,8 @@ def _normalize_message(
     text_redacted, _flags = redact_text(text)
     author = str(raw.get("from_id") or raw.get("from") or raw.get("actor") or "unknown")
     bot_mentions = _detect_bot_mentions(text, bot_catalog)
+    author_bot_usernames = _detect_known_bot_author(raw, bot_catalog)
+    author_bot_kind = "known_wiki_bot" if author_bot_usernames else _detect_other_bot_author(raw)
     return TelegramMessage(
         export_id=export_id,
         message_id=str(raw.get("id", "")),
@@ -329,6 +334,8 @@ def _normalize_message(
         text_redacted=text_redacted,
         reply_to_message_id=str(raw.get("reply_to_message_id") or ""),
         bot_mentions=tuple(bot_mentions),
+        author_bot_kind=author_bot_kind,
+        author_bot_usernames=tuple(author_bot_usernames),
     )
 
 
@@ -356,17 +363,47 @@ def _extract_candidates_for_export(
         if not is_question or attention_score < min_attention_score:
             continue
         redaction_flags = redact_text(message.text)[1]
-        answer_candidates = [_answer_payload(reply, export_id=export_id) for reply in replies[:3]]
-        source_message_ids = [message.message_id, *[reply.message_id for reply in replies[:3]]]
+        human_replies = [reply for reply in replies if reply.author_bot_kind == "none"]
+        known_bot_replies = [reply for reply in replies if reply.author_bot_kind == "known_wiki_bot"]
+        other_bot_replies = [reply for reply in replies if reply.author_bot_kind == "other_bot"]
+        answer_candidates = [
+            _answer_payload(reply, export_id=export_id, answer_source_type="human_reply")
+            for reply in human_replies[:3]
+        ]
+        parked_bot_answer_candidates = [
+            _answer_payload(
+                reply,
+                export_id=export_id,
+                answer_source_type="known_wiki_bot",
+                parking_reason="known_wiki_bot_prepared_answer",
+            )
+            for reply in known_bot_replies[:5]
+        ]
+        source_message_ids = [
+            message.message_id,
+            *[reply.message_id for reply in human_replies[:3]],
+            *[reply.message_id for reply in known_bot_replies[:5]],
+        ]
         answer_status = _answer_candidate_status(answer_candidates)
+        parked_bot_answer_status = _parked_bot_answer_status(parked_bot_answer_candidates)
         confidence_tier = _confidence_tier(
             attention_score=attention_score,
             topic_score=topic_score,
             answer_status=answer_status,
+            parked_bot_answer_status=parked_bot_answer_status,
             bot_mentions=message.bot_mentions,
         )
-        selection_status = _initial_selection_status(confidence_tier=confidence_tier, answer_status=answer_status)
-        review_route = _review_route(confidence_tier=confidence_tier, selection_status=selection_status)
+        selection_status = _initial_selection_status(
+            confidence_tier=confidence_tier,
+            answer_status=answer_status,
+            parked_bot_answer_status=parked_bot_answer_status,
+        )
+        review_route = _review_route(
+            confidence_tier=confidence_tier,
+            selection_status=selection_status,
+            answer_status=answer_status,
+            parked_bot_answer_status=parked_bot_answer_status,
+        )
         candidate = {
             "candidate_id": _candidate_id(export_id, message.message_id, message.text),
             "export_id": export_id,
@@ -384,6 +421,10 @@ def _extract_candidates_for_export(
             "reply_count": len(replies),
             "answer_candidate_status": answer_status,
             "answer_candidates": answer_candidates,
+            "parked_bot_answer_status": parked_bot_answer_status,
+            "parked_bot_answer_candidates": parked_bot_answer_candidates,
+            "ignored_other_bot_reply_count": len(other_bot_replies),
+            "bot_answer_parking_policy": BOT_ANSWER_PARKING_POLICY,
             "source_message_ids": source_message_ids,
             "pii_redaction_status": redaction_flags,
             "confidence_tier": confidence_tier,
@@ -404,6 +445,8 @@ def _extract_candidates_for_export(
             "quality_flags": _quality_flags(
                 topic_labels=topic_labels,
                 answer_status=answer_status,
+                parked_bot_answer_status=parked_bot_answer_status,
+                ignored_other_bot_reply_count=len(other_bot_replies),
                 bot_mentions=message.bot_mentions,
             ),
         }
@@ -411,7 +454,13 @@ def _extract_candidates_for_export(
     return candidates
 
 
-def _answer_payload(message: TelegramMessage, *, export_id: str) -> dict[str, Any]:
+def _answer_payload(
+    message: TelegramMessage,
+    *,
+    export_id: str,
+    answer_source_type: str,
+    parking_reason: str = "",
+) -> dict[str, Any]:
     return {
         "answer_candidate_id": _answer_candidate_id(export_id, message.message_id, message.text),
         "message_id": message.message_id,
@@ -419,6 +468,10 @@ def _answer_payload(message: TelegramMessage, *, export_id: str) -> dict[str, An
         "author_hash": message.author_hash,
         "text_redacted": message.text_redacted,
         "bot_mentions": list(message.bot_mentions),
+        "answer_source_type": answer_source_type,
+        "author_bot_kind": message.author_bot_kind,
+        "known_bot_usernames": list(message.author_bot_usernames),
+        "parking_reason": parking_reason,
         "pii_redaction_status": redact_text(message.text)[1],
     }
 
@@ -474,31 +527,52 @@ def _answer_candidate_status(answer_candidates: list[dict[str, Any]]) -> str:
     return "partial"
 
 
+def _parked_bot_answer_status(parked_bot_answer_candidates: list[dict[str, Any]]) -> str:
+    if not parked_bot_answer_candidates:
+        return "none"
+    if any(len(item.get("text_redacted", "")) >= 80 for item in parked_bot_answer_candidates):
+        return "available"
+    return "partial"
+
+
 def _confidence_tier(
     *,
     attention_score: int,
     topic_score: int,
     answer_status: str,
+    parked_bot_answer_status: str,
     bot_mentions: tuple[str, ...],
 ) -> str:
     if answer_status == "strong" and topic_score >= 3 and attention_score >= 10:
         return "high"
     if answer_status in {"strong", "partial"} and attention_score >= 7 and (topic_score > 0 or bot_mentions):
         return "medium"
+    if parked_bot_answer_status in {"available", "partial"} and attention_score >= 7:
+        return "medium"
     if answer_status != "no_answer" or topic_score > 0 or bot_mentions:
         return "low"
     return "low"
 
 
-def _initial_selection_status(*, confidence_tier: str, answer_status: str) -> str:
-    if answer_status == "no_answer":
+def _initial_selection_status(*, confidence_tier: str, answer_status: str, parked_bot_answer_status: str) -> str:
+    if answer_status == "no_answer" and parked_bot_answer_status == "none":
         return "uncertain"
     if confidence_tier in {"high", "medium"}:
         return "pending_embedding_cluster"
     return "needs_manual_review"
 
 
-def _review_route(*, confidence_tier: str, selection_status: str) -> str:
+def _review_route(
+    *,
+    confidence_tier: str,
+    selection_status: str,
+    answer_status: str,
+    parked_bot_answer_status: str,
+) -> str:
+    if selection_status == "pending_embedding_cluster" and answer_status == "no_answer":
+        return "embedding_cluster_then_llm_review"
+    if selection_status == "pending_embedding_cluster" and parked_bot_answer_status != "none":
+        return "embedding_cluster_then_llm_review"
     if selection_status == "pending_embedding_cluster" and confidence_tier == "high":
         return "embedding_cluster_selection"
     if selection_status == "pending_embedding_cluster":
@@ -512,6 +586,8 @@ def _quality_flags(
     *,
     topic_labels: list[str],
     answer_status: str,
+    parked_bot_answer_status: str,
+    ignored_other_bot_reply_count: int,
     bot_mentions: tuple[str, ...],
 ) -> list[str]:
     flags = []
@@ -519,6 +595,10 @@ def _quality_flags(
         flags.append("low_topic_relevance")
     if answer_status == "no_answer":
         flags.append("missing_answer_candidate")
+    if parked_bot_answer_status != "none":
+        flags.append("known_bot_answer_parked")
+    if ignored_other_bot_reply_count:
+        flags.append("other_bot_reply_ignored")
     if bot_mentions:
         flags.append("bot_mention_context")
     return flags or ["none"]
@@ -532,6 +612,46 @@ def _detect_bot_mentions(text: str, bot_catalog: list[BotCatalogEntry]) -> list[
             if username and username.lower() in lowered:
                 mentions.append(username)
     return sorted(set(mentions))
+
+
+def _detect_known_bot_author(raw: Mapping[str, Any], bot_catalog: list[BotCatalogEntry]) -> list[str]:
+    raw_values = [
+        str(raw.get("from", "") or ""),
+        str(raw.get("from_id", "") or ""),
+        str(raw.get("actor", "") or ""),
+    ]
+    normalized_values = {_normalize_author_identity(value) for value in raw_values if value}
+    combined = " ".join(sorted(normalized_values))
+    matches: list[str] = []
+    for entry in bot_catalog:
+        entry_name = _normalize_author_identity(entry.name)
+        name_matched = entry_name and entry_name in normalized_values
+        username_matched = any(
+            username and (
+                _normalize_author_identity(username) in normalized_values
+                or _normalize_author_identity(username).lstrip("@") in combined
+            )
+            for username in entry.usernames
+        )
+        if name_matched or username_matched:
+            matches.extend(entry.usernames)
+    return sorted(set(matches))
+
+
+def _detect_other_bot_author(raw: Mapping[str, Any]) -> str:
+    raw_values = [
+        str(raw.get("from", "") or ""),
+        str(raw.get("from_id", "") or ""),
+        str(raw.get("actor", "") or ""),
+    ]
+    combined = " ".join(_normalize_author_identity(value) for value in raw_values if value)
+    if "bot" in combined or "бот" in combined:
+        return "other_bot"
+    return "none"
+
+
+def _normalize_author_identity(value: str) -> str:
+    return SPACE_RE.sub(" ", value.lower()).strip()
 
 
 def _deduplicate_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -582,7 +702,11 @@ def _embedding_batch_items(candidate: Mapping[str, Any]) -> list[dict[str, Any]]
             "selection_policy": SELECTION_POLICY,
         }
     ]
-    for answer in candidate.get("answer_candidates", []):
+    answer_groups = [
+        *candidate.get("answer_candidates", []),
+        *candidate.get("parked_bot_answer_candidates", []),
+    ]
+    for answer in answer_groups:
         if not isinstance(answer, Mapping):
             continue
         answer_id = str(answer.get("answer_candidate_id", ""))
@@ -596,6 +720,7 @@ def _embedding_batch_items(candidate: Mapping[str, Any]) -> list[dict[str, Any]]
                 "answer_candidate_id": answer_id,
                 "source_message_id": str(answer.get("message_id", "")),
                 "text_role": "answer",
+                "answer_source_type": str(answer.get("answer_source_type", "")),
                 "date": str(answer.get("date", "")),
                 "embedding_prefix": ANSWER_EMBEDDING_PREFIX.strip(),
                 "embedding_input_text": ANSWER_EMBEDDING_PREFIX + text,
@@ -618,6 +743,9 @@ def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "input": {
             "question_text_redacted": candidate.get("question_text_redacted", ""),
             "answer_candidates": candidate.get("answer_candidates", []),
+            "parked_bot_answer_candidates": candidate.get("parked_bot_answer_candidates", []),
+            "parked_bot_answer_status": candidate.get("parked_bot_answer_status", ""),
+            "ignored_other_bot_reply_count": candidate.get("ignored_other_bot_reply_count", 0),
             "topic_labels": candidate.get("topic_labels", []),
             "law_code_candidates": candidate.get("law_code_candidates", []),
             "bot_mentions": candidate.get("bot_mentions", []),
@@ -651,6 +779,7 @@ def _build_summary(
     llm_batch_output_path: str | Path | None,
 ) -> dict[str, Any]:
     status_counts = Counter(str(candidate.get("answer_candidate_status", "")) for candidate in candidates)
+    parked_bot_status_counts = Counter(str(candidate.get("parked_bot_answer_status", "")) for candidate in candidates)
     confidence_counts = Counter(str(candidate.get("confidence_tier", "")) for candidate in candidates)
     selection_counts = Counter(str(candidate.get("selection_status", "")) for candidate in candidates)
     route_counts = Counter(str(candidate.get("review_route", "")) for candidate in candidates)
@@ -661,6 +790,8 @@ def _build_summary(
         law_code for candidate in candidates for law_code in candidate.get("law_code_candidates", [])
     )
     bot_mention_count = sum(1 for candidate in candidates if candidate.get("bot_mentions"))
+    parked_bot_answer_count = sum(len(candidate.get("parked_bot_answer_candidates", [])) for candidate in candidates)
+    ignored_other_bot_reply_count = sum(int(candidate.get("ignored_other_bot_reply_count", 0) or 0) for candidate in candidates)
     return {
         "artifact_type": "tg_qa_extraction_summary",
         "generated_at": _utc_timestamp(),
@@ -671,12 +802,16 @@ def _build_summary(
         "question_candidate_count": len(candidates),
         "emitted_candidate_count": len(candidates),
         "counts_by_answer_candidate_status": dict(sorted(status_counts.items())),
+        "counts_by_parked_bot_answer_status": dict(sorted(parked_bot_status_counts.items())),
         "counts_by_confidence_tier": dict(sorted(confidence_counts.items())),
         "counts_by_selection_status": dict(sorted(selection_counts.items())),
         "counts_by_review_route": dict(sorted(route_counts.items())),
         "counts_by_topic_label": dict(sorted(topic_counts.items())),
         "counts_by_law_code_candidate": dict(sorted(law_counts.items())),
         "bot_mention_candidate_count": bot_mention_count,
+        "parked_bot_answer_candidate_count": parked_bot_answer_count,
+        "ignored_other_bot_reply_count": ignored_other_bot_reply_count,
+        "bot_answer_parking_policy": BOT_ANSWER_PARKING_POLICY,
         "candidate_output_path": str(output_path or ""),
         "summary_output_path": str(summary_output_path or ""),
         "embedding_batch_output_path": str(embedding_batch_output_path or ""),

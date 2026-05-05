@@ -26,6 +26,9 @@ Expected result:
 - emitted candidate texts are redacted
 - wiki bot mentions are retained as weak metadata
 - answer candidates are direct replies, not trusted legal answers
+- known wiki-bot authored replies are parked in
+  `parked_bot_answer_candidates`
+- other bot-like replies are counted but not treated as useful wiki-bot answers
 - question and answer texts are emitted separately for optional external
   vectorization
 - candidate records include quality tier, cascade route, cluster placeholders,

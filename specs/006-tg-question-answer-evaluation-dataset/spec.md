@@ -62,6 +62,10 @@ Stage 1 candidate records must include:
 - placeholder cluster fields: `question_cluster_id`, `answer_cluster_id`,
   `qa_cluster_id`
 - `answer_drift_status`: initially `not_evaluated`
+- `parked_bot_answer_candidates` for known wiki-bot authored replies
+- `ignored_other_bot_reply_count` for bot-like replies outside the known wiki
+  bot catalog
+- `bot_answer_parking_policy`
 
 ### Stage 2: Question And Answer Embeddings
 
@@ -123,6 +127,10 @@ evidence.
 - Redact obvious PII from emitted text.
 - Detect question candidates with deterministic heuristics.
 - Use wiki bot mentions as weak prioritization signals.
+- Detect replies authored by known wiki bots from the catalog and park those
+  answers separately from ordinary human answer candidates.
+- Treat other bot-like replies as low-priority ignored bot noise unless later
+  review explicitly promotes them.
 - Collect direct reply answers as candidate answer evidence.
 - Label current-theme relevance for migration/asylum/employment topics.
 - Emit JSONL records with source message ids, quality tier, cascade route,
