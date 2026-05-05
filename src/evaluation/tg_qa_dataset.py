@@ -118,6 +118,9 @@ EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 USERNAME_RE = re.compile(r"(?<!\w)@[A-Za-z0-9_]{4,32}\b")
 PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{6,}\d)(?!\w)")
 SPACE_RE = re.compile(r"\s+")
+SELECTION_POLICY = "semantic_qa_cluster_latest_usable_answer"
+QUESTION_EMBEDDING_PREFIX = "Query: "
+ANSWER_EMBEDDING_PREFIX = "Document: "
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +149,7 @@ class TelegramMessage:
 class TgQaExtractionResult:
     candidates: list[dict[str, Any]]
     summary: dict[str, Any]
+    embedding_batch_items: list[dict[str, Any]] = field(default_factory=list)
     llm_batch_items: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -155,6 +159,7 @@ def extract_tg_qa_dataset(
     bot_catalog_path: str | Path | None = None,
     output_path: str | Path | None = None,
     summary_output_path: str | Path | None = None,
+    embedding_batch_output_path: str | Path | None = None,
     llm_batch_output_path: str | Path | None = None,
     max_messages_per_export: int = 0,
     max_candidates: int = 500,
@@ -188,6 +193,11 @@ def extract_tg_qa_dataset(
         )
     candidates = _deduplicate_candidates(candidates)
     candidates = sorted(candidates, key=_candidate_sort_key)[:max_candidates]
+    embedding_batch_items = [
+        item
+        for candidate in candidates
+        for item in _embedding_batch_items(candidate)
+    ]
     llm_batch_items = [_llm_batch_item(candidate) for candidate in candidates]
     summary = _build_summary(
         export_paths=export_paths,
@@ -197,15 +207,23 @@ def extract_tg_qa_dataset(
         candidates=candidates,
         output_path=output_path,
         summary_output_path=summary_output_path,
+        embedding_batch_output_path=embedding_batch_output_path,
         llm_batch_output_path=llm_batch_output_path,
     )
     if output_path:
         _write_jsonl(output_path, candidates)
     if summary_output_path:
         _write_json(summary_output_path, summary)
+    if embedding_batch_output_path:
+        _write_jsonl(embedding_batch_output_path, embedding_batch_items)
     if llm_batch_output_path:
         _write_jsonl(llm_batch_output_path, llm_batch_items)
-    return TgQaExtractionResult(candidates=candidates, summary=summary, llm_batch_items=llm_batch_items)
+    return TgQaExtractionResult(
+        candidates=candidates,
+        summary=summary,
+        embedding_batch_items=embedding_batch_items,
+        llm_batch_items=llm_batch_items,
+    )
 
 
 def resolve_export_paths(input_paths: list[str | Path]) -> list[Path]:
@@ -338,12 +356,21 @@ def _extract_candidates_for_export(
         if not is_question or attention_score < min_attention_score:
             continue
         redaction_flags = redact_text(message.text)[1]
-        answer_candidates = [_answer_payload(reply) for reply in replies[:3]]
+        answer_candidates = [_answer_payload(reply, export_id=export_id) for reply in replies[:3]]
         source_message_ids = [message.message_id, *[reply.message_id for reply in replies[:3]]]
         answer_status = _answer_candidate_status(answer_candidates)
+        confidence_tier = _confidence_tier(
+            attention_score=attention_score,
+            topic_score=topic_score,
+            answer_status=answer_status,
+            bot_mentions=message.bot_mentions,
+        )
+        selection_status = _initial_selection_status(confidence_tier=confidence_tier, answer_status=answer_status)
+        review_route = _review_route(confidence_tier=confidence_tier, selection_status=selection_status)
         candidate = {
             "candidate_id": _candidate_id(export_id, message.message_id, message.text),
             "export_id": export_id,
+            "pipeline_stage": "candidate_extraction",
             "question_message_id": message.message_id,
             "question_date": message.date,
             "author_hash": message.author_hash,
@@ -359,6 +386,19 @@ def _extract_candidates_for_export(
             "answer_candidates": answer_candidates,
             "source_message_ids": source_message_ids,
             "pii_redaction_status": redaction_flags,
+            "confidence_tier": confidence_tier,
+            "selection_policy": SELECTION_POLICY,
+            "selection_status": selection_status,
+            "review_route": review_route,
+            "embedding_processing_status": "not_run",
+            "clustering_status": "not_run",
+            "question_cluster_id": "",
+            "answer_cluster_id": "",
+            "qa_cluster_id": "",
+            "selected_answer_candidate_id": "",
+            "selected_answer_date": "",
+            "historical_answer_variant_count": 0,
+            "answer_drift_status": "not_evaluated",
             "review_status": "pending",
             "llm_processing_status": "not_run",
             "quality_flags": _quality_flags(
@@ -371,8 +411,9 @@ def _extract_candidates_for_export(
     return candidates
 
 
-def _answer_payload(message: TelegramMessage) -> dict[str, Any]:
+def _answer_payload(message: TelegramMessage, *, export_id: str) -> dict[str, Any]:
     return {
+        "answer_candidate_id": _answer_candidate_id(export_id, message.message_id, message.text),
         "message_id": message.message_id,
         "date": message.date,
         "author_hash": message.author_hash,
@@ -433,6 +474,40 @@ def _answer_candidate_status(answer_candidates: list[dict[str, Any]]) -> str:
     return "partial"
 
 
+def _confidence_tier(
+    *,
+    attention_score: int,
+    topic_score: int,
+    answer_status: str,
+    bot_mentions: tuple[str, ...],
+) -> str:
+    if answer_status == "strong" and topic_score >= 3 and attention_score >= 10:
+        return "high"
+    if answer_status in {"strong", "partial"} and attention_score >= 7 and (topic_score > 0 or bot_mentions):
+        return "medium"
+    if answer_status != "no_answer" or topic_score > 0 or bot_mentions:
+        return "low"
+    return "low"
+
+
+def _initial_selection_status(*, confidence_tier: str, answer_status: str) -> str:
+    if answer_status == "no_answer":
+        return "uncertain"
+    if confidence_tier in {"high", "medium"}:
+        return "pending_embedding_cluster"
+    return "needs_manual_review"
+
+
+def _review_route(*, confidence_tier: str, selection_status: str) -> str:
+    if selection_status == "pending_embedding_cluster" and confidence_tier == "high":
+        return "embedding_cluster_selection"
+    if selection_status == "pending_embedding_cluster":
+        return "embedding_cluster_then_llm_review"
+    if selection_status == "uncertain":
+        return "manual_or_uncertain"
+    return "manual_review"
+
+
 def _quality_flags(
     *,
     topic_labels: list[str],
@@ -488,6 +563,49 @@ def _candidate_id(export_id: str, message_id: str, text: str) -> str:
     return f"tg-qa-candidate:{_stable_hash(f'{export_id}:{message_id}:{text}')}"
 
 
+def _answer_candidate_id(export_id: str, message_id: str, text: str) -> str:
+    return f"tg-answer-candidate:{_stable_hash(f'{export_id}:{message_id}:{text}')}"
+
+
+def _embedding_batch_items(candidate: Mapping[str, Any]) -> list[dict[str, Any]]:
+    candidate_id = str(candidate.get("candidate_id", ""))
+    items = [
+        {
+            "embedding_item_id": f"tg-embedding:{_stable_hash(candidate_id + ':question')}",
+            "candidate_id": candidate_id,
+            "source_message_id": str(candidate.get("question_message_id", "")),
+            "text_role": "question",
+            "date": str(candidate.get("question_date", "")),
+            "embedding_prefix": QUESTION_EMBEDDING_PREFIX.strip(),
+            "embedding_input_text": QUESTION_EMBEDDING_PREFIX + str(candidate.get("question_text_redacted", "")),
+            "cluster_usage": ["question_cluster", "qa_cluster"],
+            "selection_policy": SELECTION_POLICY,
+        }
+    ]
+    for answer in candidate.get("answer_candidates", []):
+        if not isinstance(answer, Mapping):
+            continue
+        answer_id = str(answer.get("answer_candidate_id", ""))
+        text = str(answer.get("text_redacted", ""))
+        if not text:
+            continue
+        items.append(
+            {
+                "embedding_item_id": f"tg-embedding:{_stable_hash(candidate_id + ':' + answer_id)}",
+                "candidate_id": candidate_id,
+                "answer_candidate_id": answer_id,
+                "source_message_id": str(answer.get("message_id", "")),
+                "text_role": "answer",
+                "date": str(answer.get("date", "")),
+                "embedding_prefix": ANSWER_EMBEDDING_PREFIX.strip(),
+                "embedding_input_text": ANSWER_EMBEDDING_PREFIX + text,
+                "cluster_usage": ["answer_cluster", "qa_cluster", "temporal_answer_selection"],
+                "selection_policy": SELECTION_POLICY,
+            }
+        )
+    return items
+
+
 def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "task_id": candidate["candidate_id"],
@@ -503,6 +621,10 @@ def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
             "topic_labels": candidate.get("topic_labels", []),
             "law_code_candidates": candidate.get("law_code_candidates", []),
             "bot_mentions": candidate.get("bot_mentions", []),
+            "confidence_tier": candidate.get("confidence_tier", ""),
+            "selection_status": candidate.get("selection_status", ""),
+            "review_route": candidate.get("review_route", ""),
+            "answer_drift_status": candidate.get("answer_drift_status", ""),
         },
         "expected_output_schema": {
             "is_real_user_question": "boolean",
@@ -510,6 +632,7 @@ def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
             "answer_candidate_quality": "none|partial|strong|conflicting",
             "normalized_question": "string",
             "short_answer_summary": "string",
+            "recommended_selection_status": "needs_llm_review|needs_manual_review|uncertain|rejected",
             "needs_human_review": "boolean",
         },
     }
@@ -524,9 +647,13 @@ def _build_summary(
     candidates: list[dict[str, Any]],
     output_path: str | Path | None,
     summary_output_path: str | Path | None,
+    embedding_batch_output_path: str | Path | None,
     llm_batch_output_path: str | Path | None,
 ) -> dict[str, Any]:
     status_counts = Counter(str(candidate.get("answer_candidate_status", "")) for candidate in candidates)
+    confidence_counts = Counter(str(candidate.get("confidence_tier", "")) for candidate in candidates)
+    selection_counts = Counter(str(candidate.get("selection_status", "")) for candidate in candidates)
+    route_counts = Counter(str(candidate.get("review_route", "")) for candidate in candidates)
     topic_counts = Counter(
         label for candidate in candidates for label in candidate.get("topic_labels", [])
     )
@@ -544,13 +671,20 @@ def _build_summary(
         "question_candidate_count": len(candidates),
         "emitted_candidate_count": len(candidates),
         "counts_by_answer_candidate_status": dict(sorted(status_counts.items())),
+        "counts_by_confidence_tier": dict(sorted(confidence_counts.items())),
+        "counts_by_selection_status": dict(sorted(selection_counts.items())),
+        "counts_by_review_route": dict(sorted(route_counts.items())),
         "counts_by_topic_label": dict(sorted(topic_counts.items())),
         "counts_by_law_code_candidate": dict(sorted(law_counts.items())),
         "bot_mention_candidate_count": bot_mention_count,
         "candidate_output_path": str(output_path or ""),
         "summary_output_path": str(summary_output_path or ""),
+        "embedding_batch_output_path": str(embedding_batch_output_path or ""),
         "llm_batch_output_path": str(llm_batch_output_path or ""),
         "trust_boundary": "telegram_answers_are_evaluation_material_not_legal_truth",
+        "selection_policy": SELECTION_POLICY,
+        "embedding_processing_status": "not_run",
+        "clustering_status": "not_run",
         "llm_processing_status": "not_run",
     }
 
@@ -590,5 +724,6 @@ def as_plain_dict(result: TgQaExtractionResult) -> dict[str, Any]:
     return {
         "candidates": result.candidates,
         "summary": result.summary,
+        "embedding_batch_items": result.embedding_batch_items,
         "llm_batch_items": result.llm_batch_items,
     }

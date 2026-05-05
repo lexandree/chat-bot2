@@ -124,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_parser.add_argument("--bot-catalog", default="")
     tg_qa_parser.add_argument("--output", required=True)
     tg_qa_parser.add_argument("--summary-output", required=True)
+    tg_qa_parser.add_argument("--embedding-batch-output", default="")
     tg_qa_parser.add_argument("--llm-batch-output", default="")
     tg_qa_parser.add_argument("--max-messages-per-export", type=int, default=0)
     tg_qa_parser.add_argument("--max-candidates", type=int, default=500)
@@ -407,6 +408,7 @@ def handle_evaluation_command(args: argparse.Namespace) -> tuple[int, dict[str, 
             bot_catalog_path=args.bot_catalog or None,
             output_path=args.output,
             summary_output_path=args.summary_output,
+            embedding_batch_output_path=args.embedding_batch_output or None,
             llm_batch_output_path=args.llm_batch_output or None,
             max_messages_per_export=args.max_messages_per_export,
             max_candidates=args.max_candidates,

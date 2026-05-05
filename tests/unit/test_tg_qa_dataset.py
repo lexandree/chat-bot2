@@ -41,6 +41,7 @@ def test_load_bot_catalog_and_resolve_export_paths() -> None:
 def test_extract_tg_qa_dataset_from_minimal_sample(tmp_path: Path) -> None:
     output = tmp_path / "candidates.jsonl"
     summary_output = tmp_path / "summary.json"
+    embedding_output = tmp_path / "embedding_batch.jsonl"
     llm_output = tmp_path / "llm_batch.jsonl"
 
     result = extract_tg_qa_dataset(
@@ -48,6 +49,7 @@ def test_extract_tg_qa_dataset_from_minimal_sample(tmp_path: Path) -> None:
         bot_catalog_path=SAMPLE_CATALOG,
         output_path=output,
         summary_output_path=summary_output,
+        embedding_batch_output_path=embedding_output,
         llm_batch_output_path=llm_output,
         max_candidates=20,
         min_attention_score=6,
@@ -66,18 +68,39 @@ def test_extract_tg_qa_dataset_from_minimal_sample(tmp_path: Path) -> None:
     assert "[EMAIL]" in candidate["question_text_redacted"]
     assert "[PHONE]" in candidate["question_text_redacted"]
     assert "[USERNAME]" in candidate["question_text_redacted"]
+    assert candidate["confidence_tier"] == "high"
+    assert candidate["selection_policy"] == "semantic_qa_cluster_latest_usable_answer"
+    assert candidate["selection_status"] == "pending_embedding_cluster"
+    assert candidate["review_route"] == "embedding_cluster_selection"
+    assert candidate["embedding_processing_status"] == "not_run"
+    assert candidate["clustering_status"] == "not_run"
+    assert candidate["question_cluster_id"] == ""
+    assert candidate["answer_cluster_id"] == ""
+    assert candidate["qa_cluster_id"] == ""
+    assert candidate["answer_drift_status"] == "not_evaluated"
+    assert candidate["answer_candidates"][0]["answer_candidate_id"].startswith("tg-answer-candidate:")
     assert candidate["review_status"] == "pending"
     assert candidate["llm_processing_status"] == "not_run"
+    assert off_topic["confidence_tier"] == "low"
+    assert off_topic["selection_status"] == "uncertain"
     assert off_topic["quality_flags"] == ["low_topic_relevance", "missing_answer_candidate"]
 
     summary = json.loads(summary_output.read_text(encoding="utf-8"))
+    embedding_items = [json.loads(line) for line in embedding_output.read_text(encoding="utf-8").splitlines()]
     llm_items = [json.loads(line) for line in llm_output.read_text(encoding="utf-8").splitlines()]
     written_candidates = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
     assert summary["processed_message_count"] == 6
     assert summary["text_message_count"] == 5
     assert summary["emitted_candidate_count"] == 2
     assert summary["counts_by_answer_candidate_status"] == {"no_answer": 1, "strong": 1}
+    assert summary["counts_by_confidence_tier"] == {"high": 1, "low": 1}
+    assert summary["counts_by_selection_status"] == {"pending_embedding_cluster": 1, "uncertain": 1}
     assert summary["bot_mention_candidate_count"] == 1
+    assert summary["selection_policy"] == "semantic_qa_cluster_latest_usable_answer"
     assert written_candidates[0]["candidate_id"] == candidate["candidate_id"]
+    assert len(result.embedding_batch_items) == 4
+    assert embedding_items[0]["text_role"] == "question"
+    assert embedding_items[0]["embedding_input_text"].startswith("Query: ")
+    assert any(item["text_role"] == "answer" and item["embedding_input_text"].startswith("Document: ") for item in embedding_items)
     assert llm_items[0]["task_id"] == candidate["candidate_id"]
     assert llm_items[0]["runtime_hint"] == "openai_compatible_or_langchain_optional"

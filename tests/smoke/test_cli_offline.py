@@ -170,6 +170,7 @@ def test_cli_corpus_readiness_writes_artifact_with_injected_repository(tmp_path:
 def test_cli_evaluation_tg_qa_writes_candidates_summary_and_llm_batch(tmp_path: Path) -> None:
     output = tmp_path / "tg_qa_candidates.jsonl"
     summary_output = tmp_path / "tg_qa_summary.json"
+    embedding_output = tmp_path / "tg_qa_embedding_batch.jsonl"
     llm_output = tmp_path / "tg_qa_llm_batch.jsonl"
 
     exit_code, payload = dispatch(
@@ -184,6 +185,8 @@ def test_cli_evaluation_tg_qa_writes_candidates_summary_and_llm_batch(tmp_path: 
             str(output),
             "--summary-output",
             str(summary_output),
+            "--embedding-batch-output",
+            str(embedding_output),
             "--llm-batch-output",
             str(llm_output),
             "--max-candidates",
@@ -196,14 +199,19 @@ def test_cli_evaluation_tg_qa_writes_candidates_summary_and_llm_batch(tmp_path: 
 
     candidates = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
     summary = json.loads(summary_output.read_text(encoding="utf-8"))
+    embedding_items = [json.loads(line) for line in embedding_output.read_text(encoding="utf-8").splitlines()]
     llm_items = [json.loads(line) for line in llm_output.read_text(encoding="utf-8").splitlines()]
     assert exit_code == 0
     assert payload["status"] == "completed"
     assert payload["emitted_candidate_count"] == 2
     assert summary["trust_boundary"] == "telegram_answers_are_evaluation_material_not_legal_truth"
+    assert summary["embedding_batch_output_path"] == str(embedding_output)
     assert candidates[0]["answer_candidate_status"] == "strong"
+    assert candidates[0]["selection_status"] == "pending_embedding_cluster"
+    assert candidates[0]["review_route"] == "embedding_cluster_selection"
     assert candidates[0]["bot_mentions"] == ["@berlin_wiki_bot"]
     assert candidates[1]["quality_flags"] == ["low_topic_relevance", "missing_answer_candidate"]
+    assert embedding_items[0]["cluster_usage"] == ["question_cluster", "qa_cluster"]
     assert llm_items[0]["task_type"] == "tg_qa_candidate_classification"
     assert "test@example.com" not in output.read_text(encoding="utf-8")
 

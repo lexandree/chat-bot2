@@ -30,6 +30,7 @@ data/structural_workflows/*.json
 data/evaluation/tg_qa_candidates/*.jsonl
 data/evaluation/tg_qa_dataset/*.json
 data/evaluation/tg_qa_review/*.json
+data/evaluation/tg_qa_embeddings/*.jsonl
 data/evaluation/tg_qa_llm_batches/*.jsonl
 data/**/.gitkeep
 tmp/
