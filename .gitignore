@@ -29,9 +29,15 @@ data/corpus_readiness/*.json
 data/structural_workflows/*.json
 data/evaluation/tg_qa_candidates/*.jsonl
 data/evaluation/tg_qa_dataset/*.json
+data/evaluation/tg_qa_dataset/*.jsonl
 data/evaluation/tg_qa_review/*.json
+data/evaluation/tg_qa_review/*.jsonl
 data/evaluation/tg_qa_embeddings/*.jsonl
+data/evaluation/tg_qa_similarity/*.jsonl
+data/evaluation/tg_qa_clusters/*.jsonl
+data/evaluation/tg_qa_selection/*.jsonl
 data/evaluation/tg_qa_llm_batches/*.jsonl
+data/evaluation/tg_qa_llm_results/*.jsonl
 data/**/.gitkeep
 tmp/
 *.tmp

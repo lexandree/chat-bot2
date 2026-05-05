@@ -41,15 +41,24 @@ Expected result:
 
 ## Processing Policy
 
-006 does not use message date as a global freshness cutoff. The intended
-selection policy is:
+006 does not use message date as a global freshness cutoff. The full staged
+pipeline is documented in:
+
+- `specs/006-tg-question-answer-evaluation-dataset/pipeline.md`
+- `specs/006-tg-question-answer-evaluation-dataset/data-model.md`
+- `specs/006-tg-question-answer-evaluation-dataset/contracts/final-dataset.md`
+
+The intended selection policy is:
 
 1. extract redacted Q/A candidates;
-2. vectorize both question and answer text;
-3. cluster questions, answers, and Q/A pairs;
-4. sort usable answer variants by date inside each semantic Q/A cluster;
-5. select the latest usable answer only when the cluster is stable enough;
-6. route medium/uncertain/conflicting clusters to LLM or manual review.
+2. vectorize question, answer, and optional Q/A-pair text;
+3. run similarity search in question, answer, and optional Q/A-pair spaces;
+4. cluster questions, answers, and Q/A pairs;
+5. sort usable answer variants by date inside each semantic Q/A cluster;
+6. select the latest usable answer only when the cluster is stable enough;
+7. route medium/uncertain/conflicting clusters to LLM or manual review;
+8. build the final dataset only from `auto_selected` and `review_approved`
+   records.
 
 Only `auto_selected` and `review_approved` records are eligible for the final
 evaluation dataset. `uncertain` is a valid terminal status for dirty chat data.
