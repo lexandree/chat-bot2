@@ -45,7 +45,7 @@
    host.
 9. For Colab or Kaggle operator-managed runs, reach the same home-GPU endpoint
    through a relay-host reverse-SSH pattern and keep the notebook-side
-   `LLAMA_SERVER_URL` bound to `127.0.0.1:18080/v1/embeddings`.
+   `EMBEDDING_ENDPOINT_URL` bound to `127.0.0.1:18080/v1/embeddings`.
 
 ## Neo4j
 

@@ -15,7 +15,28 @@ from evaluation.load_cases import (
     build_snapshot_comparison_report,
     write_json_artifact,
 )
-from evaluation.tg_qa_dataset import extract_tg_qa_dataset
+from evaluation.tg_qa_dataset import (
+    build_final_tg_qa_dataset,
+    build_tg_qa_dataset_corpus_coverage_report,
+    build_tg_qa_manual_review_queue,
+    cluster_tg_qa_candidates,
+    emit_tg_qa_cluster_llm_batch,
+    emit_tg_qa_dataset_corpus_coverage_embedding_batch,
+    extract_tg_qa_dataset,
+    export_tg_qa_human_review,
+    import_tg_qa_embedding_records,
+    import_tg_qa_dataset_corpus_coverage_embeddings,
+    import_tg_qa_llm_results,
+    import_tg_qa_manual_review_decisions,
+    filter_tg_qa_llm_batch_by_results,
+    merge_final_tg_qa_datasets,
+    merge_tg_qa_llm_results,
+    run_tg_qa_llm_batch,
+    run_tg_qa_similarity,
+    select_tg_qa_clusters,
+    vectorize_tg_qa_embedding_batch,
+    verify_tg_qa_boundaries,
+)
 from ingestion.legal_preview_loader import build_preview_from_manifest_path, write_preview_artifact
 from ingestion.verification import build_embedding_run_report
 from retrieval.embedding_backend import build_local_embedding_backend
@@ -128,7 +149,145 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_parser.add_argument("--llm-batch-output", default="")
     tg_qa_parser.add_argument("--max-messages-per-export", type=int, default=0)
     tg_qa_parser.add_argument("--max-candidates", type=int, default=500)
+    tg_qa_parser.add_argument("--candidate-offset", type=int, default=0)
     tg_qa_parser.add_argument("--min-attention-score", type=int, default=6)
+    tg_qa_embeddings_parser = evaluation_subparsers.add_parser("tg-qa-embeddings-import")
+    tg_qa_embeddings_parser.add_argument("--embedding-batch", required=True)
+    tg_qa_embeddings_parser.add_argument("--external-vectors", required=True)
+    tg_qa_embeddings_parser.add_argument("--output", required=True)
+    tg_qa_embeddings_parser.add_argument("--summary-output", required=True)
+    tg_qa_embeddings_parser.add_argument("--embedding-profile-id", default="")
+    tg_qa_embeddings_parser.add_argument("--dimensions", type=int, default=0)
+    tg_qa_embeddings_parser.add_argument("--model-id", default="")
+    tg_qa_embed_batch_parser = evaluation_subparsers.add_parser("tg-qa-embed-batch")
+    tg_qa_embed_batch_parser.add_argument("--embedding-batch", required=True)
+    tg_qa_embed_batch_parser.add_argument("--output", required=True)
+    tg_qa_embed_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_embed_batch_parser.add_argument("--endpoint-url", default="")
+    tg_qa_embed_batch_parser.add_argument("--model-id", default="")
+    tg_qa_embed_batch_parser.add_argument("--batch-size", type=int, default=16)
+    tg_qa_embed_batch_parser.add_argument("--timeout-seconds", type=int, default=60)
+    tg_qa_embed_batch_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_similarity_parser = evaluation_subparsers.add_parser("tg-qa-similarity")
+    tg_qa_similarity_parser.add_argument("--embedding-records", required=True)
+    tg_qa_similarity_parser.add_argument("--output", required=True)
+    tg_qa_similarity_parser.add_argument("--summary-output", required=True)
+    tg_qa_clusters_parser = evaluation_subparsers.add_parser("tg-qa-clusters")
+    tg_qa_clusters_parser.add_argument("--candidates", required=True)
+    tg_qa_clusters_parser.add_argument("--neighbors", required=True)
+    tg_qa_clusters_parser.add_argument("--question-clusters-output", required=True)
+    tg_qa_clusters_parser.add_argument("--answer-clusters-output", required=True)
+    tg_qa_clusters_parser.add_argument("--qa-clusters-output", required=True)
+    tg_qa_clusters_parser.add_argument("--summary-output", required=True)
+    tg_qa_selection_parser = evaluation_subparsers.add_parser("tg-qa-selection")
+    tg_qa_selection_parser.add_argument("--candidates", required=True)
+    tg_qa_selection_parser.add_argument("--qa-clusters", required=True)
+    tg_qa_selection_parser.add_argument("--answer-clusters", default="")
+    tg_qa_selection_parser.add_argument("--output", required=True)
+    tg_qa_selection_parser.add_argument("--summary-output", required=True)
+    tg_qa_cluster_llm_parser = evaluation_subparsers.add_parser("tg-qa-cluster-llm-batch")
+    tg_qa_cluster_llm_parser.add_argument("--candidates", required=True)
+    tg_qa_cluster_llm_parser.add_argument("--selection", required=True)
+    tg_qa_cluster_llm_parser.add_argument("--output", required=True)
+    tg_qa_cluster_llm_parser.add_argument("--prompt-profile", choices=["full", "compact"], default="full")
+    tg_qa_cluster_llm_parser.add_argument("--input-char-budget", type=int, default=0)
+    tg_qa_cluster_llm_parser.add_argument("--overflow-output", default="")
+    tg_qa_cluster_llm_parser.add_argument("--skip-over-budget", action="store_true")
+    tg_qa_cluster_llm_parser.add_argument("--manual-review-overlay", default="")
+    tg_qa_llm_run_parser = evaluation_subparsers.add_parser("tg-qa-llm-run")
+    tg_qa_llm_run_parser.add_argument("--batch", required=True)
+    tg_qa_llm_run_parser.add_argument("--output", required=True)
+    tg_qa_llm_run_parser.add_argument("--summary-output", required=True)
+    tg_qa_llm_run_parser.add_argument("--endpoint-url", required=True)
+    tg_qa_llm_run_parser.add_argument("--model-id", required=True)
+    tg_qa_llm_run_parser.add_argument("--llm-run-id", required=True)
+    tg_qa_llm_run_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_llm_run_parser.add_argument("--timeout-seconds", type=int, default=120)
+    tg_qa_llm_run_parser.add_argument("--max-tokens", type=int, default=512)
+    tg_qa_llm_run_parser.add_argument("--no-response-format-json", action="store_true")
+    tg_qa_llm_run_parser.add_argument("--reasoning-effort", default="")
+    tg_qa_llm_run_parser.add_argument("--thinking-type", choices=["", "disabled", "enabled"], default="")
+    tg_qa_llm_run_parser.add_argument("--omit-temperature", action="store_true")
+    tg_qa_llm_run_parser.add_argument("--extra-body-json", default="")
+    tg_qa_llm_run_parser.add_argument("--runtime-contour", default="operator_managed_llama_server_openai_compatible")
+    tg_qa_llm_run_parser.add_argument("--backend", default="llama-server")
+    tg_qa_llm_run_parser.add_argument("--model-file", default="")
+    tg_qa_llm_run_parser.add_argument("--quantization", default="")
+    tg_qa_llm_run_parser.add_argument("--api-key-env", default="")
+    tg_qa_llm_run_parser.add_argument("--http-user-agent", default="chat_bot2-evaluation-runner/006")
+    tg_qa_llm_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_llm_import_parser = evaluation_subparsers.add_parser("tg-qa-llm-import")
+    tg_qa_llm_import_parser.add_argument("--batch", required=True)
+    tg_qa_llm_import_parser.add_argument("--results", required=True)
+    tg_qa_llm_import_parser.add_argument("--evidence-output", required=True)
+    tg_qa_llm_import_parser.add_argument("--manifest-output", required=True)
+    tg_qa_llm_import_parser.add_argument("--llm-run-id", default="")
+    tg_qa_llm_import_parser.add_argument("--runtime-summary", default="")
+    tg_qa_llm_retry_parser = evaluation_subparsers.add_parser("tg-qa-llm-retry-batch")
+    tg_qa_llm_retry_parser.add_argument("--batch", required=True)
+    tg_qa_llm_retry_parser.add_argument("--results", required=True)
+    tg_qa_llm_retry_parser.add_argument("--output", required=True)
+    tg_qa_llm_retry_parser.add_argument("--status", default="failed")
+    tg_qa_llm_merge_parser = evaluation_subparsers.add_parser("tg-qa-llm-merge-results")
+    tg_qa_llm_merge_parser.add_argument("--primary-results", required=True)
+    tg_qa_llm_merge_parser.add_argument("--retry-results", required=True)
+    tg_qa_llm_merge_parser.add_argument("--output", required=True)
+    tg_qa_review_queue_parser = evaluation_subparsers.add_parser("tg-qa-review-queue")
+    tg_qa_review_queue_parser.add_argument("--candidates", required=True)
+    tg_qa_review_queue_parser.add_argument("--selection", required=True)
+    tg_qa_review_queue_parser.add_argument("--llm-evidence", default="")
+    tg_qa_review_queue_parser.add_argument("--output", required=True)
+    tg_qa_review_queue_parser.add_argument("--summary-output", required=True)
+    tg_qa_review_export_parser = evaluation_subparsers.add_parser("tg-qa-review-export")
+    tg_qa_review_export_parser.add_argument("--review-queue", required=True)
+    tg_qa_review_export_parser.add_argument("--markdown-output", required=True)
+    tg_qa_review_export_parser.add_argument("--tsv-output", required=True)
+    tg_qa_review_export_parser.add_argument("--summary-output", required=True)
+    tg_qa_review_export_parser.add_argument("--max-text-chars", type=int, default=900)
+    tg_qa_review_import_parser = evaluation_subparsers.add_parser("tg-qa-review-import")
+    tg_qa_review_import_parser.add_argument("--review-queue", required=True)
+    tg_qa_review_import_parser.add_argument("--decisions", required=True)
+    tg_qa_review_import_parser.add_argument("--output", required=True)
+    tg_qa_review_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_final_parser = evaluation_subparsers.add_parser("tg-qa-final")
+    tg_qa_final_parser.add_argument("--candidates", required=True)
+    tg_qa_final_parser.add_argument("--selection", required=True)
+    tg_qa_final_parser.add_argument("--review-decisions", default="")
+    tg_qa_final_parser.add_argument("--output", required=True)
+    tg_qa_final_parser.add_argument("--manifest-output", required=True)
+    tg_qa_final_parser.add_argument("--quality-output", required=True)
+    tg_qa_final_merge_parser = evaluation_subparsers.add_parser("tg-qa-final-merge")
+    tg_qa_final_merge_parser.add_argument("--cases", nargs="+", required=True)
+    tg_qa_final_merge_parser.add_argument("--source-manifests", nargs="*", default=[])
+    tg_qa_final_merge_parser.add_argument("--output", required=True)
+    tg_qa_final_merge_parser.add_argument("--manifest-output", required=True)
+    tg_qa_final_merge_parser.add_argument("--quality-output", required=True)
+    tg_qa_coverage_batch_parser = evaluation_subparsers.add_parser("tg-qa-coverage-batch")
+    tg_qa_coverage_batch_parser.add_argument("--final-cases", required=True)
+    tg_qa_coverage_batch_parser.add_argument("--candidates", required=True)
+    tg_qa_coverage_batch_parser.add_argument("--output", required=True)
+    tg_qa_coverage_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_coverage_batch_parser.add_argument(
+        "--corpus-filter",
+        choices=["all", "law_or_topic", "legalish"],
+        default="all",
+    )
+    tg_qa_coverage_batch_parser.add_argument("--skip-corpus-answers", action="store_true")
+    tg_qa_coverage_import_parser = evaluation_subparsers.add_parser("tg-qa-coverage-embeddings-import")
+    tg_qa_coverage_import_parser.add_argument("--embedding-batch", required=True)
+    tg_qa_coverage_import_parser.add_argument("--external-vectors", required=True)
+    tg_qa_coverage_import_parser.add_argument("--output", required=True)
+    tg_qa_coverage_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_coverage_import_parser.add_argument("--embedding-profile-id", default="")
+    tg_qa_coverage_import_parser.add_argument("--dimensions", type=int, default=0)
+    tg_qa_coverage_import_parser.add_argument("--model-id", default="")
+    tg_qa_coverage_report_parser = evaluation_subparsers.add_parser("tg-qa-coverage-report")
+    tg_qa_coverage_report_parser.add_argument("--embedding-records", required=True)
+    tg_qa_coverage_report_parser.add_argument("--output", required=True)
+    tg_qa_coverage_report_parser.add_argument("--summary-output", required=True)
+    tg_qa_coverage_report_parser.add_argument("--chunk-size", type=int, default=4096)
+    tg_qa_coverage_report_parser.add_argument("--max-samples-per-bucket", type=int, default=20)
+    evaluation_subparsers.add_parser("tg-qa-boundary-check")
 
     embeddings_parser = subparsers.add_parser("embeddings")
     embeddings_subparsers = embeddings_parser.add_subparsers(dest="action")
@@ -401,7 +560,7 @@ def handle_corpus_command(
             client.close()
 
 
-def handle_evaluation_command(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSettings) -> tuple[int, dict[str, object]]:
     if args.action == "tg-qa":
         result = extract_tg_qa_dataset(
             input_paths=args.inputs,
@@ -412,11 +571,255 @@ def handle_evaluation_command(args: argparse.Namespace) -> tuple[int, dict[str, 
             llm_batch_output_path=args.llm_batch_output or None,
             max_messages_per_export=args.max_messages_per_export,
             max_candidates=args.max_candidates,
+            candidate_offset=args.candidate_offset,
             min_attention_score=args.min_attention_score,
         )
         payload = dict(result.summary)
         payload["status"] = "completed"
         return 0, payload
+    if args.action == "tg-qa-embeddings-import":
+        profile_metadata = {}
+        if args.embedding_profile_id:
+            profile_metadata["embedding_profile_id"] = args.embedding_profile_id
+        if args.dimensions:
+            profile_metadata["dimensions"] = args.dimensions
+        if args.model_id:
+            profile_metadata["model_id"] = args.model_id
+        result = import_tg_qa_embedding_records(
+            embedding_batch_path=args.embedding_batch,
+            external_vectors_path=args.external_vectors,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            profile_metadata=profile_metadata or None,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-embed-batch":
+        result = vectorize_tg_qa_embedding_batch(
+            embedding_batch_path=args.embedding_batch,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url or settings.embedding_endpoint_url,
+            model_id=args.model_id or settings.embedding_model_id,
+            batch_size=args.batch_size,
+            timeout_seconds=args.timeout_seconds,
+            progress=not args.no_progress,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-similarity":
+        result = run_tg_qa_similarity(
+            embedding_records_path=args.embedding_records,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-clusters":
+        result = cluster_tg_qa_candidates(
+            candidates_path=args.candidates,
+            neighbors_path=args.neighbors,
+            question_clusters_output_path=args.question_clusters_output,
+            answer_clusters_output_path=args.answer_clusters_output,
+            qa_clusters_output_path=args.qa_clusters_output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-selection":
+        result = select_tg_qa_clusters(
+            candidates_path=args.candidates,
+            qa_clusters_path=args.qa_clusters,
+            answer_clusters_path=args.answer_clusters or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-cluster-llm-batch":
+        result = emit_tg_qa_cluster_llm_batch(
+            candidates_path=args.candidates,
+            selection_path=args.selection,
+            output_path=args.output,
+            prompt_profile=args.prompt_profile,
+            input_char_budget=args.input_char_budget,
+            overflow_output_path=args.overflow_output or None,
+            skip_over_budget=args.skip_over_budget,
+            manual_review_path=args.manual_review_overlay or None,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-llm-run":
+        result = run_tg_qa_llm_batch(
+            batch_path=args.batch,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            llm_run_id=args.llm_run_id,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            max_tokens=args.max_tokens,
+            response_format_json=not args.no_response_format_json,
+            reasoning_effort=args.reasoning_effort,
+            thinking_type=args.thinking_type,
+            omit_temperature=args.omit_temperature,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            model_file=args.model_file,
+            quantization=args.quantization,
+            api_key_env=args.api_key_env,
+            http_user_agent=args.http_user_agent,
+            progress=not args.no_progress,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-llm-retry-batch":
+        result = filter_tg_qa_llm_batch_by_results(
+            batch_path=args.batch,
+            results_path=args.results,
+            output_path=args.output,
+            status=args.status,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-llm-merge-results":
+        result = merge_tg_qa_llm_results(
+            primary_results_path=args.primary_results,
+            retry_results_path=args.retry_results,
+            output_path=args.output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-llm-import":
+        runtime_metadata = (
+            json.loads(Path(args.runtime_summary).read_text(encoding="utf-8"))
+            if args.runtime_summary
+            else None
+        )
+        result = import_tg_qa_llm_results(
+            batch_path=args.batch,
+            result_path=args.results,
+            evidence_output_path=args.evidence_output,
+            manifest_output_path=args.manifest_output,
+            llm_run_id=args.llm_run_id,
+            runtime_metadata=runtime_metadata,
+        )
+        payload = dict(result["manifest"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-review-queue":
+        result = build_tg_qa_manual_review_queue(
+            candidates_path=args.candidates,
+            selection_path=args.selection,
+            llm_evidence_path=args.llm_evidence or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-review-export":
+        result = export_tg_qa_human_review(
+            review_queue_path=args.review_queue,
+            markdown_output_path=args.markdown_output,
+            tsv_output_path=args.tsv_output,
+            summary_output_path=args.summary_output,
+            max_text_chars=args.max_text_chars,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-review-import":
+        result = import_tg_qa_manual_review_decisions(
+            review_queue_path=args.review_queue,
+            decisions_path=args.decisions,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-final":
+        result = build_final_tg_qa_dataset(
+            candidates_path=args.candidates,
+            selection_path=args.selection,
+            review_decisions_path=args.review_decisions or None,
+            output_path=args.output,
+            manifest_output_path=args.manifest_output,
+            quality_output_path=args.quality_output,
+        )
+        payload = dict(result["manifest"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-final-merge":
+        result = merge_final_tg_qa_datasets(
+            case_paths=args.cases,
+            manifest_paths=args.source_manifests or None,
+            output_path=args.output,
+            manifest_output_path=args.manifest_output,
+            quality_output_path=args.quality_output,
+        )
+        payload = dict(result["manifest"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-coverage-batch":
+        result = emit_tg_qa_dataset_corpus_coverage_embedding_batch(
+            final_cases_path=args.final_cases,
+            candidates_path=args.candidates,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            corpus_filter_mode=args.corpus_filter,
+            include_corpus_answers=not args.skip_corpus_answers,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-coverage-embeddings-import":
+        result = import_tg_qa_dataset_corpus_coverage_embeddings(
+            embedding_batch_path=args.embedding_batch,
+            external_vectors_path=args.external_vectors,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            profile_metadata={
+                "embedding_profile_id": args.embedding_profile_id or settings.embedding_profile_id,
+                "provider": settings.embedding_provider,
+                "model_id": args.model_id or settings.embedding_model_id,
+                "variant": settings.embedding_variant,
+                "dimensions": args.dimensions or settings.embedding_vector_dimensions,
+                "normalized": settings.embedding_normalized,
+                "query_prefix": settings.embedding_query_prefix,
+                "document_prefix": settings.embedding_document_prefix,
+                "routing_mode": settings.embedding_routing_mode,
+            },
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-coverage-report":
+        result = build_tg_qa_dataset_corpus_coverage_report(
+            embedding_records_path=args.embedding_records,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            chunk_size=args.chunk_size,
+            max_samples_per_bucket=args.max_samples_per_bucket,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-boundary-check":
+        payload = verify_tg_qa_boundaries()
+        return (0 if payload["status"] == "passed" else 1), payload
     raise ValueError(f"unknown evaluation action: {args.action}")
 
 
@@ -460,7 +863,7 @@ def dispatch(
             repository_factory=graph_repository_factory,
         )
     if args.group == "evaluation":
-        return handle_evaluation_command(args)
+        return handle_evaluation_command(args, effective_settings)
     parser.error("unknown command")
     raise AssertionError("unreachable")
 

@@ -39,3 +39,14 @@ def test_settings_accepts_embedding_endpoint_alias_without_live_service() -> Non
 
     assert settings.embedding_endpoint_url == "http://embedding-box:18080/v1/embeddings"
     assert settings.run_live_embedding_tests is False
+
+
+def test_settings_prefers_canonical_embedding_endpoint_over_legacy_alias() -> None:
+    settings = load_settings(
+        {
+            "EMBEDDING_ENDPOINT_URL": "http://canonical:18080/v1/embeddings",
+            "LLAMA_SERVER_URL": "http://legacy:18080/v1/embeddings",
+        }
+    )
+
+    assert settings.embedding_endpoint_url == "http://canonical:18080/v1/embeddings"

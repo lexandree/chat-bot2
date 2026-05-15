@@ -261,7 +261,7 @@ Required environment variables:
 - `EMBEDDING_MODEL`
 - `EMBEDDING_VECTOR_DIMENSIONS`
 - `EMBEDDING_NORMALIZED`
-- `LLAMA_SERVER_URL`
+- `EMBEDDING_ENDPOINT_URL`
 
 Optional bulk/notebook variables:
 
@@ -276,8 +276,13 @@ Recommended defaults:
 - `EMBEDDING_MODEL=jina-embeddings-v5-text-small-retrieval-GGUF`
 - `EMBEDDING_VECTOR_DIMENSIONS=1024`
 - `EMBEDDING_NORMALIZED=true`
-- `LLAMA_SERVER_URL=http://127.0.0.1:18080/v1/embeddings`
+- `EMBEDDING_ENDPOINT_URL=http://127.0.0.1:18080/v1/embeddings`
 - `ENABLE_EMBEDDING_ROUTER=false` for default local tests
+
+`LLAMA_SERVER_URL` remains a deprecated compatibility alias for older local
+embedding operator environments. New embedding configuration MUST use
+`EMBEDDING_ENDPOINT_URL`; LLM/chat-completion runtimes must not reuse the
+embedding endpoint variable.
 
 ## Test Strategy
 

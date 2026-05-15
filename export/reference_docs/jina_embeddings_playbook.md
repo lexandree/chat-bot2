@@ -144,10 +144,15 @@ directly from the notebook:
 1. On the home GPU host, keep `llama-server` bound to `127.0.0.1:18080`.
 2. From the home GPU host, open a reverse tunnel to a reachable relay host.
 3. Inside the Colab or Kaggle notebook, open a local forward to that relay.
-4. Inside the notebook, keep `LLAMA_SERVER_URL=http://127.0.0.1:18080/v1/embeddings`.
+4. Inside the notebook, keep
+   `EMBEDDING_ENDPOINT_URL=http://127.0.0.1:18080/v1/embeddings`.
 
 That preserves the existing local-only client contract while making the home
 runtime reachable from the operator-managed notebook environment.
+
+`LLAMA_SERVER_URL` was used by older notes as an embedding endpoint alias. Treat
+it as deprecated compatibility naming; new embedding runs should use
+`EMBEDDING_ENDPOINT_URL`.
 
 Validated model alias example:
 

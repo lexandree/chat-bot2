@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from math import sqrt
 import os
 import subprocess
 import sys
@@ -227,6 +228,283 @@ def test_cli_evaluation_tg_qa_writes_candidates_summary_and_llm_batch(tmp_path: 
     assert "test@example.com" not in output.read_text(encoding="utf-8")
 
 
+def test_cli_evaluation_tg_qa_downstream_fixture_pipeline(tmp_path: Path) -> None:
+    candidates = tmp_path / "tg_qa_candidates.jsonl"
+    extraction_summary = tmp_path / "tg_qa_summary.json"
+    embedding_batch = tmp_path / "tg_qa_embedding_batch.jsonl"
+    exit_code, _payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa",
+            "--input",
+            "tests/fixtures/tg_sample_export",
+            "--bot-catalog",
+            "tests/fixtures/tg_wiki_bot_catalog_sample.json",
+            "--output",
+            str(candidates),
+            "--summary-output",
+            str(extraction_summary),
+            "--embedding-batch-output",
+            str(embedding_batch),
+            "--max-candidates",
+            "20",
+            "--min-attention-score",
+            "6",
+        ],
+        settings=FoundationSettings(),
+    )
+    assert exit_code == 0
+
+    batch_items = [json.loads(line) for line in embedding_batch.read_text(encoding="utf-8").splitlines()]
+    assert _tg_qa_embed_batch_cli_help_mentions_endpoint_settings()
+    vectors = tmp_path / "fixture_vectors.jsonl"
+    _write_jsonl(vectors, [_tg_qa_fixture_vector(item) for item in batch_items])
+
+    embedding_records = tmp_path / "tg_qa_embedding_records.jsonl"
+    embedding_summary = tmp_path / "tg_qa_embedding_summary.json"
+    embed_exit, embed_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-embeddings-import",
+            "--embedding-batch",
+            str(embedding_batch),
+            "--external-vectors",
+            str(vectors),
+            "--output",
+            str(embedding_records),
+            "--summary-output",
+            str(embedding_summary),
+            "--embedding-profile-id",
+            "fixture_profile",
+            "--dimensions",
+            "3",
+        ],
+        settings=FoundationSettings(),
+    )
+    assert embed_exit == 0
+    assert embed_payload["completed_count"] == len(batch_items)
+
+    neighbors = tmp_path / "tg_qa_neighbors.jsonl"
+    similarity_summary = tmp_path / "tg_qa_similarity_summary.json"
+    sim_exit, sim_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-similarity",
+            "--embedding-records",
+            str(embedding_records),
+            "--output",
+            str(neighbors),
+            "--summary-output",
+            str(similarity_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    assert sim_exit == 0
+    assert sim_payload["neighbor_count"] > 0
+
+    question_clusters = tmp_path / "question_clusters.jsonl"
+    answer_clusters = tmp_path / "answer_clusters.jsonl"
+    qa_clusters = tmp_path / "qa_clusters.jsonl"
+    cluster_summary = tmp_path / "cluster_summary.json"
+    cluster_exit, cluster_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-clusters",
+            "--candidates",
+            str(candidates),
+            "--neighbors",
+            str(neighbors),
+            "--question-clusters-output",
+            str(question_clusters),
+            "--answer-clusters-output",
+            str(answer_clusters),
+            "--qa-clusters-output",
+            str(qa_clusters),
+            "--summary-output",
+            str(cluster_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    assert cluster_exit == 0
+    assert cluster_payload["qa_cluster_count"] >= 2
+
+    selection = tmp_path / "cluster_selection.jsonl"
+    selection_summary = tmp_path / "selection_summary.json"
+    select_exit, select_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-selection",
+            "--candidates",
+            str(candidates),
+            "--qa-clusters",
+            str(qa_clusters),
+            "--answer-clusters",
+            str(answer_clusters),
+            "--output",
+            str(selection),
+            "--summary-output",
+            str(selection_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    assert select_exit == 0
+    assert select_payload["counts_by_selection_status"]["auto_selected"] == 1
+
+    review_queue = tmp_path / "review_queue.jsonl"
+    review_summary = tmp_path / "review_summary.json"
+    queue_exit, queue_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-review-queue",
+            "--candidates",
+            str(candidates),
+            "--selection",
+            str(selection),
+            "--output",
+            str(review_queue),
+            "--summary-output",
+            str(review_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    assert queue_exit == 0
+    assert queue_payload["queue_count"] >= 1
+    queue_item = json.loads(review_queue.read_text(encoding="utf-8").splitlines()[0])
+    review_decision_input = tmp_path / "review_decision_input.jsonl"
+    _write_jsonl(
+        review_decision_input,
+        [
+            {
+                "qa_cluster_id": queue_item["qa_cluster_id"],
+                "decision": "uncertain",
+                "reviewer_hash": "fixture-reviewer",
+                "decision_reason": "fixture backlog case remains outside final dataset",
+            }
+        ],
+    )
+    review_decisions = tmp_path / "review_decisions.jsonl"
+    review_decision_summary = tmp_path / "review_decision_summary.json"
+    review_exit, review_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-review-import",
+            "--review-queue",
+            str(review_queue),
+            "--decisions",
+            str(review_decision_input),
+            "--output",
+            str(review_decisions),
+            "--summary-output",
+            str(review_decision_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    assert review_exit == 0
+    assert review_payload["imported_count"] == 1
+
+    final_cases = tmp_path / "final_cases.jsonl"
+    final_manifest = tmp_path / "dataset_manifest.json"
+    final_quality = tmp_path / "dataset_quality.json"
+    final_exit, final_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-final",
+            "--candidates",
+            str(candidates),
+            "--selection",
+            str(selection),
+            "--review-decisions",
+            str(review_decisions),
+            "--output",
+            str(final_cases),
+            "--manifest-output",
+            str(final_manifest),
+            "--quality-output",
+            str(final_quality),
+        ],
+        settings=FoundationSettings(),
+    )
+    assert final_exit == 0
+    assert final_payload["case_count"] == 1
+    assert json.loads(final_manifest.read_text(encoding="utf-8"))["case_count"] == 1
+
+
+def test_cli_tg_qa_coverage_embeddings_import_uses_settings_profile_when_only_model_id_is_passed(
+    tmp_path: Path,
+) -> None:
+    embedding_batch = tmp_path / "coverage_batch.jsonl"
+    external_vectors = tmp_path / "coverage_vectors.jsonl"
+    output = tmp_path / "coverage_embedding_records.jsonl"
+    summary_output = tmp_path / "coverage_embedding_summary.json"
+
+    batch_item = {
+        "embedding_item_id": "tg-coverage-embedding:test",
+        "candidate_id": "tg-eval-case:test",
+        "answer_candidate_id": "",
+        "source_message_id": "msg-1",
+        "text_role": "question",
+        "coverage_scope": "dataset",
+        "coverage_subject_id": "tg-eval-case:test",
+        "coverage_subject_kind": "case",
+        "coverage_text_source": "question_text",
+        "qa_cluster_id": "tg-qa-pair-cluster:test",
+        "case_id": "tg-eval-case:test",
+        "text_redacted": "Нужна ли регистрация?",
+        "reference_answer_source": "manual_review_override",
+        "topic_labels": ["migration_status"],
+        "law_code_candidates": ["AufenthG"],
+        "graph_db_evaluation_fit": "direct_legal",
+        "question_intent": "eligibility_or_right",
+        "issue_spotting_level": "medium",
+        "issue_spotting_required": True,
+        "confidence_tier": "high",
+    }
+    _write_jsonl(embedding_batch, [batch_item])
+    _write_jsonl(
+        external_vectors,
+        [
+            {
+                "embedding_item_id": batch_item["embedding_item_id"],
+                "candidate_id": batch_item["candidate_id"],
+                "answer_candidate_id": "",
+                "text_role": "question",
+                "backend_name": "fixture_vectors",
+                "vector": [1.0, 0.0, 0.0],
+            }
+        ],
+    )
+
+    exit_code, payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-coverage-embeddings-import",
+            "--embedding-batch",
+            str(embedding_batch),
+            "--external-vectors",
+            str(external_vectors),
+            "--output",
+            str(output),
+            "--summary-output",
+            str(summary_output),
+            "--model-id",
+            "jina-q8",
+        ],
+        settings=FoundationSettings(
+            embedding_profile_id="fixture_profile",
+            embedding_vector_dimensions=3,
+        ),
+    )
+
+    summary = json.loads(summary_output.read_text(encoding="utf-8"))
+    records = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert exit_code == 0
+    assert payload["completed_count"] == 1
+    assert summary["embedding_profile"]["embedding_profile_id"] == "fixture_profile"
+    assert summary["embedding_profile"]["model_id"] == "jina-q8"
+    assert records[0]["embedding_profile_id"] == "fixture_profile"
+    assert records[0]["model"] == "jina-q8"
+
+
 def test_cli_traversal_neighborhood_writes_seed_artifact_with_injected_repository(tmp_path: Path) -> None:
     cases = _load_cli_cases()
     output_path = tmp_path / "seed_neighborhood.json"
@@ -443,6 +721,16 @@ def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _tg_qa_embed_batch_cli_help_mentions_endpoint_settings() -> bool:
+    result = _run_cli(["evaluation", "tg-qa-embed-batch", "--help"])
+    return (
+        result.returncode == 0
+        and "--endpoint-url" in result.stdout
+        and "--batch-size" in result.stdout
+        and "--timeout-seconds" in result.stdout
+    )
+
+
 def _load_cli_cases() -> dict:
     return json.loads(Path("tests/fixtures/structural_workflow_cli_cases.json").read_text(encoding="utf-8"))
 
@@ -452,6 +740,34 @@ def _without_run_fields(payload: dict) -> dict:
     for key in ("artifact_id", "generated_at", "workflow_id"):
         normalized.pop(key, None)
     return normalized
+
+
+def _write_jsonl(path: Path, records: list[dict]) -> None:
+    path.write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False, sort_keys=True) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _tg_qa_fixture_vector(item: dict) -> dict:
+    text_role = item["text_role"]
+    source_message_id = str(item.get("source_message_id", ""))
+    if text_role == "question" and source_message_id == "3":
+        vector = [1.0, 0.0, 0.0]
+    elif text_role == "question":
+        vector = [0.83, sqrt(1 - 0.83**2), 0.0]
+    elif text_role == "answer":
+        vector = [0.0, 1.0, 0.0]
+    else:
+        vector = [0.0, 0.0, 1.0]
+    return {
+        "embedding_item_id": item["embedding_item_id"],
+        "candidate_id": item["candidate_id"],
+        "answer_candidate_id": item.get("answer_candidate_id", ""),
+        "text_role": text_role,
+        "backend_name": "fixture_vectors",
+        "vector": vector,
+    }
 
 
 class FakeRelationshipRepository:
