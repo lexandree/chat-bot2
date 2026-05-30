@@ -134,6 +134,126 @@ Required fields:
 
 Embedding records are evaluation artifacts and do not write vectors to Neo4j.
 
+## LegalIntentCandidate
+
+Optional diagnostic interpretation of one included canonical question for
+pair-equivalence evaluation.
+
+Required fields:
+
+- `legal_intent_candidate_id`
+- `candidate_id`
+- `canonicalization_evidence_id`
+- `source_canonical_question`
+- `source_legal_issue_frame`
+- `law_area`
+- material legal slots such as `legal_domain`, `actor`, `subject`,
+  `current_status`, `target_status`, `desired_action`, `legal_object`,
+  `authority_context`, `third_party_context`, `location_scope`,
+  `temporal_condition`, and `operational_boundary`
+- `material_slots_unknown`
+- `ambiguities`
+- `evidence_refs`
+- `validation_flags`
+- `confidence`: `low`, `medium`, or `high`
+- `review_status`: `candidate`, `review_approved`, `review_rejected`,
+  `needs_more_context`, or `uncertain`
+- `policy_version`
+- `provenance`
+
+Legal intent candidates are review evidence only. Unsupported material slots
+must be unknown or ambiguous rather than guessed.
+
+## QuestionPairBenchmarkRecord
+
+Stable diagnostic pair comparing two canonical questions.
+
+Required fields:
+
+- `pair_id`
+- `left_canonicalization_evidence_id`
+- `right_canonicalization_evidence_id`
+- `left_candidate_id`
+- `right_candidate_id`
+- `pair_source_reasons`
+- `similarity_evidence`
+- `benchmark_status`
+- `provenance`
+
+Pair identity must be independent of left/right ordering. Similarity evidence
+is candidate-generation evidence only.
+
+## PairEquivalenceDecision
+
+Reviewable candidate judgment for one benchmark pair.
+
+Required fields:
+
+- `pair_decision_id`
+- `pair_id`
+- `decision_source`
+- `pair_class`: `exact_duplicate`, `same_legal_intent`,
+  `same_topic_different_issue`, `related_context`, `different`, or
+  `uncertain`
+- `answer_equivalence`: `safe_to_share_answer`, `not_safe_to_share_answer`, or
+  `uncertain`
+- `canonical_question_equivalence`: `safe_to_share_question`,
+  `not_safe_to_share_question`, or `uncertain`
+- `allowed_downstream_actions`
+- `material_differences`
+- `shared_material_facts`
+- `unknowns`
+- `ambiguities`
+- `short_reason`
+- `confidence`
+- `risk`
+- `validation_flags`
+- `policy_version`
+- `runtime_metadata`
+
+Pair decisions must record downstream safety separately from pair class.
+
+## PairReviewLabel
+
+Human label for one benchmark pair.
+
+Required fields:
+
+- `pair_review_label_id`
+- `pair_id`
+- `pair_class`
+- `answer_equivalence`
+- `canonical_question_equivalence`
+- `allowed_downstream_actions`
+- `decision_reason`
+- `reviewer_hash`
+- `reviewed_at`
+
+Import must reject duplicate pair ids with conflicting labels unless an
+explicit replacement mode is used.
+
+## EquivalenceEvaluationReport
+
+Diagnostic report comparing pair methods against reviewed labels.
+
+Required fields:
+
+- source dataset, benchmark, legal-intent candidate, pair decision, and review
+  label artifact paths
+- counts by pair class, law area, pair source reason, review state, method, and
+  risk
+- confusion counts when reviewed labels are sufficient
+- false duplicate risk examples
+- false separation risk examples
+- high-similarity hard negatives
+- insufficient-label warnings
+- policy versions, embedding profile ids, runtime contour, and generated
+  timestamp
+
+Evaluation reports may recommend candidate-generation methods, but they must
+not approve automatic duplicate removal or answer reuse without reviewed
+support.
+
 ## LegalIssueCluster
 
 Cluster of canonicalized candidates representing one reviewable legal issue.

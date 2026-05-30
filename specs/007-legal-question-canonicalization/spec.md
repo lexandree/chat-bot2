@@ -80,6 +80,10 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - A candidate is missing expected 006 provenance, redaction status, or source artifact metadata.
 - A cluster is too broad, has conflicting issue frames, or exceeds the reviewable size expected for one issue.
 - Embedding records are unavailable, produced by a different profile, or created through a live service that was not explicitly opted in.
+- Two canonical questions have high embedding similarity but differ in a material legal slot, such as status, authority, desired action, legal object, jurisdiction, temporal condition, or third-party role.
+- Two questions are wording variants of the same legal issue and should be candidates for answer reuse, but are not exact duplicates.
+- A similarity chain contains A-B and B-C close pairs while A-C is not legally equivalent; equivalence-safe clusters must not be inferred from connected components alone.
+- A question contains both operational logistics and an independently answerable legal issue; diagnostics must separate legal intent from surrounding context before pair classification.
 
 ## Requirements *(mandatory)*
 
@@ -112,6 +116,14 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - **FR-015**: The system MUST emit run summaries and manifests with input artifact paths, output artifact paths, processed counts, completed counts, excluded counts, uncertain counts, failed counts, policy versions, runtime contour, known limitations, and unresolved backlog counts.
 - **FR-016**: The system MUST keep generated data, vectors, LLM batches, LLM results, review sheets, and coverage reports under ignored data paths unless a later explicit publication step sanitizes them.
 - **FR-017**: The system MUST NOT mutate Neo4j graph state, import chatbot handlers, generate user-facing answers, or hide missing evidence behind fallback answers in this feature.
+- **FR-018**: The system MUST treat legal intent equivalence diagnostics as a separate optional layer over completed canonicalization artifacts, not as a replacement for 007 canonicalization or human review.
+- **FR-019**: The system MUST define legal intent candidates that capture material legal distinctions, explicit unknowns, ambiguities, evidence references, validation flags, provenance, and review state.
+- **FR-020**: The system MUST define a pair benchmark contract for canonical question pairs with stable pair ids, pair source reasons, left/right provenance, similarity evidence when available, and review status.
+- **FR-021**: The system MUST classify legal-intent pairs using the bounded classes `exact_duplicate`, `same_legal_intent`, `same_topic_different_issue`, `related_context`, `different`, and `uncertain`.
+- **FR-022**: The system MUST record downstream safety decisions separately from pair class, including duplicate removal, canonical-question sharing, reference-answer sharing, FAQ-pattern grouping, retrieval-cluster grouping, and human-review routing.
+- **FR-023**: The system MUST preserve high-similarity hard negatives for evaluation instead of silently deduplicating or discarding them.
+- **FR-024**: The system MUST prevent embedding similarity, lexical similarity, reranker scores, clustering scores, or LLM confidence from directly creating trusted duplicate, answer-equivalence, or question-bank decisions.
+- **FR-025**: The system MUST report legal-intent equivalence method quality against reviewed pair labels and must state insufficient-label limitations when labels are too few or imbalanced.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -124,6 +136,11 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - **ClusterReviewDecision**: Human decision for one issue cluster, covering question-bank inclusion, final-evaluation promotion, merge, split, rejection, or uncertainty.
 - **QuestionBankEntry**: Reviewed or reviewable canonical issue entry that may not yet have final reference answer material.
 - **ReviewedEvaluationCaseCandidate**: A promotion candidate that can become a final evaluation case only when reviewed reference answer material is present.
+- **LegalIntentCandidate**: Reviewable structured interpretation of one canonical question, including material slots, unknowns, ambiguities, evidence references, validation flags, confidence, and provenance.
+- **QuestionPairBenchmarkRecord**: Stable diagnostic pair artifact comparing two canonical questions, including pair source reasons, similarity evidence, left/right provenance, and current review status.
+- **PairEquivalenceDecision**: Reviewable candidate judgment for a pair, including pair class, answer-equivalence status, canonical-question-equivalence status, material differences, allowed downstream actions, confidence, risk, and validation flags.
+- **PairReviewLabel**: Human label for one benchmark pair, used to evaluate automatic equivalence methods and hard negatives.
+- **EquivalenceEvaluationReport**: Diagnostic summary comparing candidate methods against reviewed pair labels and recording risks, limitations, and method suitability.
 
 ## Success Criteria *(mandatory)*
 
@@ -135,6 +152,10 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - **SC-004**: No promoted reviewed evaluation case can be emitted unless it has a reviewed reference answer source and a recorded answer trust boundary.
 - **SC-005**: Every output artifact type includes provenance, policy or prompt version, generated timestamp, and run or source artifact references sufficient for audit.
 - **SC-006**: Default unit tests for canonicalization schemas, clustering fixtures, review promotion rules, and coverage summary generation run without live Neo4j, live Jina, paid APIs, network services, or remote notebooks.
+- **SC-007**: Pair benchmark review artifacts allow an operator to classify at least 100 canonical-question pairs without editing raw JSON.
+- **SC-008**: Evaluation reports identify high-similarity hard negatives separately from true duplicates and same-legal-intent pairs.
+- **SC-009**: No pair receives trusted duplicate-removal or answer-reuse status solely from embedding, lexical, reranker, clustering, or LLM-confidence scores.
+- **SC-010**: When reviewed pair labels are insufficient, equivalence reports state the limitation instead of recommending an automatic threshold.
 
 ## Assumptions
 
@@ -143,3 +164,4 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - `canonical_question` preserves the user's source language; `legal_issue_frame` is a stable machine-oriented label for grouping and metrics.
 - LLM canonicalization, when used, is an operator-managed batch contour and not a production dependency.
 - 007 outputs are file artifacts for evaluation and retrieval preparation. Graph persistence, answer synthesis, and chatbot UX remain out of scope until explicitly requested.
+- Legal intent equivalence diagnostics are initially a benchmark and evaluation layer. Production retrieval policy changes require a later explicit design update.

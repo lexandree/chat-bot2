@@ -16,6 +16,12 @@ This remains an artifact pipeline. It does not mutate Neo4j, create chatbot
 answers, produce trusted legal facts, or allow LLM output to approve final
 records by itself.
 
+The legal-intent equivalence diagnostic extension remains inside 007 as an
+evaluation contract, not a new feature branch. It documents how canonical
+questions may later be transformed into structured legal-intent candidates and
+pair-review benchmarks so embeddings can generate candidates without becoming a
+legal-equivalence decision boundary.
+
 ## Technical Context
 
 **Language/Version**: Python 3.12 in conda environment `chbot`
@@ -78,7 +84,9 @@ available.
   contracts. Law-area and authority-context labels are review evidence only.
 - **Embedding Contract**: PASS. Canonical question and issue-frame embeddings
   are query-like evaluation artifacts and preserve `Query: ` semantics plus
-  embedding profile metadata. Default tests use fixtures/fakes.
+  embedding profile metadata. Legal-intent equivalence diagnostics treat
+  embeddings as candidate-generation evidence only. Default tests use
+  fixtures/fakes.
 - **Review Boundary**: PASS. LLM canonicalization output is untrusted
   candidate evidence. It cannot approve clusters, create final evaluation
   cases, or produce legal answer text.
@@ -102,7 +110,8 @@ available.
 - **Embedding Contract**: PASS. Data model and contracts bind canonical
   embedding records to the existing profile metadata and query prefix semantics.
 - **Review Boundary**: PASS. Canonicalization evidence, clusters, and coverage
-  records are reviewable evidence; promotion requires reviewed reference answer
+  records are reviewable evidence; legal-intent candidates and pair decisions
+  are also reviewable candidates. Promotion requires reviewed reference answer
   material.
 - **Reproducible Operations**: PASS. Manifests and summaries record source
   artifact paths, policy versions, runtime contour, counts, failures, and known
@@ -130,6 +139,7 @@ specs/007-legal-question-canonicalization/
 ├── contracts/
 │   ├── canonicalization.md
 │   ├── cluster-coverage.md
+│   ├── legal-intent-equivalence.md
 │   └── review-promotion.md
 └── checklists/
     └── requirements.md
@@ -181,6 +191,7 @@ Design outputs:
 - [operator-runbook.md](operator-runbook.md)
 - [contracts/canonicalization.md](contracts/canonicalization.md)
 - [contracts/cluster-coverage.md](contracts/cluster-coverage.md)
+- [contracts/legal-intent-equivalence.md](contracts/legal-intent-equivalence.md)
 - [contracts/review-promotion.md](contracts/review-promotion.md)
 
 ## Operator LLM Run Contour

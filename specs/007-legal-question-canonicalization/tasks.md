@@ -166,6 +166,25 @@ operator-managed smoke contours only.
 
 ---
 
+## Phase 8: Legal Intent Equivalence Diagnostics (Documented Backlog)
+
+**Purpose**: Close the similarity-search reliability gap discovered during
+007 dataset review without treating embeddings as legal truth or starting a
+new feature branch.
+
+These tasks are intentionally not implemented in the current checkpoint. They
+require a separate explicit implementation command.
+
+- [ ] T062 [P] Add fixture data for hard-positive, hard-negative, same-topic-different-issue, related-context, and random-negative canonical question pairs in `tests/fixtures/tg_question_canonicalization/`
+- [ ] T063 Define legal-intent candidate validation rules from `contracts/legal-intent-equivalence.md` in `src/evaluation/tg_question_canonicalization.py`
+- [ ] T064 Emit deterministic pair benchmark artifacts from accepted canonical questions, similarity neighbors, preserved variants, law-area conflicts, manual seeds, and random negatives in `src/evaluation/tg_question_canonicalization.py`
+- [ ] T065 Import legal-intent candidates and pair decisions idempotently with validation flags, failure routing, and privacy checks in `src/evaluation/tg_question_canonicalization.py`
+- [ ] T066 Export pair-review HTML with all pair evidence, material differences, method judgments, and manual label export in `src/evaluation/tg_question_canonicalization.py`
+- [ ] T067 Build equivalence evaluation reports with per-class counts, hard-negative examples, false duplicate risks, false separation risks, and insufficient-label warnings in `src/evaluation/tg_question_canonicalization.py`
+- [ ] T068 Add CLI commands and offline smoke tests for legal-intent pair benchmark, review export, label import, and method evaluation in `src/app/commands.py` and `tests/smoke/test_cli_offline.py`
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -177,6 +196,7 @@ operator-managed smoke contours only.
 - **User Story 3 (Phase 5)**: Depends on issue clusters from US2 or equivalent fixtures; delivers canonical coverage
 - **User Story 4 (Phase 6)**: Depends on issue clusters from US2 or equivalent fixtures and may consume US3 coverage or equivalent fixtures; delivers question bank, promotion candidates, and reviewed evaluation dataset artifacts
 - **Polish (Phase 7)**: Depends on desired user stories being complete
+- **Legal Intent Equivalence Diagnostics (Phase 8)**: Depends on accepted canonicalization artifacts and requires a separate implementation command
 
 ### User Story Dependencies
 
