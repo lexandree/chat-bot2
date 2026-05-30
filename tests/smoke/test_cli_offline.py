@@ -788,6 +788,168 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
     assert boundary_payload["status"] == "passed"
 
 
+def test_cli_legal_intent_pair_review_exports_100_pair_html(tmp_path: Path) -> None:
+    evidence = tmp_path / "legal_intent_evidence.jsonl"
+    pairs = tmp_path / "legal_intent_pairs.jsonl"
+    pairs_summary = tmp_path / "legal_intent_pairs_summary.json"
+    decisions_input = tmp_path / "legal_intent_decisions_input.jsonl"
+    decisions = tmp_path / "legal_intent_decisions.jsonl"
+    decisions_summary = tmp_path / "legal_intent_decisions_summary.json"
+    html = tmp_path / "legal_intent_review.html"
+    html_summary = tmp_path / "legal_intent_review_summary.json"
+    labels_input = tmp_path / "legal_intent_labels_input.jsonl"
+    labels = tmp_path / "legal_intent_labels.jsonl"
+    labels_summary = tmp_path / "legal_intent_labels_summary.json"
+    report = tmp_path / "legal_intent_report.jsonl"
+    report_summary = tmp_path / "legal_intent_report_summary.json"
+    records = []
+    for index in range(15):
+        records.append(
+            {
+                "canonicalization_evidence_id": f"tg-question-canonicalization-evidence:li-{index:02d}",
+                "task_id": f"task:{index:02d}",
+                "task_scope": "question_candidate",
+                "candidate_id": f"tg-qa-candidate:li-{index:02d}",
+                "canonicalization_run_id": "tg-question-canonicalization-run:smoke-li",
+                "status": "completed",
+                "failure_reason": "",
+                "canonical_question": f"Как обновить адрес на ВНЖ после переезда вариант {index}?",
+                "canonical_question_language": "ru",
+                "legal_issue_frame": "Residence document address update after moving",
+                "legal_issue_frame_slug": "residence_document_address_update_after_moving",
+                "law_area": "migration_status",
+                "facts": [],
+                "desired_outcome": "update address on residence document",
+                "authority_context": ["Buergeramt"],
+                "hidden_issues": [],
+                "is_legal_answer_required": True,
+                "is_standalone_question": True,
+                "exclusion_reason": "none",
+                "confidence": "high",
+                "quality_flags": [],
+                "source_question_text_redacted": f"Как обновить адрес на ВНЖ после переезда вариант {index}?",
+                "provenance": {"source_message_ids": [f"fixture:{index:02d}"]},
+            }
+        )
+    _write_jsonl(evidence, records)
+
+    pair_exit, pair_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-pair-benchmark",
+            "--canonicalization-evidence",
+            str(evidence),
+            "--output",
+            str(pairs),
+            "--summary-output",
+            str(pairs_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    pair_records = [json.loads(line) for line in pairs.read_text(encoding="utf-8").splitlines()]
+    selected_pair_id = pair_records[0]["pair_id"]
+    _write_jsonl(
+        decisions_input,
+        [
+            {
+                "pair_id": selected_pair_id,
+                "decision_source": "smoke_judge",
+                "pair_class": "same_legal_intent",
+                "answer_equivalence": "safe_to_share_answer",
+                "canonical_question_equivalence": "safe_to_share_question",
+                "allowed_downstream_actions": ["allow_reference_answer_sharing"],
+                "short_reason": "Smoke equivalent pair.",
+                "confidence": "medium",
+                "risk": "low",
+            }
+        ],
+    )
+    decision_exit, decision_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-pair-decisions-import",
+            "--pair-benchmark",
+            str(pairs),
+            "--decisions",
+            str(decisions_input),
+            "--output",
+            str(decisions),
+            "--summary-output",
+            str(decisions_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    html_exit, html_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-pair-review-html",
+            "--pair-benchmark",
+            str(pairs),
+            "--pair-decisions",
+            str(decisions),
+            "--output",
+            str(html),
+            "--summary-output",
+            str(html_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    _write_jsonl(
+        labels_input,
+        [
+            {
+                "pair_id": selected_pair_id,
+                "pair_class": "same_legal_intent",
+                "answer_equivalence": "safe_to_share_answer",
+                "canonical_question_equivalence": "safe_to_share_question",
+                "allowed_downstream_actions": ["allow_reference_answer_sharing"],
+                "decision_reason": "Smoke human label.",
+            }
+        ],
+    )
+    label_exit, label_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-pair-labels-import",
+            "--pair-benchmark",
+            str(pairs),
+            "--labels",
+            str(labels_input),
+            "--output",
+            str(labels),
+            "--summary-output",
+            str(labels_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    report_exit, report_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-equivalence-report",
+            "--pair-benchmark",
+            str(pairs),
+            "--pair-decisions",
+            str(decisions),
+            "--review-labels",
+            str(labels),
+            "--output",
+            str(report),
+            "--summary-output",
+            str(report_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+
+    assert pair_exit == decision_exit == html_exit == label_exit == report_exit == 0
+    assert pair_payload["pair_count"] == 105
+    assert decision_payload["completed_count"] == 1
+    assert html_payload["card_count"] == 105
+    assert label_payload["completed_count"] == 1
+    assert report_payload["reviewed_label_count"] == 1
+    assert "Export JSONL" in html.read_text(encoding="utf-8")
+    assert "007 legal intent pair review" in html.read_text(encoding="utf-8")
+
+
 def test_cli_canonicalization_review_decision_import_and_routing_support_partial_disputed_subset(tmp_path: Path) -> None:
     candidates = tmp_path / "canonical_candidates.jsonl"
     canonical_batch = tmp_path / "canonical_batch.jsonl"

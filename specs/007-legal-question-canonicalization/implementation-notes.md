@@ -19,15 +19,20 @@
 - Added optional LangChain `with_structured_output` chain builders for
   canonicalization and verifier calls. Instructor was removed from tracked
   optional dependencies because it is not used by the current implementation.
+- Implemented the Phase 8 legal-intent equivalence diagnostic layer as an
+  offline artifact workflow: pair benchmark build, legal-intent candidate
+  import, pair-decision import, static pair-review HTML export, human label
+  import, and equivalence evaluation reports. Outputs remain review evidence
+  under `data/evaluation/tg_qa_legal_intent_equivalence/`.
 
 ## Verification
 
 - `python -m compileall src tests`:
   passed.
 - `python -m pytest tests/unit/test_tg_question_canonicalization.py tests/smoke/test_cli_offline.py`:
-  18 passed.
+  41 passed.
 - `python -m pytest`:
-  122 passed, 11 skipped.
+  145 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:
   passed with no failed source checks and no missing ignore patterns.
 - `git diff --check`:
@@ -38,6 +43,12 @@
   `ChatOpenAI(...).with_structured_output(CanonicalizationResultPayload)` and
   `ChatAnthropic(...).with_structured_output(VerifierVerdictPayload)` both
   built `RunnableSequence` chains without a network call.
+- `python -m pytest tests/unit/test_tg_question_canonicalization.py -k "legal_intent"`:
+  3 passed, 23 deselected.
+- `python -m pytest tests/smoke/test_cli_offline.py -k "legal_intent_pair_review"`:
+  1 passed, 14 deselected.
+- `python -m pytest tests/unit/test_tg_question_canonicalization.py tests/smoke/test_cli_offline.py`:
+  41 passed.
 
 ## Skipped Live-Service Tests
 
@@ -62,3 +73,5 @@ APIs, network services, or remote notebooks.
   low-confidence or broad cases instead of relying on raw question similarity.
 - Final evaluation dataset export accepts only eligible candidates with
   reviewed reference answer material.
+- Legal-intent equivalence reports evaluate pair decisions against reviewed
+  labels. They do not approve automatic duplicate removal or answer reuse.

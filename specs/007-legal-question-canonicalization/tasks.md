@@ -176,15 +176,15 @@ These tasks are intentionally not implemented in the current checkpoint. They
 require a separate explicit implementation command and are not required for
 closing the current 007 implementation checkpoint.
 
-- [ ] T062 [P] Add fixture data for hard-positive, hard-negative, same-topic-different-issue, related-context, and random-negative canonical question pairs in `tests/fixtures/tg_question_canonicalization/`
-- [ ] T063 [P] Add unit tests for order-independent stable `pair_id` generation and unchanged-input benchmark rebuild stability in `tests/unit/test_tg_question_canonicalization.py`
-- [ ] T064 [P] Add offline review-export test proving a 100-pair benchmark can be labeled and exported without raw JSON editing in `tests/smoke/test_cli_offline.py`
-- [ ] T065 Define legal-intent candidate validation rules from `contracts/legal-intent-equivalence.md` in `src/evaluation/tg_question_canonicalization.py`
-- [ ] T066 Emit deterministic pair benchmark artifacts under `data/evaluation/tg_qa_legal_intent_equivalence/` from accepted canonical questions, similarity neighbors, preserved variants, law-area conflicts, manual seeds, and random negatives in `src/evaluation/tg_question_canonicalization.py`
-- [ ] T067 Import legal-intent candidates and pair decisions idempotently with validation flags, failure routing, and privacy checks in `src/evaluation/tg_question_canonicalization.py`
-- [ ] T068 Export pair-review HTML with all pair evidence, material differences, method judgments, and manual label export in `src/evaluation/tg_question_canonicalization.py`
-- [ ] T069 Build equivalence evaluation reports with per-class counts, hard-negative examples, false duplicate risks, false separation risks, insufficient-label warnings, and explicit method-suitability conclusions in `src/evaluation/tg_question_canonicalization.py`
-- [ ] T070 Add CLI commands and offline smoke tests for legal-intent pair benchmark, review export, label import, and method evaluation in `src/app/commands.py` and `tests/smoke/test_cli_offline.py`
+- [X] T062 [P] Add fixture data for hard-positive, hard-negative, same-topic-different-issue, related-context, and random-negative canonical question pairs in `tests/fixtures/tg_question_canonicalization/`
+- [X] T063 [P] Add unit tests for order-independent stable `pair_id` generation and unchanged-input benchmark rebuild stability in `tests/unit/test_tg_question_canonicalization.py`
+- [X] T064 [P] Add offline review-export test proving a 100-pair benchmark can be labeled and exported without raw JSON editing in `tests/smoke/test_cli_offline.py`
+- [X] T065 Define legal-intent candidate validation rules from `contracts/legal-intent-equivalence.md` in `src/evaluation/tg_question_canonicalization.py`
+- [X] T066 Emit deterministic pair benchmark artifacts under `data/evaluation/tg_qa_legal_intent_equivalence/` from accepted canonical questions, similarity neighbors, preserved variants, law-area conflicts, manual seeds, and random negatives in `src/evaluation/tg_question_canonicalization.py`
+- [X] T067 Import legal-intent candidates and pair decisions idempotently with validation flags, failure routing, and privacy checks in `src/evaluation/tg_question_canonicalization.py`
+- [X] T068 Export pair-review HTML with all pair evidence, material differences, method judgments, and manual label export in `src/evaluation/tg_question_canonicalization.py`
+- [X] T069 Build equivalence evaluation reports with per-class counts, hard-negative examples, false duplicate risks, false separation risks, insufficient-label warnings, and explicit method-suitability conclusions in `src/evaluation/tg_question_canonicalization.py`
+- [X] T070 Add CLI commands and offline smoke tests for legal-intent pair benchmark, review export, label import, and method evaluation in `src/app/commands.py` and `tests/smoke/test_cli_offline.py`
 
 ---
 

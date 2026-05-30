@@ -43,16 +43,22 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_canonical_coverage_report,
     build_tg_qa_canonicalization_routing,
     build_tg_qa_issue_final_case_candidates,
+    build_tg_qa_legal_intent_equivalence_report,
+    build_tg_qa_legal_intent_pair_benchmark,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
     cluster_tg_qa_legal_issues,
     emit_tg_qa_canonical_embedding_batch,
     emit_tg_qa_canonicalization_batch,
+    export_tg_qa_legal_intent_pair_review_html,
     export_tg_qa_canonicalization_review_cards,
     import_tg_qa_canonical_embedding_records,
     import_tg_qa_canonicalization_results,
     import_tg_qa_canonicalization_review_decisions,
     import_tg_qa_cluster_review_decisions,
+    import_tg_qa_legal_intent_candidates,
+    import_tg_qa_legal_intent_pair_decisions,
+    import_tg_qa_legal_intent_pair_review_labels,
     run_tg_qa_canonicalization_adjudication_batch,
     run_tg_qa_canonicalization_llm_batch,
     run_tg_qa_canonicalization_deepseek_batch,
@@ -552,6 +558,38 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_reviewed_dataset_parser.add_argument("--output", required=True)
     tg_qa_reviewed_dataset_parser.add_argument("--manifest-output", required=True)
     tg_qa_reviewed_dataset_parser.add_argument("--quality-output", required=True)
+    tg_qa_legal_pair_benchmark_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-benchmark")
+    tg_qa_legal_pair_benchmark_parser.add_argument("--canonicalization-evidence", required=True)
+    tg_qa_legal_pair_benchmark_parser.add_argument("--similarity-pairs", default="")
+    tg_qa_legal_pair_benchmark_parser.add_argument("--max-random-negatives", type=int, default=0)
+    tg_qa_legal_pair_benchmark_parser.add_argument("--output", required=True)
+    tg_qa_legal_pair_benchmark_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_intent_import_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-candidates-import")
+    tg_qa_legal_intent_import_parser.add_argument("--canonicalization-evidence", required=True)
+    tg_qa_legal_intent_import_parser.add_argument("--candidates", required=True)
+    tg_qa_legal_intent_import_parser.add_argument("--output", required=True)
+    tg_qa_legal_intent_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_pair_decision_import_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-decisions-import")
+    tg_qa_legal_pair_decision_import_parser.add_argument("--pair-benchmark", required=True)
+    tg_qa_legal_pair_decision_import_parser.add_argument("--decisions", required=True)
+    tg_qa_legal_pair_decision_import_parser.add_argument("--output", required=True)
+    tg_qa_legal_pair_decision_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_pair_review_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-review-html")
+    tg_qa_legal_pair_review_parser.add_argument("--pair-benchmark", required=True)
+    tg_qa_legal_pair_review_parser.add_argument("--pair-decisions", default="")
+    tg_qa_legal_pair_review_parser.add_argument("--output", required=True)
+    tg_qa_legal_pair_review_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_pair_label_import_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-labels-import")
+    tg_qa_legal_pair_label_import_parser.add_argument("--pair-benchmark", required=True)
+    tg_qa_legal_pair_label_import_parser.add_argument("--labels", required=True)
+    tg_qa_legal_pair_label_import_parser.add_argument("--output", required=True)
+    tg_qa_legal_pair_label_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_eval_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-equivalence-report")
+    tg_qa_legal_eval_parser.add_argument("--pair-benchmark", required=True)
+    tg_qa_legal_eval_parser.add_argument("--pair-decisions", required=True)
+    tg_qa_legal_eval_parser.add_argument("--review-labels", required=True)
+    tg_qa_legal_eval_parser.add_argument("--output", required=True)
+    tg_qa_legal_eval_parser.add_argument("--summary-output", required=True)
     evaluation_subparsers.add_parser("tg-qa-canonical-boundary-check")
 
     embeddings_parser = subparsers.add_parser("embeddings")
@@ -1376,6 +1414,68 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             quality_output_path=args.quality_output,
         )
         payload = dict(result["manifest"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-pair-benchmark":
+        result = build_tg_qa_legal_intent_pair_benchmark(
+            canonicalization_evidence_path=args.canonicalization_evidence,
+            similarity_pairs_path=args.similarity_pairs or None,
+            max_random_negatives=args.max_random_negatives,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-candidates-import":
+        result = import_tg_qa_legal_intent_candidates(
+            canonicalization_evidence_path=args.canonicalization_evidence,
+            candidates_path=args.candidates,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-pair-decisions-import":
+        result = import_tg_qa_legal_intent_pair_decisions(
+            pair_benchmark_path=args.pair_benchmark,
+            decisions_path=args.decisions,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-pair-review-html":
+        result = export_tg_qa_legal_intent_pair_review_html(
+            pair_benchmark_path=args.pair_benchmark,
+            pair_decisions_path=args.pair_decisions or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-pair-labels-import":
+        result = import_tg_qa_legal_intent_pair_review_labels(
+            pair_benchmark_path=args.pair_benchmark,
+            labels_path=args.labels,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-equivalence-report":
+        result = build_tg_qa_legal_intent_equivalence_report(
+            pair_benchmark_path=args.pair_benchmark,
+            pair_decisions_path=args.pair_decisions,
+            review_labels_path=args.review_labels,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
         payload["status"] = "completed"
         return 0, payload
     if args.action == "tg-qa-boundary-check":

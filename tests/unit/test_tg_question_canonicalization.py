@@ -26,6 +26,8 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_canonicalization_retry_batch_from_adjudication,
     build_tg_qa_canonicalization_routing,
     build_tg_qa_issue_final_case_candidates,
+    build_tg_qa_legal_intent_equivalence_report,
+    build_tg_qa_legal_intent_pair_benchmark,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
     build_langchain_deepseek_adjudication_chain,
@@ -41,6 +43,9 @@ from evaluation.tg_question_canonicalization import (
     import_tg_qa_canonicalization_results,
     import_tg_qa_canonicalization_review_decisions,
     import_tg_qa_cluster_review_decisions,
+    import_tg_qa_legal_intent_candidates,
+    import_tg_qa_legal_intent_pair_decisions,
+    import_tg_qa_legal_intent_pair_review_labels,
     run_tg_qa_canonicalization_adjudication_batch,
     run_tg_qa_canonicalization_deepseek_batch,
     run_tg_qa_canonicalization_llm_batch,
@@ -1684,6 +1689,234 @@ def test_canonical_embedding_import_and_issue_clustering_keep_query_semantics(tm
     assert _read_json(clusters_manifest_path)["known_limitations"][0].startswith("clustering is by canonical issue")
 
 
+def test_legal_intent_pair_benchmark_has_stable_order_independent_ids(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    pairs_second_path = tmp_path / "pairs_second.jsonl"
+    pairs_second_summary_path = tmp_path / "pairs_second_summary.json"
+    evidence = [
+        _evidence("e2", "tg-qa-candidate:2", "Как обновить адрес на пластиковой карте ВНЖ?"),
+        _evidence("e1", "tg-qa-candidate:1", "Нужно ли менять адрес на ВНЖ после переезда?"),
+        _evidence(
+            "e3",
+            "tg-qa-candidate:3",
+            "Можно ли расторгнуть договор с Telekom?",
+            slug="consumer_telecom_contract_cancellation",
+            law_area="consumer_protection",
+        ),
+    ]
+    _write_jsonl(evidence_path, evidence)
+
+    first = build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+        max_random_negatives=1,
+    )
+    second = build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        output_path=pairs_second_path,
+        summary_output_path=pairs_second_summary_path,
+        max_random_negatives=1,
+    )
+
+    pair_ids = [item["pair_id"] for item in _read_jsonl(pairs_path)]
+    assert pair_ids == [item["pair_id"] for item in _read_jsonl(pairs_second_path)]
+    assert first["summary"]["pair_count"] == second["summary"]["pair_count"] == 2
+    assert first["records"][0]["pair_id"] == canonicalization._legal_intent_pair_id("e1", "e2")
+    assert first["records"][0]["pair_id"] == canonicalization._legal_intent_pair_id("e2", "e1")
+    assert "preserved_variant_candidate" in first["summary"]["counts_by_pair_source_reason"]
+
+
+def test_legal_intent_candidate_and_pair_decision_import_validate_contracts(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    candidates_input_path = tmp_path / "intent_candidates_input.jsonl"
+    candidates_path = tmp_path / "intent_candidates.jsonl"
+    candidates_summary_path = tmp_path / "intent_candidates_summary.json"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    decisions_input_path = tmp_path / "decisions_input.jsonl"
+    decisions_path = tmp_path / "decisions.jsonl"
+    decisions_summary_path = tmp_path / "decisions_summary.json"
+    evidence = [
+        _evidence("e1", "tg-qa-candidate:1", "Нужно ли менять адрес на ВНЖ после переезда?"),
+        _evidence("e2", "tg-qa-candidate:2", "Как обновить адрес на пластиковой карте ВНЖ?"),
+    ]
+    _write_jsonl(evidence_path, evidence)
+    _write_jsonl(
+        candidates_input_path,
+        [
+            {
+                "canonicalization_evidence_id": "e1",
+                "legal_domain": "residence_status",
+                "desired_action": "update_residence_document_address",
+                "legal_object": "residence_document_address",
+                "authority_context": ["Buergeramt"],
+                "material_slots_unknown": ["temporal_condition"],
+                "evidence_refs": [{"field": "desired_action", "source_field": "canonical_question"}],
+                "confidence": "high",
+            },
+            {
+                "canonicalization_evidence_id": "missing",
+                "confidence": "medium",
+            },
+        ],
+    )
+
+    candidate_import = import_tg_qa_legal_intent_candidates(
+        canonicalization_evidence_path=evidence_path,
+        candidates_path=candidates_input_path,
+        output_path=candidates_path,
+        summary_output_path=candidates_summary_path,
+    )
+
+    imported_candidates = _read_jsonl(candidates_path)
+    assert candidate_import["summary"]["completed_count"] == 1
+    assert candidate_import["summary"]["failed_count"] == 1
+    assert "high_confidence_with_unresolved_material_slots" in imported_candidates[0]["validation_flags"]
+
+    build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+    )
+    pair_id = _read_jsonl(pairs_path)[0]["pair_id"]
+    _write_jsonl(
+        decisions_input_path,
+        [
+            {
+                "pair_id": pair_id,
+                "decision_source": "fixture_judge",
+                "pair_class": "same_topic_different_issue",
+                "answer_equivalence": "not_safe_to_share_answer",
+                "canonical_question_equivalence": "not_safe_to_share_question",
+                "allowed_downstream_actions": ["route_human_review", "preserve_hard_negative"],
+                "material_differences": [{"field": "desired_action", "left": "address", "right": "document"}],
+                "short_reason": "Fixture material distinction.",
+                "confidence": "medium",
+                "risk": "low",
+            },
+            {
+                "pair_id": pair_id,
+                "decision_source": "fixture_bad",
+                "pair_class": "same_topic_different_issue",
+                "answer_equivalence": "safe_to_share_answer",
+                "canonical_question_equivalence": "not_safe_to_share_question",
+                "allowed_downstream_actions": ["allow_reference_answer_sharing"],
+                "confidence": "medium",
+                "risk": "low",
+            },
+        ],
+    )
+
+    decision_import = import_tg_qa_legal_intent_pair_decisions(
+        pair_benchmark_path=pairs_path,
+        decisions_path=decisions_input_path,
+        output_path=decisions_path,
+        summary_output_path=decisions_summary_path,
+    )
+
+    imported_decisions = _read_jsonl(decisions_path)
+    assert decision_import["summary"]["completed_count"] == 2
+    assert imported_decisions[1]["validation_flags"] == [
+        "missing_material_differences_for_non_equivalent_pair",
+        "non_equivalent_pair_allows_strict_sharing",
+    ]
+
+
+def test_legal_intent_review_labels_and_evaluation_report_flag_hard_negatives(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    labels_input_path = tmp_path / "labels_input.jsonl"
+    labels_path = tmp_path / "labels.jsonl"
+    labels_summary_path = tmp_path / "labels_summary.json"
+    decisions_input_path = tmp_path / "decisions_input.jsonl"
+    decisions_path = tmp_path / "decisions.jsonl"
+    decisions_summary_path = tmp_path / "decisions_summary.json"
+    report_path = tmp_path / "report.jsonl"
+    report_summary_path = tmp_path / "report_summary.json"
+    similarity_pairs_path = tmp_path / "similarity_pairs.jsonl"
+    evidence = [
+        _evidence("e1", "tg-qa-candidate:1", "Можно ли подать заявление на ВНЖ?"),
+        _evidence("e2", "tg-qa-candidate:2", "Можно ли подать заявление на ВНЖ без регистрации?", slug="residence_permit_application_without_registration"),
+    ]
+    _write_jsonl(evidence_path, evidence)
+    _write_jsonl(
+        similarity_pairs_path,
+        [
+            {
+                "left_canonicalization_evidence_id": "e1",
+                "right_canonicalization_evidence_id": "e2",
+                "canonical_question_score": 0.92,
+                "legal_issue_frame_score": 0.86,
+            }
+        ],
+    )
+    build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        similarity_pairs_path=similarity_pairs_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+    )
+    pair_id = _read_jsonl(pairs_path)[0]["pair_id"]
+    _write_jsonl(
+        labels_input_path,
+        [
+            {
+                "pair_id": pair_id,
+                "pair_class": "same_topic_different_issue",
+                "answer_equivalence": "not_safe_to_share_answer",
+                "canonical_question_equivalence": "not_safe_to_share_question",
+                "allowed_downstream_actions": ["preserve_hard_negative"],
+                "decision_reason": "Registration condition changes the legal issue.",
+            }
+        ],
+    )
+    import_tg_qa_legal_intent_pair_review_labels(
+        pair_benchmark_path=pairs_path,
+        labels_path=labels_input_path,
+        output_path=labels_path,
+        summary_output_path=labels_summary_path,
+    )
+    _write_jsonl(
+        decisions_input_path,
+        [
+            {
+                "pair_id": pair_id,
+                "decision_source": "fixture_judge",
+                "pair_class": "same_legal_intent",
+                "answer_equivalence": "safe_to_share_answer",
+                "canonical_question_equivalence": "safe_to_share_question",
+                "allowed_downstream_actions": ["allow_reference_answer_sharing"],
+                "short_reason": "Incorrectly treats the registration condition as context only.",
+                "confidence": "high",
+                "risk": "medium",
+            }
+        ],
+    )
+    import_tg_qa_legal_intent_pair_decisions(
+        pair_benchmark_path=pairs_path,
+        decisions_path=decisions_input_path,
+        output_path=decisions_path,
+        summary_output_path=decisions_summary_path,
+    )
+
+    report = build_tg_qa_legal_intent_equivalence_report(
+        pair_benchmark_path=pairs_path,
+        pair_decisions_path=decisions_path,
+        review_labels_path=labels_path,
+        output_path=report_path,
+        summary_output_path=report_summary_path,
+    )
+
+    assert report["summary"]["hard_negative_count"] == 1
+    assert report["summary"]["false_duplicate_risk_count"] == 1
+    assert report["summary"]["method_suitability"] == "insufficient_reviewed_labels"
+    assert "reviewed_pair_label_count_below_100" in report["summary"]["insufficient_label_warnings"]
+
+
 def test_canonical_coverage_statuses_do_not_count_uncertain_as_uncovered(tmp_path: Path) -> None:
     clusters_path = tmp_path / "clusters.jsonl"
     cases_path = tmp_path / "cases.jsonl"
@@ -1997,6 +2230,7 @@ def _evidence(
     slug: str = "residence_document_address_update_after_moving",
     confidence: str = "high",
     exclusion_reason: str = "none",
+    law_area: str = "migration_status",
 ) -> dict:
     return {
         "canonicalization_evidence_id": evidence_id,
@@ -2015,7 +2249,7 @@ def _evidence(
         "canonical_question_language": "ru",
         "legal_issue_frame": slug.replace("_", " ").title(),
         "legal_issue_frame_slug": slug,
-        "law_area": "migration_status",
+        "law_area": law_area,
         "facts": [],
         "desired_outcome": "",
         "authority_context": ["Buergeramt"],

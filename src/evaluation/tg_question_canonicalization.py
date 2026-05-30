@@ -37,6 +37,11 @@ QUESTION_BANK_POLICY_VERSION = "tg_legal_question_bank_v1"
 PROMOTION_POLICY_VERSION = "tg_legal_issue_final_case_promotion_v1"
 REFERENCE_ANSWER_POLICY_VERSION = "reviewed_reference_answer_required_v1"
 REVIEWED_DATASET_POLICY_VERSION = "tg_reviewed_canonical_evaluation_dataset_v1"
+LEGAL_INTENT_CANDIDATE_POLICY_VERSION = "tg_legal_intent_candidate_policy_v1"
+LEGAL_INTENT_PAIR_POLICY_VERSION = "tg_legal_intent_pair_policy_v1"
+LEGAL_INTENT_BENCHMARK_POLICY_VERSION = "tg_legal_intent_pair_benchmark_v1"
+LEGAL_INTENT_REVIEW_POLICY_VERSION = "tg_legal_intent_pair_review_v1"
+LEGAL_INTENT_EVALUATION_POLICY_VERSION = "tg_legal_intent_equivalence_evaluation_v1"
 
 CANONICALIZATION_STATUSES = ("completed", "failed", "skipped")
 EXCLUSION_REASONS = (
@@ -69,6 +74,47 @@ REFERENCE_ANSWER_ACTIONS = (
     "needs_manual_answer",
 )
 PROMOTION_STATUSES = ("eligible", "blocked_missing_reference_answer", "rejected")
+LEGAL_INTENT_REVIEW_STATUSES = (
+    "candidate",
+    "review_approved",
+    "review_rejected",
+    "needs_more_context",
+    "uncertain",
+)
+LEGAL_INTENT_PAIR_CLASSES = (
+    "exact_duplicate",
+    "same_legal_intent",
+    "same_topic_different_issue",
+    "related_context",
+    "different",
+    "uncertain",
+)
+LEGAL_INTENT_EQUIVALENCE_VALUES = (
+    "safe_to_share_answer",
+    "not_safe_to_share_answer",
+    "safe_to_share_question",
+    "not_safe_to_share_question",
+    "uncertain",
+)
+LEGAL_INTENT_ANSWER_EQUIVALENCE_VALUES = (
+    "safe_to_share_answer",
+    "not_safe_to_share_answer",
+    "uncertain",
+)
+LEGAL_INTENT_QUESTION_EQUIVALENCE_VALUES = (
+    "safe_to_share_question",
+    "not_safe_to_share_question",
+    "uncertain",
+)
+LEGAL_INTENT_DOWNSTREAM_ACTIONS = (
+    "allow_duplicate_removal",
+    "allow_canonical_question_sharing",
+    "allow_reference_answer_sharing",
+    "allow_faq_pattern_grouping",
+    "allow_retrieval_cluster_grouping",
+    "route_human_review",
+    "preserve_hard_negative",
+)
 VERIFIER_VERDICTS = ("pass", "fail", "uncertain")
 VERIFIER_RISK_LEVELS = ("none", "low", "medium", "high")
 VERIFIER_SUGGESTED_ACTIONS = ("accept", "reject", "retry_qwen", "send_deepseek", "human_review")
@@ -250,6 +296,218 @@ class CanonicalizationResultPayload(BaseModel):
             if not self.is_standalone_question:
                 raise ValueError("included_record_requires_standalone_question")
         return self
+
+
+class LegalIntentCandidatePayload(BaseModel):
+    """Structured candidate interpretation of one canonical legal question."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    legal_intent_candidate_id: str = Field(default="")
+    candidate_id: str = Field(default="")
+    canonicalization_evidence_id: str = Field(default="")
+    source_canonical_question: str = Field(default="")
+    source_legal_issue_frame: str = Field(default="")
+    law_area: str = Field(default="")
+    legal_domain: str = Field(default="")
+    actor: str = Field(default="")
+    subject: str = Field(default="")
+    current_status: str = Field(default="")
+    target_status: str = Field(default="")
+    desired_action: str = Field(default="")
+    legal_object: str = Field(default="")
+    authority_context: list[str] = Field(default_factory=list)
+    third_party_context: list[str] = Field(default_factory=list)
+    location_scope: str = Field(default="")
+    temporal_condition: str = Field(default="")
+    operational_boundary: str = Field(default="")
+    material_slots_unknown: list[str] = Field(default_factory=list)
+    ambiguities: list[str] = Field(default_factory=list)
+    evidence_refs: list[dict[str, str]] = Field(default_factory=list)
+    validation_flags: list[str] = Field(default_factory=list)
+    confidence: str = Field(default="low")
+    review_status: str = Field(default="candidate")
+    policy_version: str = Field(default=LEGAL_INTENT_CANDIDATE_POLICY_VERSION)
+
+    @field_validator(
+        "legal_intent_candidate_id",
+        "candidate_id",
+        "canonicalization_evidence_id",
+        "source_canonical_question",
+        "source_legal_issue_frame",
+        "law_area",
+        "legal_domain",
+        "actor",
+        "subject",
+        "current_status",
+        "target_status",
+        "desired_action",
+        "legal_object",
+        "location_scope",
+        "temporal_condition",
+        "operational_boundary",
+        "confidence",
+        "review_status",
+        "policy_version",
+        mode="before",
+    )
+    @classmethod
+    def _string_value(cls, value: Any) -> str:
+        return "" if value is None else str(value)
+
+    @field_validator(
+        "authority_context",
+        "third_party_context",
+        "material_slots_unknown",
+        "ambiguities",
+        "validation_flags",
+        mode="before",
+    )
+    @classmethod
+    def _string_list_value(cls, value: Any) -> list[str]:
+        return _as_string_list(value)
+
+    @field_validator("evidence_refs", mode="before")
+    @classmethod
+    def _evidence_refs_value(cls, value: Any) -> list[dict[str, str]]:
+        refs: list[dict[str, str]] = []
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for item in value:
+                if isinstance(item, Mapping):
+                    refs.append({str(key): str(val) for key, val in item.items()})
+        return refs
+
+    @field_validator("source_canonical_question")
+    @classmethod
+    def _redacted_question(cls, value: str) -> str:
+        return _redact_private_text(value.strip())
+
+    @field_validator("confidence")
+    @classmethod
+    def _valid_confidence(cls, value: str) -> str:
+        if value not in CONFIDENCE_VALUES:
+            raise ValueError(f"invalid_confidence:{value}")
+        return value
+
+    @field_validator("review_status")
+    @classmethod
+    def _valid_review_status(cls, value: str) -> str:
+        if value not in LEGAL_INTENT_REVIEW_STATUSES:
+            raise ValueError(f"invalid_review_status:{value}")
+        return value
+
+
+class LegalIntentPairDecisionPayload(BaseModel):
+    """Structured candidate judgment for one legal-intent pair."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    pair_decision_id: str = Field(default="")
+    pair_id: str = Field(default="")
+    decision_source: str = Field(default="")
+    pair_class: str = Field(default="uncertain")
+    answer_equivalence: str = Field(default="uncertain")
+    canonical_question_equivalence: str = Field(default="uncertain")
+    allowed_downstream_actions: list[str] = Field(default_factory=list)
+    material_differences: list[dict[str, str]] = Field(default_factory=list)
+    shared_material_facts: list[str] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    ambiguities: list[str] = Field(default_factory=list)
+    short_reason: str = Field(default="")
+    confidence: str = Field(default="low")
+    risk: str = Field(default="medium")
+    validation_flags: list[str] = Field(default_factory=list)
+    policy_version: str = Field(default=LEGAL_INTENT_PAIR_POLICY_VERSION)
+    runtime_metadata: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator(
+        "pair_decision_id",
+        "pair_id",
+        "decision_source",
+        "pair_class",
+        "answer_equivalence",
+        "canonical_question_equivalence",
+        "short_reason",
+        "confidence",
+        "risk",
+        "policy_version",
+        mode="before",
+    )
+    @classmethod
+    def _string_value(cls, value: Any) -> str:
+        return "" if value is None else str(value)
+
+    @field_validator(
+        "allowed_downstream_actions",
+        "shared_material_facts",
+        "unknowns",
+        "ambiguities",
+        "validation_flags",
+        mode="before",
+    )
+    @classmethod
+    def _string_list_value(cls, value: Any) -> list[str]:
+        return _as_string_list(value)
+
+    @field_validator("material_differences", mode="before")
+    @classmethod
+    def _material_differences_value(cls, value: Any) -> list[dict[str, str]]:
+        differences: list[dict[str, str]] = []
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for item in value:
+                if isinstance(item, Mapping):
+                    differences.append({str(key): str(val) for key, val in item.items()})
+        return differences
+
+    @field_validator("runtime_metadata", mode="before")
+    @classmethod
+    def _runtime_metadata_value(cls, value: Any) -> dict[str, str]:
+        if not isinstance(value, Mapping):
+            return {}
+        return {str(key): str(val) for key, val in value.items()}
+
+    @field_validator("pair_class")
+    @classmethod
+    def _valid_pair_class(cls, value: str) -> str:
+        if value not in LEGAL_INTENT_PAIR_CLASSES:
+            raise ValueError(f"invalid_pair_class:{value}")
+        return value
+
+    @field_validator("answer_equivalence")
+    @classmethod
+    def _valid_answer_equivalence(cls, value: str) -> str:
+        if value not in LEGAL_INTENT_ANSWER_EQUIVALENCE_VALUES:
+            raise ValueError(f"invalid_answer_equivalence:{value}")
+        return value
+
+    @field_validator("canonical_question_equivalence")
+    @classmethod
+    def _valid_question_equivalence(cls, value: str) -> str:
+        if value not in LEGAL_INTENT_QUESTION_EQUIVALENCE_VALUES:
+            raise ValueError(f"invalid_canonical_question_equivalence:{value}")
+        return value
+
+    @field_validator("allowed_downstream_actions")
+    @classmethod
+    def _valid_actions(cls, value: list[str]) -> list[str]:
+        invalid = sorted({item for item in value if item not in LEGAL_INTENT_DOWNSTREAM_ACTIONS})
+        if invalid:
+            raise ValueError(f"invalid_allowed_downstream_actions:{','.join(invalid)}")
+        return value
+
+    @field_validator("confidence")
+    @classmethod
+    def _valid_confidence(cls, value: str) -> str:
+        if value not in CONFIDENCE_VALUES:
+            raise ValueError(f"invalid_confidence:{value}")
+        return value
+
+    @field_validator("risk")
+    @classmethod
+    def _valid_risk(cls, value: str) -> str:
+        if value not in VERIFIER_RISK_LEVELS:
+            raise ValueError(f"invalid_risk:{value}")
+        return value
 
 
 class VerifierVerdictPayload(BaseModel):
@@ -2547,6 +2805,371 @@ def build_tg_qa_reviewed_evaluation_dataset(
     return {"cases": cases, "manifest": manifest, "quality": quality}
 
 
+def build_tg_qa_legal_intent_pair_benchmark(
+    *,
+    canonicalization_evidence_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+    similarity_pairs_path: str | Path | None = None,
+    max_random_negatives: int = 0,
+) -> dict[str, Any]:
+    """Build stable legal-intent pair benchmark records from canonical questions."""
+
+    evidence_records = [
+        item for item in _read_jsonl(canonicalization_evidence_path) if _included_canonical_evidence(item)
+    ]
+    evidence_by_id = {str(item.get("canonicalization_evidence_id", "")): item for item in evidence_records}
+    pairs: dict[str, dict[str, Any]] = {}
+
+    for group in _group_records(evidence_records, key_func=lambda item: str(item.get("legal_issue_frame_slug", ""))):
+        for left, right in _all_pairs(group):
+            reasons = ["same_law_area"]
+            if _normalized_text(left.get("canonical_question", "")) == _normalized_text(right.get("canonical_question", "")):
+                reasons.append("strict_duplicate_candidate")
+            else:
+                reasons.append("preserved_variant_candidate")
+            _merge_legal_intent_pair(
+                pairs,
+                _legal_intent_pair_record(left, right, pair_source_reasons=reasons),
+            )
+
+    for group in _group_records(evidence_records, key_func=lambda item: _normalized_text(item.get("canonical_question", ""))):
+        if len(group) < 2:
+            continue
+        for left, right in _all_pairs(group):
+            if str(left.get("law_area", "")) != str(right.get("law_area", "")):
+                _merge_legal_intent_pair(
+                    pairs,
+                    _legal_intent_pair_record(left, right, pair_source_reasons=["law_area_conflict"]),
+                )
+
+    if similarity_pairs_path:
+        for raw_pair in _read_jsonl(similarity_pairs_path):
+            left, right = _similarity_pair_evidence(raw_pair, evidence_by_id)
+            if not left or not right:
+                continue
+            reasons = _as_string_list(raw_pair.get("pair_source_reasons", raw_pair.get("reasons", [])))
+            if not reasons:
+                reasons = ["high_canonical_question_similarity"]
+            _merge_legal_intent_pair(
+                pairs,
+                _legal_intent_pair_record(
+                    left,
+                    right,
+                    pair_source_reasons=reasons,
+                    similarity_evidence=_similarity_evidence_from_pair(raw_pair),
+                ),
+            )
+
+    if max_random_negatives > 0:
+        emitted = 0
+        for left, right in _all_pairs(sorted(evidence_records, key=lambda item: str(item.get("canonicalization_evidence_id", "")))):
+            if emitted >= max_random_negatives:
+                break
+            if str(left.get("legal_issue_frame_slug", "")) == str(right.get("legal_issue_frame_slug", "")):
+                continue
+            if str(left.get("law_area", "")) == str(right.get("law_area", "")):
+                continue
+            pair = _legal_intent_pair_record(left, right, pair_source_reasons=["random_negative"])
+            pair_id = str(pair.get("pair_id", ""))
+            if pair_id in pairs:
+                continue
+            _merge_legal_intent_pair(pairs, pair)
+            emitted += 1
+
+    records = sorted(pairs.values(), key=lambda item: str(item.get("pair_id", "")))
+    _ensure_public_payload(records)
+    _write_jsonl(output_path, records)
+    summary = {
+        "artifact_type": "tg_qa_legal_intent_pair_benchmark_summary",
+        "generated_at": _utc_timestamp(),
+        "source_canonicalization_evidence_path": str(canonicalization_evidence_path),
+        "source_similarity_pairs_path": str(similarity_pairs_path or ""),
+        "output_path": str(output_path),
+        "policy_version": LEGAL_INTENT_BENCHMARK_POLICY_VERSION,
+        "processed_canonicalization_evidence_count": len(evidence_records),
+        "pair_count": len(records),
+        "max_random_negatives": max_random_negatives,
+        "counts_by_pair_source_reason": _counts(
+            reason for item in records for reason in _as_string_list(item.get("pair_source_reasons", []))
+        ),
+        "counts_by_benchmark_status": _counts(str(item.get("benchmark_status", "")) for item in records),
+        "artifact_directory": "data/evaluation/tg_qa_legal_intent_equivalence/",
+        "trust_boundary": "pair_benchmark_records_are_candidates_not_legal_truth",
+    }
+    _write_json(summary_output_path, summary)
+    return {"records": records, "summary": summary}
+
+
+def import_tg_qa_legal_intent_candidates(
+    *,
+    canonicalization_evidence_path: str | Path,
+    candidates_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+) -> dict[str, Any]:
+    """Import structured legal-intent candidates for canonical questions."""
+
+    evidence_records = [
+        item for item in _read_jsonl(canonicalization_evidence_path) if _included_canonical_evidence(item)
+    ]
+    by_evidence_id = {str(item.get("canonicalization_evidence_id", "")): item for item in evidence_records}
+    by_candidate_id = {str(item.get("candidate_id", "")): item for item in evidence_records}
+    raw_records = _read_jsonl(candidates_path)
+    records: list[dict[str, Any]] = []
+    seen_evidence_ids: set[str] = set()
+    counts = Counter()
+
+    for raw in raw_records:
+        record = _legal_intent_candidate_record(
+            raw,
+            evidence_by_id=by_evidence_id,
+            evidence_by_candidate_id=by_candidate_id,
+        )
+        evidence_id = str(record.get("canonicalization_evidence_id", ""))
+        if record.get("status") != "failed" and evidence_id in seen_evidence_ids:
+            record["status"] = "failed"
+            record["failure_reason"] = "duplicate_legal_intent_candidate_for_evidence"
+        if record.get("status") == "failed":
+            counts["failed"] += 1
+        else:
+            seen_evidence_ids.add(evidence_id)
+            counts["completed"] += 1
+        records.append(record)
+
+    _ensure_public_payload(records)
+    _write_jsonl(output_path, records)
+    summary = {
+        "artifact_type": "tg_qa_legal_intent_candidate_import_summary",
+        "generated_at": _utc_timestamp(),
+        "source_canonicalization_evidence_path": str(canonicalization_evidence_path),
+        "source_legal_intent_candidate_path": str(candidates_path),
+        "output_path": str(output_path),
+        "policy_version": LEGAL_INTENT_CANDIDATE_POLICY_VERSION,
+        "processed_count": len(raw_records),
+        "completed_count": counts.get("completed", 0),
+        "failed_count": counts.get("failed", 0),
+        "counts_by_law_area": _counts(str(item.get("law_area", "")) for item in records if item.get("status") != "failed"),
+        "counts_by_validation_flag": _counts(
+            flag for item in records for flag in _as_string_list(item.get("validation_flags", []))
+        ),
+        "trust_boundary": "legal_intent_candidates_are_review_evidence_only",
+    }
+    _write_json(summary_output_path, summary)
+    return {"records": records, "summary": summary}
+
+
+def import_tg_qa_legal_intent_pair_decisions(
+    *,
+    pair_benchmark_path: str | Path,
+    decisions_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+) -> dict[str, Any]:
+    """Import structured legal-intent pair decisions."""
+
+    benchmark = {str(item.get("pair_id", "")): item for item in _read_jsonl(pair_benchmark_path)}
+    raw_decisions = _read_decision_records(decisions_path)
+    records: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, str]] = set()
+    counts = Counter()
+
+    for raw in raw_decisions:
+        record = _legal_intent_pair_decision_record(raw, benchmark=benchmark)
+        key = (str(record.get("pair_id", "")), str(record.get("decision_source", "")))
+        if record.get("status") != "failed" and key in seen_keys:
+            record["status"] = "failed"
+            record["failure_reason"] = "duplicate_pair_decision_for_source"
+        if record.get("status") == "failed":
+            counts["failed"] += 1
+        else:
+            seen_keys.add(key)
+            counts["completed"] += 1
+            counts[str(record.get("pair_class", ""))] += 1
+        records.append(record)
+
+    _ensure_public_payload(records)
+    _write_jsonl(output_path, records)
+    summary = {
+        "artifact_type": "tg_qa_legal_intent_pair_decision_import_summary",
+        "generated_at": _utc_timestamp(),
+        "source_pair_benchmark_path": str(pair_benchmark_path),
+        "source_pair_decisions_path": str(decisions_path),
+        "output_path": str(output_path),
+        "policy_version": LEGAL_INTENT_PAIR_POLICY_VERSION,
+        "processed_count": len(raw_decisions),
+        "completed_count": counts.get("completed", 0),
+        "failed_count": counts.get("failed", 0),
+        "counts_by_pair_class": _counts(
+            str(item.get("pair_class", "")) for item in records if item.get("status") != "failed"
+        ),
+        "counts_by_decision_source": _counts(
+            str(item.get("decision_source", "")) for item in records if item.get("status") != "failed"
+        ),
+        "counts_by_validation_flag": _counts(
+            flag for item in records for flag in _as_string_list(item.get("validation_flags", []))
+        ),
+        "trust_boundary": "legal_intent_pair_decisions_are_review_evidence_only",
+    }
+    _write_json(summary_output_path, summary)
+    return {"records": records, "summary": summary}
+
+
+def export_tg_qa_legal_intent_pair_review_html(
+    *,
+    pair_benchmark_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+    pair_decisions_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Export dependency-free HTML for manual pair review."""
+
+    pairs = _read_jsonl(pair_benchmark_path)
+    decisions = _read_jsonl(pair_decisions_path) if pair_decisions_path else []
+    decisions_by_pair: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for decision in decisions:
+        if str(decision.get("status", "")) == "failed":
+            continue
+        decisions_by_pair[str(decision.get("pair_id", ""))].append(decision)
+    cards = [_legal_intent_review_card(pair, decisions_by_pair.get(str(pair.get("pair_id", "")), [])) for pair in pairs]
+    _write_text(output_path, _legal_intent_review_html(cards))
+    summary = {
+        "artifact_type": "tg_qa_legal_intent_pair_review_html_summary",
+        "generated_at": _utc_timestamp(),
+        "pair_benchmark_path": str(pair_benchmark_path),
+        "pair_decisions_path": str(pair_decisions_path or ""),
+        "html_output_path": str(output_path),
+        "card_count": len(cards),
+        "cards_with_decisions_count": sum(1 for item in cards if item.get("decisions")),
+        "review_ui_mode": "static_html_with_client_side_jsonl_export",
+        "trust_boundary": "pair_review_labels_require_human_export_and_import",
+    }
+    _write_json(summary_output_path, summary)
+    return {"cards": cards, "summary": summary}
+
+
+def import_tg_qa_legal_intent_pair_review_labels(
+    *,
+    pair_benchmark_path: str | Path,
+    labels_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+) -> dict[str, Any]:
+    """Import human labels for legal-intent pair benchmark records."""
+
+    benchmark = {str(item.get("pair_id", "")): item for item in _read_jsonl(pair_benchmark_path)}
+    raw_labels = _read_decision_records(labels_path)
+    records: list[dict[str, Any]] = []
+    seen_by_pair: dict[str, str] = {}
+    counts = Counter()
+
+    for raw in raw_labels:
+        record = _legal_intent_pair_review_label_record(raw, benchmark=benchmark)
+        pair_id = str(record.get("pair_id", ""))
+        fingerprint = _legal_intent_label_fingerprint(record)
+        if record.get("status") != "failed" and pair_id in seen_by_pair:
+            if seen_by_pair[pair_id] == fingerprint:
+                record["status"] = "skipped"
+                record["failure_reason"] = "duplicate_identical_pair_review_label"
+                counts["skipped"] += 1
+            else:
+                record["status"] = "failed"
+                record["failure_reason"] = "conflicting_pair_review_label"
+                counts["failed"] += 1
+        elif record.get("status") == "failed":
+            counts["failed"] += 1
+        else:
+            seen_by_pair[pair_id] = fingerprint
+            counts["completed"] += 1
+        records.append(record)
+
+    _ensure_public_payload(records)
+    _write_jsonl(output_path, records)
+    summary = {
+        "artifact_type": "tg_qa_legal_intent_pair_review_label_import_summary",
+        "generated_at": _utc_timestamp(),
+        "source_pair_benchmark_path": str(pair_benchmark_path),
+        "source_review_labels_path": str(labels_path),
+        "output_path": str(output_path),
+        "review_policy_version": LEGAL_INTENT_REVIEW_POLICY_VERSION,
+        "processed_count": len(raw_labels),
+        "completed_count": counts.get("completed", 0),
+        "failed_count": counts.get("failed", 0),
+        "skipped_count": counts.get("skipped", 0),
+        "counts_by_pair_class": _counts(
+            str(item.get("pair_class", "")) for item in records if item.get("status") == "completed"
+        ),
+        "trust_boundary": "pair_review_labels_are_human_review_artifacts",
+    }
+    _write_json(summary_output_path, summary)
+    return {"records": records, "summary": summary}
+
+
+def build_tg_qa_legal_intent_equivalence_report(
+    *,
+    pair_benchmark_path: str | Path,
+    pair_decisions_path: str | Path,
+    review_labels_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+) -> dict[str, Any]:
+    """Evaluate legal-intent pair decisions against reviewed labels."""
+
+    benchmark = {str(item.get("pair_id", "")): item for item in _read_jsonl(pair_benchmark_path)}
+    decisions = [item for item in _read_jsonl(pair_decisions_path) if str(item.get("status", "")) != "failed"]
+    labels = [item for item in _read_jsonl(review_labels_path) if str(item.get("status", "")) == "completed"]
+    labels_by_pair = {str(item.get("pair_id", "")): item for item in labels}
+    comparison_records = [
+        _legal_intent_evaluation_record(decision, labels_by_pair.get(str(decision.get("pair_id", ""))), benchmark)
+        for decision in decisions
+    ]
+    _ensure_public_payload(comparison_records)
+    _write_jsonl(output_path, comparison_records)
+
+    label_count = len(labels_by_pair)
+    false_duplicate_risks = [
+        item for item in comparison_records if _bool_value(item.get("false_duplicate_risk", False))
+    ][:25]
+    false_separation_risks = [
+        item for item in comparison_records if _bool_value(item.get("false_separation_risk", False))
+    ][:25]
+    hard_negatives = [
+        _hard_negative_summary(pair_id, benchmark[pair_id], labels_by_pair[pair_id])
+        for pair_id in sorted(labels_by_pair)
+        if pair_id in benchmark and _legal_intent_hard_negative(benchmark[pair_id], labels_by_pair[pair_id])
+    ][:25]
+    method_suitability = _legal_intent_method_suitability(comparison_records, label_count)
+    summary = {
+        "artifact_type": "tg_qa_legal_intent_equivalence_evaluation_summary",
+        "generated_at": _utc_timestamp(),
+        "pair_benchmark_path": str(pair_benchmark_path),
+        "pair_decisions_path": str(pair_decisions_path),
+        "review_labels_path": str(review_labels_path),
+        "output_path": str(output_path),
+        "summary_output_path": str(summary_output_path),
+        "evaluation_policy_version": LEGAL_INTENT_EVALUATION_POLICY_VERSION,
+        "pair_count": len(benchmark),
+        "decision_count": len(decisions),
+        "reviewed_label_count": label_count,
+        "comparison_count": len(comparison_records),
+        "counts_by_label_pair_class": _counts(str(item.get("pair_class", "")) for item in labels),
+        "counts_by_decision_pair_class": _counts(str(item.get("pair_class", "")) for item in decisions),
+        "counts_by_decision_source": _counts(str(item.get("decision_source", "")) for item in decisions),
+        "counts_by_match_status": _counts(str(item.get("match_status", "")) for item in comparison_records),
+        "hard_negative_count": len(hard_negatives),
+        "false_duplicate_risk_count": len(false_duplicate_risks),
+        "false_separation_risk_count": len(false_separation_risks),
+        "high_similarity_hard_negatives": hard_negatives,
+        "false_duplicate_risk_examples": false_duplicate_risks,
+        "false_separation_risk_examples": false_separation_risks,
+        "insufficient_label_warnings": _legal_intent_insufficient_label_warnings(labels),
+        "method_suitability": method_suitability,
+        "trust_boundary": "equivalence_evaluation_does_not_approve_automatic_answer_reuse",
+    }
+    _write_json(summary_output_path, summary)
+    return {"records": comparison_records, "summary": summary}
+
+
 def verify_tg_question_canonicalization_boundaries(
     *,
     source_path: str | Path = "src/evaluation/tg_question_canonicalization.py",
@@ -2598,6 +3221,9 @@ def verify_tg_question_canonicalization_boundaries(
         "data/evaluation/tg_qa_question_bank/*.tsv",
         "data/evaluation/tg_qa_canonical_coverage/*.json",
         "data/evaluation/tg_qa_canonical_coverage/*.jsonl",
+        "data/evaluation/tg_qa_legal_intent_equivalence/*.json",
+        "data/evaluation/tg_qa_legal_intent_equivalence/*.jsonl",
+        "data/evaluation/tg_qa_legal_intent_equivalence/*.html",
     ]
     missing_ignore_patterns = [pattern for pattern in required_ignore_patterns if pattern not in gitignore]
     status = "passed" if not failed and not missing_ignore_patterns else "failed"
@@ -2610,6 +3236,618 @@ def verify_tg_question_canonicalization_boundaries(
         "source_path": str(source_path),
         "gitignore_path": str(gitignore_path),
     }
+
+
+def _group_records(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    key_func,
+) -> list[list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        key = str(key_func(record))
+        if key:
+            grouped[key].append(dict(record))
+    return [items for _, items in sorted(grouped.items()) if len(items) > 1]
+
+
+def _all_pairs(records: Sequence[Mapping[str, Any]]) -> Iterable[tuple[dict[str, Any], dict[str, Any]]]:
+    items = [dict(item) for item in records]
+    for left_index in range(len(items)):
+        for right_index in range(left_index + 1, len(items)):
+            yield items[left_index], items[right_index]
+
+
+def _legal_intent_pair_id(left_evidence_id: str, right_evidence_id: str) -> str:
+    left, right = sorted([left_evidence_id, right_evidence_id])
+    return _stable_id("tg-legal-intent-pair", left, right)
+
+
+def _ordered_pair_evidence(left: Mapping[str, Any], right: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    left_id = str(left.get("canonicalization_evidence_id", ""))
+    right_id = str(right.get("canonicalization_evidence_id", ""))
+    return (left, right) if left_id <= right_id else (right, left)
+
+
+def _legal_intent_pair_record(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+    *,
+    pair_source_reasons: Sequence[str],
+    similarity_evidence: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    left, right = _ordered_pair_evidence(left, right)
+    left_id = str(left.get("canonicalization_evidence_id", ""))
+    right_id = str(right.get("canonicalization_evidence_id", ""))
+    if not left_id or not right_id or left_id == right_id:
+        raise ValueError("pair_requires_two_distinct_canonicalization_evidence_ids")
+    canonical_score = 1.0 if _normalized_text(left.get("canonical_question", "")) == _normalized_text(right.get("canonical_question", "")) else 0.0
+    issue_score = 1.0 if str(left.get("legal_issue_frame_slug", "")) == str(right.get("legal_issue_frame_slug", "")) else 0.0
+    evidence = {
+        "canonical_question_score": canonical_score,
+        "legal_issue_frame_score": issue_score,
+        "embedding_profile_id": "",
+    }
+    evidence.update(dict(similarity_evidence or {}))
+    return {
+        "pair_id": _legal_intent_pair_id(left_id, right_id),
+        "left_canonicalization_evidence_id": left_id,
+        "right_canonicalization_evidence_id": right_id,
+        "left_candidate_id": str(left.get("candidate_id", "")),
+        "right_candidate_id": str(right.get("candidate_id", "")),
+        "pair_source_reasons": sorted(set(_as_string_list(pair_source_reasons))),
+        "similarity_evidence": evidence,
+        "benchmark_status": "needs_pair_review",
+        "left": _legal_intent_pair_side(left),
+        "right": _legal_intent_pair_side(right),
+        "policy_version": LEGAL_INTENT_BENCHMARK_POLICY_VERSION,
+        "provenance": {
+            "source_canonicalization_run_ids": sorted(
+                {
+                    str(left.get("canonicalization_run_id", "")),
+                    str(right.get("canonicalization_run_id", "")),
+                }
+            ),
+            "trust_boundary": "pair_is_candidate_not_legal_truth",
+        },
+    }
+
+
+def _legal_intent_pair_side(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "canonicalization_evidence_id": str(evidence.get("canonicalization_evidence_id", "")),
+        "candidate_id": str(evidence.get("candidate_id", "")),
+        "canonical_question": _redact_private_text(str(evidence.get("canonical_question", ""))),
+        "legal_issue_frame": str(evidence.get("legal_issue_frame", "")),
+        "legal_issue_frame_slug": str(evidence.get("legal_issue_frame_slug", "")),
+        "law_area": str(evidence.get("law_area", "")),
+        "authority_context": _as_string_list(evidence.get("authority_context", [])),
+        "quality_flags": _as_string_list(evidence.get("quality_flags", [])),
+        "confidence": str(evidence.get("confidence", "")),
+    }
+
+
+def _merge_legal_intent_pair(pairs: dict[str, dict[str, Any]], pair: Mapping[str, Any]) -> None:
+    pair_id = str(pair.get("pair_id", ""))
+    if not pair_id:
+        return
+    if pair_id not in pairs:
+        pairs[pair_id] = dict(pair)
+        return
+    existing = pairs[pair_id]
+    existing["pair_source_reasons"] = sorted(
+        set(_as_string_list(existing.get("pair_source_reasons", []))) | set(_as_string_list(pair.get("pair_source_reasons", [])))
+    )
+    existing_evidence = dict(existing.get("similarity_evidence", {})) if isinstance(existing.get("similarity_evidence"), Mapping) else {}
+    incoming_evidence = dict(pair.get("similarity_evidence", {})) if isinstance(pair.get("similarity_evidence"), Mapping) else {}
+    for key, value in incoming_evidence.items():
+        if isinstance(value, int | float) and isinstance(existing_evidence.get(key), int | float):
+            existing_evidence[key] = max(float(existing_evidence[key]), float(value))
+        elif value and not existing_evidence.get(key):
+            existing_evidence[key] = value
+    existing["similarity_evidence"] = existing_evidence
+
+
+def _similarity_pair_evidence(
+    raw_pair: Mapping[str, Any],
+    evidence_by_id: Mapping[str, Mapping[str, Any]],
+) -> tuple[Mapping[str, Any] | None, Mapping[str, Any] | None]:
+    left_id = str(
+        raw_pair.get(
+            "left_canonicalization_evidence_id",
+            raw_pair.get("left_id", raw_pair.get("source_canonicalization_evidence_id", "")),
+        )
+    )
+    right_id = str(
+        raw_pair.get(
+            "right_canonicalization_evidence_id",
+            raw_pair.get("right_id", raw_pair.get("target_canonicalization_evidence_id", "")),
+        )
+    )
+    return evidence_by_id.get(left_id), evidence_by_id.get(right_id)
+
+
+def _similarity_evidence_from_pair(raw_pair: Mapping[str, Any]) -> dict[str, Any]:
+    evidence = raw_pair.get("similarity_evidence", {})
+    result = dict(evidence) if isinstance(evidence, Mapping) else {}
+    for source_key, target_key in (
+        ("canonical_question_score", "canonical_question_score"),
+        ("question_similarity_score", "canonical_question_score"),
+        ("legal_issue_frame_score", "legal_issue_frame_score"),
+        ("issue_frame_similarity_score", "legal_issue_frame_score"),
+        ("embedding_profile_id", "embedding_profile_id"),
+    ):
+        if source_key in raw_pair and target_key not in result:
+            result[target_key] = raw_pair[source_key]
+    return result
+
+
+def _legal_intent_candidate_record(
+    raw: Mapping[str, Any],
+    *,
+    evidence_by_id: Mapping[str, Mapping[str, Any]],
+    evidence_by_candidate_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    raw_payload = dict(raw)
+    evidence_id = str(raw_payload.get("canonicalization_evidence_id", ""))
+    source_evidence = evidence_by_id.get(evidence_id)
+    if source_evidence is None:
+        source_evidence = evidence_by_candidate_id.get(str(raw_payload.get("candidate_id", "")))
+        if source_evidence is not None:
+            raw_payload["canonicalization_evidence_id"] = str(source_evidence.get("canonicalization_evidence_id", ""))
+    if source_evidence is None:
+        return _failed_legal_intent_candidate(raw_payload, "unknown_canonicalization_evidence_id")
+    raw_payload.setdefault("candidate_id", str(source_evidence.get("candidate_id", "")))
+    raw_payload.setdefault("source_canonical_question", str(source_evidence.get("canonical_question", "")))
+    raw_payload.setdefault("source_legal_issue_frame", str(source_evidence.get("legal_issue_frame", "")))
+    raw_payload.setdefault("law_area", str(source_evidence.get("law_area", "")))
+    try:
+        payload = LegalIntentCandidatePayload.model_validate(raw_payload)
+    except ValidationError as exc:
+        return _failed_legal_intent_candidate(raw_payload, _pydantic_failure_reason(exc))
+    flags = list(payload.validation_flags)
+    if payload.confidence == "high" and (payload.material_slots_unknown or payload.ambiguities):
+        flags.append("high_confidence_with_unresolved_material_slots")
+    if not payload.evidence_refs:
+        flags.append("missing_evidence_refs")
+    record = payload.model_dump()
+    record["legal_intent_candidate_id"] = record["legal_intent_candidate_id"] or _stable_id(
+        "tg-legal-intent-candidate",
+        record["canonicalization_evidence_id"],
+        record["policy_version"],
+    )
+    record["validation_flags"] = sorted(set(flags))
+    record["status"] = "completed"
+    record["failure_reason"] = ""
+    record["provenance"] = {
+        "source_canonicalization_artifact": str(source_evidence.get("provenance", {}).get("source_candidate_artifact", ""))
+        if isinstance(source_evidence.get("provenance"), Mapping)
+        else "",
+        "canonicalization_run_id": str(source_evidence.get("canonicalization_run_id", "")),
+        "trust_boundary": "legal_intent_candidate_is_review_evidence_only",
+    }
+    return record
+
+
+def _failed_legal_intent_candidate(raw: Mapping[str, Any], failure_reason: str) -> dict[str, Any]:
+    evidence_id = str(raw.get("canonicalization_evidence_id", ""))
+    return {
+        "legal_intent_candidate_id": str(raw.get("legal_intent_candidate_id", ""))
+        or _stable_id("tg-legal-intent-candidate", evidence_id, failure_reason, raw),
+        "candidate_id": str(raw.get("candidate_id", "")),
+        "canonicalization_evidence_id": evidence_id,
+        "source_canonical_question": "",
+        "source_legal_issue_frame": "",
+        "law_area": "",
+        "legal_domain": "",
+        "actor": "",
+        "subject": "",
+        "current_status": "",
+        "target_status": "",
+        "desired_action": "",
+        "legal_object": "",
+        "authority_context": [],
+        "third_party_context": [],
+        "location_scope": "",
+        "temporal_condition": "",
+        "operational_boundary": "",
+        "material_slots_unknown": [],
+        "ambiguities": [],
+        "evidence_refs": [],
+        "validation_flags": ["legal_intent_candidate_import_failed"],
+        "confidence": "low",
+        "review_status": "uncertain",
+        "policy_version": LEGAL_INTENT_CANDIDATE_POLICY_VERSION,
+        "status": "failed",
+        "failure_reason": failure_reason,
+        "provenance": {"trust_boundary": "failed_candidate_not_usable"},
+    }
+
+
+def _legal_intent_pair_decision_record(
+    raw: Mapping[str, Any],
+    *,
+    benchmark: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    raw_payload = dict(raw)
+    pair_id = str(raw_payload.get("pair_id", ""))
+    if pair_id not in benchmark:
+        return _failed_legal_intent_pair_decision(raw_payload, "unknown_pair_id")
+    try:
+        payload = LegalIntentPairDecisionPayload.model_validate(raw_payload)
+    except ValidationError as exc:
+        return _failed_legal_intent_pair_decision(raw_payload, _pydantic_failure_reason(exc))
+    flags = set(payload.validation_flags)
+    if payload.pair_class == "exact_duplicate" and (
+        payload.answer_equivalence != "safe_to_share_answer"
+        or payload.canonical_question_equivalence != "safe_to_share_question"
+    ):
+        flags.add("exact_duplicate_without_safe_sharing")
+    if payload.pair_class == "same_topic_different_issue" and (
+        "allow_duplicate_removal" in payload.allowed_downstream_actions
+        or "allow_reference_answer_sharing" in payload.allowed_downstream_actions
+    ):
+        flags.add("non_equivalent_pair_allows_strict_sharing")
+    if payload.pair_class in {"different", "same_topic_different_issue"} and not payload.material_differences:
+        flags.add("missing_material_differences_for_non_equivalent_pair")
+    record = payload.model_dump()
+    record["pair_decision_id"] = record["pair_decision_id"] or _stable_id(
+        "tg-legal-intent-pair-decision",
+        record["pair_id"],
+        record["decision_source"],
+        record["policy_version"],
+    )
+    record["validation_flags"] = sorted(flags)
+    record["status"] = "completed"
+    record["failure_reason"] = ""
+    record["provenance"] = {
+        "source_pair_benchmark_id": pair_id,
+        "trust_boundary": "pair_decision_is_review_evidence_only",
+    }
+    return record
+
+
+def _failed_legal_intent_pair_decision(raw: Mapping[str, Any], failure_reason: str) -> dict[str, Any]:
+    pair_id = str(raw.get("pair_id", ""))
+    return {
+        "pair_decision_id": str(raw.get("pair_decision_id", "")) or _stable_id("tg-legal-intent-pair-decision", pair_id, failure_reason, raw),
+        "pair_id": pair_id,
+        "decision_source": str(raw.get("decision_source", "")),
+        "pair_class": "uncertain",
+        "answer_equivalence": "uncertain",
+        "canonical_question_equivalence": "uncertain",
+        "allowed_downstream_actions": ["route_human_review"],
+        "material_differences": [],
+        "shared_material_facts": [],
+        "unknowns": [],
+        "ambiguities": [],
+        "short_reason": "",
+        "confidence": "low",
+        "risk": "high",
+        "validation_flags": ["pair_decision_import_failed"],
+        "policy_version": LEGAL_INTENT_PAIR_POLICY_VERSION,
+        "runtime_metadata": {},
+        "status": "failed",
+        "failure_reason": failure_reason,
+        "provenance": {"trust_boundary": "failed_pair_decision_not_usable"},
+    }
+
+
+def _legal_intent_review_card(pair: Mapping[str, Any], decisions: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    return {
+        "pair_id": str(pair.get("pair_id", "")),
+        "pair_source_reasons": _as_string_list(pair.get("pair_source_reasons", [])),
+        "benchmark_status": str(pair.get("benchmark_status", "")),
+        "similarity_evidence": dict(pair.get("similarity_evidence", {})) if isinstance(pair.get("similarity_evidence"), Mapping) else {},
+        "left": dict(pair.get("left", {})) if isinstance(pair.get("left"), Mapping) else {},
+        "right": dict(pair.get("right", {})) if isinstance(pair.get("right"), Mapping) else {},
+        "decisions": [
+            {
+                "decision_source": str(item.get("decision_source", "")),
+                "pair_class": str(item.get("pair_class", "")),
+                "answer_equivalence": str(item.get("answer_equivalence", "")),
+                "canonical_question_equivalence": str(item.get("canonical_question_equivalence", "")),
+                "allowed_downstream_actions": _as_string_list(item.get("allowed_downstream_actions", [])),
+                "material_differences": item.get("material_differences", []),
+                "short_reason": str(item.get("short_reason", "")),
+                "confidence": str(item.get("confidence", "")),
+                "risk": str(item.get("risk", "")),
+                "validation_flags": _as_string_list(item.get("validation_flags", [])),
+            }
+            for item in decisions
+        ],
+    }
+
+
+def _legal_intent_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
+    data = json.dumps(list(cards), ensure_ascii=False, sort_keys=True).replace("</", "<\\/")
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>007 Legal Intent Pair Review</title>
+  <style>
+    :root {{ --bg:#f7f7f4; --panel:#fff; --line:#d6d9d2; --text:#1f2328; --muted:#697179; --accent:#0f766e; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--text); }}
+    header {{ position:sticky; top:0; z-index:2; padding:12px 18px; border-bottom:1px solid var(--line); background:#eef1ea; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
+    main {{ max-width:1240px; margin:0 auto; padding:16px; display:grid; gap:12px; }}
+    button, select, input, textarea {{ font:inherit; }}
+    button {{ border:1px solid var(--line); background:var(--panel); border-radius:6px; padding:7px 10px; cursor:pointer; }}
+    button.primary {{ background:var(--accent); border-color:var(--accent); color:#fff; }}
+    select, textarea {{ border:1px solid var(--line); border-radius:6px; background:#fff; padding:7px 8px; }}
+    textarea {{ min-height:64px; resize:vertical; width:100%; }}
+    .card {{ border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:14px; display:grid; gap:12px; }}
+    .grid {{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }}
+    .box {{ border-top:1px solid var(--line); padding-top:10px; }}
+    .label {{ color:var(--muted); font-size:12px; text-transform:uppercase; }}
+    .value {{ white-space:pre-wrap; overflow-wrap:anywhere; }}
+    .chips {{ display:flex; gap:5px; flex-wrap:wrap; }}
+    .chip {{ border:1px solid var(--line); border-radius:999px; padding:2px 7px; font-size:12px; background:#fafaf8; }}
+    .decision {{ display:grid; grid-template-columns:180px 210px 210px minmax(0,1fr); gap:8px; align-items:start; }}
+    .muted {{ color:var(--muted); font-size:12px; }}
+    @media (max-width: 820px) {{ .grid,.decision {{ grid-template-columns:1fr; }} main {{ padding:12px; }} }}
+  </style>
+</head>
+<body>
+<header>
+  <strong>007 legal intent pair review</strong>
+  <span id="counter" class="muted"></span>
+  <button id="prev">Prev</button>
+  <button id="next">Next</button>
+  <select id="filter">
+    <option value="all">all</option>
+    <option value="undecided">undecided</option>
+    <option value="hard">hard negatives</option>
+  </select>
+  <button id="export" class="primary">Export JSONL</button>
+</header>
+<main id="app"></main>
+<script>
+const cards = {data};
+const decisions = new Map();
+let index = 0;
+let filter = 'all';
+function chips(values) {{
+  return `<div class="chips">${{(values || []).map(v => `<span class="chip">${{String(v)}}</span>`).join('')}}</div>`;
+}}
+function filtered() {{
+  return cards.filter(card => {{
+    const current = decisions.get(card.pair_id);
+    if (filter === 'undecided') return !current || !current.pair_class;
+    if (filter === 'hard') return (card.pair_source_reasons || []).some(v => String(v).includes('negative')) || Number((card.similarity_evidence || {{}}).canonical_question_score || 0) >= 0.85;
+    return true;
+  }});
+}}
+function renderSide(title, side) {{
+  return `<section class="box"><div class="label">${{title}}</div><h3>${{side.candidate_id || ''}}</h3><div class="value">${{side.canonical_question || ''}}</div><div class="muted">${{side.legal_issue_frame_slug || ''}} · ${{side.law_area || ''}}</div>${{chips(side.quality_flags || [])}}</section>`;
+}}
+function render() {{
+  const list = filtered();
+  if (!list.length) {{
+    document.getElementById('app').innerHTML = '<div class="card">No cards</div>';
+    document.getElementById('counter').textContent = '0/0';
+    return;
+  }}
+  index = Math.max(0, Math.min(index, list.length - 1));
+  const card = list[index];
+  const existing = decisions.get(card.pair_id) || {{}};
+  document.getElementById('counter').textContent = `${{index + 1}}/${{list.length}}`;
+  document.getElementById('app').innerHTML = `<article class="card">
+    <div><strong>${{card.pair_id}}</strong><div class="muted">${{(card.pair_source_reasons || []).join(', ')}}</div></div>
+    <div class="grid">${{renderSide('left', card.left || {{}})}}${{renderSide('right', card.right || {{}})}}</div>
+    <section class="box"><div class="label">similarity</div><pre>${{JSON.stringify(card.similarity_evidence || {{}}, null, 2)}}</pre></section>
+    <section class="box"><div class="label">model decisions</div>${{(card.decisions || []).map(d => `<p><strong>${{d.decision_source}}</strong>: ${{d.pair_class}} / ${{d.answer_equivalence}} / ${{d.canonical_question_equivalence}}<br>${{d.short_reason || ''}}</p>`).join('') || '<span class="muted">none</span>'}}</section>
+    <section class="decision">
+      <select id="pairClass">
+        ${{['','exact_duplicate','same_legal_intent','same_topic_different_issue','related_context','different','uncertain'].map(v => `<option value="${{v}}" ${{existing.pair_class===v?'selected':''}}>${{v || 'decision'}}</option>`).join('')}}
+      </select>
+      <select id="answerEq">
+        ${{['','safe_to_share_answer','not_safe_to_share_answer','uncertain'].map(v => `<option value="${{v}}" ${{existing.answer_equivalence===v?'selected':''}}>${{v || 'answer equivalence'}}</option>`).join('')}}
+      </select>
+      <select id="questionEq">
+        ${{['','safe_to_share_question','not_safe_to_share_question','uncertain'].map(v => `<option value="${{v}}" ${{existing.canonical_question_equivalence===v?'selected':''}}>${{v || 'question equivalence'}}</option>`).join('')}}
+      </select>
+      <textarea id="reason" placeholder="decision_reason">${{existing.decision_reason || ''}}</textarea>
+    </section>
+  </article>`;
+  for (const id of ['pairClass','answerEq','questionEq','reason']) {{
+    document.getElementById(id).oninput = save;
+  }}
+  function save() {{
+    decisions.set(card.pair_id, {{
+      pair_id: card.pair_id,
+      pair_class: document.getElementById('pairClass').value,
+      answer_equivalence: document.getElementById('answerEq').value,
+      canonical_question_equivalence: document.getElementById('questionEq').value,
+      allowed_downstream_actions: [],
+      decision_reason: document.getElementById('reason').value,
+      reviewer_hash: '',
+      reviewed_at: new Date().toISOString()
+    }});
+  }}
+}}
+document.getElementById('prev').onclick = () => {{ index--; render(); }};
+document.getElementById('next').onclick = () => {{ index++; render(); }};
+document.getElementById('filter').onchange = event => {{ filter = event.target.value; index = 0; render(); }};
+document.getElementById('export').onclick = () => {{
+  const exported = Array.from(decisions.values()).filter(item => item.pair_class);
+  const lines = exported.map(item => JSON.stringify(item));
+  const blob = new Blob([lines.join('\\n') + (lines.length ? '\\n' : '')], {{type: 'application/x-ndjson'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tg_007_legal_intent_pair_review_labels.jsonl';
+  a.click();
+  URL.revokeObjectURL(url);
+}};
+render();
+</script>
+</body>
+</html>
+"""
+
+
+def _legal_intent_pair_review_label_record(
+    raw: Mapping[str, Any],
+    *,
+    benchmark: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    pair_id = str(raw.get("pair_id", ""))
+    pair_class = str(raw.get("pair_class", ""))
+    answer_equivalence = str(raw.get("answer_equivalence", "uncertain") or "uncertain")
+    canonical_question_equivalence = str(raw.get("canonical_question_equivalence", "uncertain") or "uncertain")
+    actions = _as_string_list(raw.get("allowed_downstream_actions", []))
+    failure_reason = ""
+    if pair_id not in benchmark:
+        failure_reason = "unknown_pair_id"
+    elif pair_class not in LEGAL_INTENT_PAIR_CLASSES:
+        failure_reason = f"invalid_pair_class:{pair_class}"
+    elif answer_equivalence not in LEGAL_INTENT_ANSWER_EQUIVALENCE_VALUES:
+        failure_reason = f"invalid_answer_equivalence:{answer_equivalence}"
+    elif canonical_question_equivalence not in LEGAL_INTENT_QUESTION_EQUIVALENCE_VALUES:
+        failure_reason = f"invalid_canonical_question_equivalence:{canonical_question_equivalence}"
+    else:
+        invalid_actions = sorted({item for item in actions if item not in LEGAL_INTENT_DOWNSTREAM_ACTIONS})
+        if invalid_actions:
+            failure_reason = f"invalid_allowed_downstream_actions:{','.join(invalid_actions)}"
+    return {
+        "pair_review_label_id": str(raw.get("pair_review_label_id", "")) or _stable_id(
+            "tg-legal-intent-pair-review",
+            pair_id,
+            pair_class,
+            answer_equivalence,
+            canonical_question_equivalence,
+        ),
+        "pair_id": pair_id,
+        "pair_class": pair_class if pair_class in LEGAL_INTENT_PAIR_CLASSES else "uncertain",
+        "answer_equivalence": answer_equivalence
+        if answer_equivalence in LEGAL_INTENT_ANSWER_EQUIVALENCE_VALUES
+        else "uncertain",
+        "canonical_question_equivalence": canonical_question_equivalence
+        if canonical_question_equivalence in LEGAL_INTENT_QUESTION_EQUIVALENCE_VALUES
+        else "uncertain",
+        "allowed_downstream_actions": actions,
+        "decision_reason": str(raw.get("decision_reason", "")),
+        "reviewer_hash": str(raw.get("reviewer_hash", "")),
+        "reviewed_at": str(raw.get("reviewed_at", "")) or _utc_timestamp(),
+        "status": "failed" if failure_reason else "completed",
+        "failure_reason": failure_reason,
+        "review_policy_version": LEGAL_INTENT_REVIEW_POLICY_VERSION,
+    }
+
+
+def _legal_intent_label_fingerprint(record: Mapping[str, Any]) -> str:
+    return json.dumps(
+        {
+            "pair_class": record.get("pair_class", ""),
+            "answer_equivalence": record.get("answer_equivalence", ""),
+            "canonical_question_equivalence": record.get("canonical_question_equivalence", ""),
+            "allowed_downstream_actions": sorted(_as_string_list(record.get("allowed_downstream_actions", []))),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _legal_intent_evaluation_record(
+    decision: Mapping[str, Any],
+    label: Mapping[str, Any] | None,
+    benchmark: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    pair_id = str(decision.get("pair_id", ""))
+    label_pair_class = str((label or {}).get("pair_class", ""))
+    label_answer_equivalence = str((label or {}).get("answer_equivalence", ""))
+    decision_pair_class = str(decision.get("pair_class", ""))
+    match_status = "unreviewed"
+    if label:
+        match_status = "match" if decision_pair_class == label_pair_class else "mismatch"
+    false_duplicate_risk = bool(
+        label
+        and label_pair_class in {"same_topic_different_issue", "related_context", "different"}
+        and (
+            decision_pair_class in {"exact_duplicate", "same_legal_intent"}
+            or str(decision.get("answer_equivalence", "")) == "safe_to_share_answer"
+            or "allow_duplicate_removal" in _as_string_list(decision.get("allowed_downstream_actions", []))
+        )
+    )
+    false_separation_risk = bool(
+        label
+        and label_pair_class in {"exact_duplicate", "same_legal_intent"}
+        and decision_pair_class in {"different", "same_topic_different_issue"}
+    )
+    pair = benchmark.get(pair_id, {})
+    return {
+        "pair_id": pair_id,
+        "decision_source": str(decision.get("decision_source", "")),
+        "decision_pair_class": decision_pair_class,
+        "label_pair_class": label_pair_class,
+        "decision_answer_equivalence": str(decision.get("answer_equivalence", "")),
+        "label_answer_equivalence": label_answer_equivalence,
+        "match_status": match_status,
+        "false_duplicate_risk": false_duplicate_risk,
+        "false_separation_risk": false_separation_risk,
+        "canonical_question_score": _float_value(
+            (pair.get("similarity_evidence", {}) if isinstance(pair.get("similarity_evidence"), Mapping) else {}).get(
+                "canonical_question_score", 0.0
+            )
+        ),
+        "legal_issue_frame_score": _float_value(
+            (pair.get("similarity_evidence", {}) if isinstance(pair.get("similarity_evidence"), Mapping) else {}).get(
+                "legal_issue_frame_score", 0.0
+            )
+        ),
+        "material_differences": decision.get("material_differences", []),
+        "short_reason": str(decision.get("short_reason", "")),
+    }
+
+
+def _legal_intent_hard_negative(pair: Mapping[str, Any], label: Mapping[str, Any]) -> bool:
+    pair_class = str(label.get("pair_class", ""))
+    if pair_class not in {"same_topic_different_issue", "related_context", "different"}:
+        return False
+    evidence = pair.get("similarity_evidence", {}) if isinstance(pair.get("similarity_evidence"), Mapping) else {}
+    return max(_float_value(evidence.get("canonical_question_score", 0.0)), _float_value(evidence.get("legal_issue_frame_score", 0.0))) >= 0.85
+
+
+def _hard_negative_summary(pair_id: str, pair: Mapping[str, Any], label: Mapping[str, Any]) -> dict[str, Any]:
+    evidence = pair.get("similarity_evidence", {}) if isinstance(pair.get("similarity_evidence"), Mapping) else {}
+    return {
+        "pair_id": pair_id,
+        "label_pair_class": str(label.get("pair_class", "")),
+        "canonical_question_score": _float_value(evidence.get("canonical_question_score", 0.0)),
+        "legal_issue_frame_score": _float_value(evidence.get("legal_issue_frame_score", 0.0)),
+        "pair_source_reasons": _as_string_list(pair.get("pair_source_reasons", [])),
+        "decision_reason": str(label.get("decision_reason", "")),
+    }
+
+
+def _legal_intent_insufficient_label_warnings(labels: Sequence[Mapping[str, Any]]) -> list[str]:
+    warnings: list[str] = []
+    if len(labels) < 100:
+        warnings.append("reviewed_pair_label_count_below_100")
+    class_counts = _counts(str(item.get("pair_class", "")) for item in labels)
+    if len(class_counts) < 2:
+        warnings.append("reviewed_pair_labels_not_class_diverse")
+    return warnings
+
+
+def _legal_intent_method_suitability(records: Sequence[Mapping[str, Any]], label_count: int) -> str:
+    if label_count < 100:
+        return "insufficient_reviewed_labels"
+    if any(_bool_value(item.get("false_duplicate_risk", False)) for item in records):
+        return "unsafe_for_automatic_action"
+    if any(str(item.get("match_status", "")) == "mismatch" for item in records):
+        return "safe_only_for_candidate_generation"
+    return "safe_for_narrow_reviewed_downstream_action"
+
+
+def _float_value(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _canonicalization_batch_item(candidate: Mapping[str, Any], *, candidates_path: str | Path) -> dict[str, Any]:
@@ -5216,6 +6454,10 @@ def _redact_private_text(value: str) -> str:
     text = PHONE_RE.sub("[phone]", text)
     text = USERNAME_RE.sub("[username]", text)
     return SPACE_RE.sub(" ", text).strip()
+
+
+def _normalized_text(value: Any) -> str:
+    return SPACE_RE.sub(" ", str(value).casefold()).strip()
 
 
 def _ensure_public_payload(payload: Any) -> None:
