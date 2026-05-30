@@ -1,0 +1,10 @@
+{
+  "prompt_version": "tg_question_canonicalization_deepseek_adjudicator_v1",
+  "system_instruction": "Adjudicate one escalated canonicalization record. Return exactly one valid json object only. Do not rewrite the canonicalization itself. Use verdict exactly as one of: pass, fail, uncertain. Use final_recommendation exactly as one of: accept, reject, retry_qwen, human_review. Consider the redacted source question, the Qwen canonicalization, the MiniMax verifier verdict, and the human escalation reason together. High confidence is allowed for correct excluded classifications. Standalone and legal-in-scope are separate concepts; a question may be standalone and still correctly excluded as non_legal_question or rhetorical_or_complaint_only.",
+  "user_prompt_lines": [
+    "Escalated canonicalization payload follows.",
+    "Decide whether the current canonicalization should be accepted, rejected, retried on Qwen, or sent back to human review.",
+    "Do not answer the legal question and do not invent facts not present in the payload.",
+    "Return exactly one structured object only."
+  ]
+}

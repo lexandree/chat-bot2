@@ -18,6 +18,14 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib import error, request
 from urllib.parse import urlparse
 
+from evaluation.prompts import (
+    TG_QA_CANDIDATE_PROMPT_PROFILE,
+    TG_QA_CANDIDATE_PROMPT_VERSION,
+    TG_QA_CLUSTER_COMPACT_PROMPT_PROFILE,
+    TG_QA_CLUSTER_COMPACT_PROMPT_VERSION,
+    TG_QA_CLUSTER_PROMPT_PROFILE,
+    TG_QA_CLUSTER_PROMPT_VERSION,
+)
 from retrieval.embedding_endpoint_client import EmbeddingEndpointClient
 from retrieval.embedding_profile import EmbeddingProfile, validate_vector
 
@@ -140,9 +148,9 @@ TRIGGER_TEXT_MAX_WORDS = 8
 MAX_ANSWER_CANDIDATES_PER_QUESTION = 8
 CLUSTERING_POLICY_VERSION = "tg_qa_cluster_policy_v1"
 LLM_CONTRACT_VERSION = "tg_qa_llm_analysis_v1"
-LLM_CANDIDATE_PROMPT_VERSION = "tg_qa_candidate_classifier_v4_1"
-LLM_CLUSTER_PROMPT_VERSION = "tg_qa_cluster_reviewer_v4_1"
-LLM_CLUSTER_COMPACT_PROMPT_VERSION = "tg_qa_cluster_reviewer_compact_v4_1"
+LLM_CANDIDATE_PROMPT_VERSION = TG_QA_CANDIDATE_PROMPT_VERSION
+LLM_CLUSTER_PROMPT_VERSION = TG_QA_CLUSTER_PROMPT_VERSION
+LLM_CLUSTER_COMPACT_PROMPT_VERSION = TG_QA_CLUSTER_COMPACT_PROMPT_VERSION
 
 COVERAGE_ANALYSIS_VERSION = "tg_qa_dataset_corpus_coverage_v1"
 CORPUS_COVERAGE_FILTER_MODES = ("all", "law_or_topic", "legalish")
@@ -1229,6 +1237,7 @@ def _embedding_batch_items(candidate: Mapping[str, Any]) -> list[dict[str, Any]]
 
 
 def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    prompt_profile = _active_tg_qa_prompt_profile(LLM_CANDIDATE_PROMPT_VERSION)
     return {
         "task_id": candidate["candidate_id"],
         "task_type": "tg_qa_candidate_classification",
@@ -1236,22 +1245,7 @@ def _llm_batch_item(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "runtime_hint": "operator_managed_llama_server_openai_compatible",
         "llm_contract_version": "tg_qa_llm_analysis_v1",
         "prompt_version": LLM_CANDIDATE_PROMPT_VERSION,
-        "system_instruction": (
-            "Classify the redacted Telegram Q/A candidate for evaluation dataset use. "
-            "For normalized_question, preserve the source user's language and keep German legal terms as terms. "
-            "Do not translate to English unless the source question is English. "
-            "Do not classify by topic words alone. Approve only when a correct answer requires applying or checking "
-            "a legal rule, status, entitlement, obligation, procedure, authority competence, statutory condition, "
-            "or hidden legal issue that the user did not name explicitly. "
-            "Set issue_spotting_required only when an answer limited to the user's surface wording would be materially "
-            "incomplete or risky; do not set it for every ordinary legal question. "
-            "Also return issue_spotting_level as none, low, medium, or high; this is calibration evidence only and "
-            "must not change approve/reject by itself. "
-            "Use hidden legal issue categories as broad taxonomy labels, maximum five labels, not as keyword triggers. "
-            "Reject rhetorical, conversational, logistical, emotional, or general discussion questions even if they "
-            "mention refugees, visas, Jobcenter, BAMF, ABH, or Aufenthaltstitel. "
-            "Do not treat the answer as legal truth. Return JSON only."
-        ),
+        "system_instruction": str(prompt_profile["system_instruction"]),
         "input": {
             "question_text_redacted": candidate.get("question_text_redacted", ""),
             "answer_candidates": candidate.get("answer_candidates", []),
@@ -4253,6 +4247,40 @@ def _candidate_llm_input(candidate: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _active_tg_qa_prompt_profile(prompt_version: str) -> Mapping[str, Any]:
+    if prompt_version == LLM_CANDIDATE_PROMPT_VERSION:
+        return TG_QA_CANDIDATE_PROMPT_PROFILE
+    if prompt_version == LLM_CLUSTER_PROMPT_VERSION:
+        return TG_QA_CLUSTER_PROMPT_PROFILE
+    if prompt_version == LLM_CLUSTER_COMPACT_PROMPT_VERSION:
+        return TG_QA_CLUSTER_COMPACT_PROMPT_PROFILE
+    return {}
+
+
+def _active_tg_qa_user_prompt_lines(prompt_version: str) -> list[str]:
+    profile = _active_tg_qa_prompt_profile(prompt_version)
+    raw_lines = profile.get("user_prompt_lines", [])
+    if isinstance(raw_lines, list) and raw_lines:
+        return [str(line) for line in raw_lines]
+    return [
+        "You classify redacted Telegram Q/A evidence for an evaluation dataset.",
+        "Do not treat answers as legal truth. Do not approve final records.",
+        "If Input.review_overlay exists, use that corrected question/reference answer as primary evidence for this prompt comparison. Do not infer the human label from the overlay.",
+        "For normalized_question, keep the source user's language; do not translate Russian/Ukrainian/German questions into English.",
+        "Keep German legal names and section references as terms inside the preserved-language question.",
+        "Do not classify by topic words alone. Ask whether a correct answer requires legally precise analysis.",
+        "Approve only if the question is useful for comparing a future graph-backed answer with a reference answer.",
+        "Reject cases where the main intent is rhetoric, grievance, small talk, emotional support, local logistics, or general discussion, even when the text mentions legal-adjacent entities.",
+        "Set issue_spotting_required=true only when an answer that follows the user's surface wording would be materially incomplete, misleading, or legally risky unless hidden duties, risks, status conditions, or reporting obligations are identified.",
+        "Do not set issue_spotting_required=true for every ordinary legal question; use it only for concealed cross-domain legal implications.",
+        "Return issue_spotting_level with this scale: none means no hidden expansion; low means useful surrounding legal context but the direct answer still works; medium means hidden issues noticeably change answer completeness; high means omitting hidden issues would be materially misleading or legally risky.",
+        "Return issue_spotting_confidence as low, medium, or high. Keep issue_spotting_reason short and factual.",
+        "Use hidden_legal_issue_categories as broad taxonomy labels only. Return at most five labels from the schema list; use other only when no listed category fits.",
+        "Calibration examples: health insurance with foreign income may require hidden issue spotting for self-employment, tax duties, and income reporting; a complaint asking why Germany or an authority behaves unfairly is rhetorical unless it asks a concrete entitlement, deadline, remedy, or procedure; a question only about where to pick up a card is practical logistics.",
+        "Return exactly one JSON object. No markdown. No prose.",
+    ]
+
+
 def _cluster_llm_batch_item(
     *,
     qa_cluster_id: str,
@@ -4264,6 +4292,7 @@ def _cluster_llm_batch_item(
 ) -> dict[str, Any]:
     if prompt_profile == "compact":
         prompt_version = LLM_CLUSTER_COMPACT_PROMPT_VERSION
+        prompt_profile_data = _active_tg_qa_prompt_profile(prompt_version)
         input_payload = _compact_cluster_llm_input(
             qa_cluster_id=qa_cluster_id,
             selection=selection,
@@ -4273,6 +4302,7 @@ def _cluster_llm_batch_item(
         )
     else:
         prompt_version = LLM_CLUSTER_PROMPT_VERSION
+        prompt_profile_data = _active_tg_qa_prompt_profile(prompt_version)
         input_payload = {
             "qa_cluster_id": qa_cluster_id,
             "selection": selection,
@@ -4289,65 +4319,14 @@ def _cluster_llm_batch_item(
         "prompt_version": prompt_version,
         "prompt_profile": prompt_profile,
         "input_char_budget": input_char_budget,
-        "system_instruction": (
-            "Review the redacted Telegram Q/A cluster for evaluation dataset construction. "
-            "If input.review_overlay is present, use its corrected question and reference answer as primary "
-            "classification evidence, but do not use any previous manual decision as a label. "
-            "For normalized_question, preserve the source user's language and keep German legal terms as terms. "
-            "Do not translate to English unless the source question is English. "
-            "Do not classify by topic words alone. Approve only when a correct answer requires applying or checking "
-            "a legal rule, status, entitlement, obligation, procedure, authority competence, statutory condition, "
-            "or hidden legal issue that the user did not name explicitly. "
-            "Set issue_spotting_required only when an answer limited to the user's surface wording would be materially "
-            "incomplete or risky. Do not set it for every ordinary legal question. "
-            "Also return issue_spotting_level as none, low, medium, or high; this is calibration evidence only and "
-            "must not change approve/reject by itself. "
-            "Use hidden legal issue categories as broad taxonomy labels, maximum five labels, not as keyword triggers. "
-            "Reject rhetorical, conversational, logistical, emotional, or general discussion questions even if they "
-            "mention refugees, visas, Jobcenter, BAMF, ABH, or Aufenthaltstitel. "
-            "Do not approve final records and do not treat answers as legal truth. Return JSON only."
-        ),
+        "system_instruction": str(prompt_profile_data["system_instruction"]),
         "input": input_payload,
         "expected_output_schema": _llm_expected_output_schema(),
     }
 
 
 def _llm_expected_output_schema() -> dict[str, str]:
-    return {
-        "is_real_user_question": "boolean",
-        "current_topic_relevance": "none|low|medium|high",
-        "answer_candidate_quality": "none|partial|strong|conflicting",
-        "normalized_question": "string; preserve source question language; keep German legal terms",
-        "short_answer_summary": "string",
-        "drift_or_conflict_assessment": "stable|changed|conflicting|insufficient_history|not_evaluated",
-        "recommended_selection_status": "needs_llm_review|needs_manual_review|uncertain|rejected",
-        "needs_human_review": "boolean",
-        "question_intent": (
-            "legal_information_request|administrative_practical|rhetorical_or_discussion|"
-            "clarification|announcement_or_resource|other|unclassified"
-        ),
-        "legal_answer_requirement": (
-            "requires_legal_rule_or_status_analysis|requires_hidden_issue_spotting|"
-            "practical_only|nonlegal|unclear|unclassified"
-        ),
-        "graph_db_evaluation_fit": "legal_core|legal_adjacent|not_fit|unclear|unclassified",
-        "issue_spotting_required": (
-            "boolean; true only when hidden legal issues materially change the needed answer"
-        ),
-        "issue_spotting_level": (
-            "none|low|medium|high|unclassified; calibration scale, not an approve/reject decision"
-        ),
-        "issue_spotting_confidence": "low|medium|high|unclassified",
-        "issue_spotting_reason": "short string explaining why the level was assigned",
-        "hidden_legal_issue_categories": (
-            "array of 0-5 broad labels from: " + ",".join(HIDDEN_LEGAL_ISSUE_CATEGORY_TAXONOMY)
-        ),
-        "answer_must_expand_beyond_user_wording": "boolean",
-        "exclusion_reason": (
-            "none|rhetorical_or_discussion|practical_logistics_only|not_a_question|"
-            "missing_context|nonlegal|other"
-        ),
-    }
+    return dict(TG_QA_CANDIDATE_PROMPT_PROFILE["expected_output_schema"])
 
 
 def _compact_cluster_llm_input(
@@ -4579,23 +4558,10 @@ def _llm_chat_payload(
 def _llm_user_prompt(task: Mapping[str, Any]) -> str:
     expected_schema = json.dumps(task.get("expected_output_schema", {}), ensure_ascii=False, sort_keys=True)
     task_input = json.dumps(task.get("input", {}), ensure_ascii=False, sort_keys=True)
+    prompt_lines = _active_tg_qa_user_prompt_lines(str(task.get("prompt_version", "")))
     return "\n".join(
         [
-            "You classify redacted Telegram Q/A evidence for an evaluation dataset.",
-            "Do not treat answers as legal truth. Do not approve final records.",
-            "If Input.review_overlay exists, use that corrected question/reference answer as primary evidence for this prompt comparison. Do not infer the human label from the overlay.",
-            "For normalized_question, keep the source user's language; do not translate Russian/Ukrainian/German questions into English.",
-            "Keep German legal names and section references as terms inside the preserved-language question.",
-            "Do not classify by topic words alone. Ask whether a correct answer requires legally precise analysis.",
-            "Approve only if the question is useful for comparing a future graph-backed answer with a reference answer.",
-            "Reject cases where the main intent is rhetoric, grievance, small talk, emotional support, local logistics, or general discussion, even when the text mentions legal-adjacent entities.",
-            "Set issue_spotting_required=true only when an answer that follows the user's surface wording would be materially incomplete, misleading, or legally risky unless hidden duties, risks, status conditions, or reporting obligations are identified.",
-            "Do not set issue_spotting_required=true for every ordinary legal question; use it only for concealed cross-domain legal implications.",
-            "Return issue_spotting_level with this scale: none means no hidden expansion; low means useful surrounding legal context but the direct answer still works; medium means hidden issues noticeably change answer completeness; high means omitting hidden issues would be materially misleading or legally risky.",
-            "Return issue_spotting_confidence as low, medium, or high. Keep issue_spotting_reason short and factual.",
-            "Use hidden_legal_issue_categories as broad taxonomy labels only. Return at most five labels from the schema list; use other only when no listed category fits.",
-            "Calibration examples: health insurance with foreign income may require hidden issue spotting for self-employment, tax duties, and income reporting; a complaint asking why Germany or an authority behaves unfairly is rhetorical unless it asks a concrete entitlement, deadline, remedy, or procedure; a question only about where to pick up a card is practical logistics.",
-            "Return exactly one JSON object. No markdown. No prose.",
+            *prompt_lines,
             f"Required JSON schema hints: {expected_schema}",
             f"Task scope: {task.get('task_scope', '')}",
             f"Task id: {task.get('task_id', '')}",

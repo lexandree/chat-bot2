@@ -1,0 +1,460 @@
+{
+  "prompt_version": "tg_question_canonicalizer_v4",
+  "prompt_example_set_id": "tg_question_canonicalizer_examples_v4",
+  "expected_output_schema": {
+    "canonical_question": "string",
+    "canonical_question_language": "string",
+    "legal_issue_frame": "string",
+    "legal_issue_frame_slug": "string",
+    "law_area": "string",
+    "facts": "array[string]",
+    "desired_outcome": "string",
+    "authority_context": "array[string]",
+    "hidden_issues": "array[string]",
+    "is_legal_answer_required": "boolean",
+    "is_standalone_question": "boolean",
+    "exclusion_reason": "none|non_legal_question|not_standalone_question|dialogue_fragment|rhetorical_or_complaint_only|spam_or_joke|insufficient_context|privacy_or_redaction_blocker|malformed_input",
+    "confidence": "low|medium|high",
+    "quality_flags": "array[string]"
+  },
+  "system_instruction": "Canonicalize one redacted Telegram candidate text into review-only legal issue evidence. Return one valid json object only. Always return exactly one structured object matching the schema for every input text, including unrelated text, announcements, resource lists, jokes, spam, malformed text, and dialogue fragments. Do not answer the legal question. Never return prose, markdown, apologies, explanations, or the legal answer itself. Do not invent legal citations. Never output Chinese characters. The input field may be named question_text_redacted for historical reasons; do not assume the source is a question. Treat topic_labels and law_code_candidates as weak hints only; the source text decides whether the item is legal. Use exclusion_reason=none only for standalone questions where a legal answer is required. IMPORTANT LEGAL-OPERATIONAL BOUNDARY: legal context alone is not enough. Exclude pure operational/logistics questions as non_legal_question when they only ask for office hours, address, website/app availability, appointment day confirmation, where to shop, whether a shop/provider accepts a card/voucher/SIM/payment method, whether a city/region/camp is currently accepting refugees/new arrivals, ordinary processing/production/response/wait time for a document, card, application, appointment, letter, or authority reply, or other current service availability/capacity. Include only when the source asks about a legal right, eligibility, obligation, legal deadline, status consequence, refusal/appeal, official procedure choice, appointment/application requirement for a legal status action, whether/where/how to apply for or renew a residence permit, Fiktionsbescheinigung, §24 status, visa, or other legal status document, mandatory reporting or arrival timing, travel/exit/re-entry restriction tied to status, personal re-admission/placement after prior departure or closed case, or whether an authority/private provider must accept legal status proof. Questions about whether an internet, telecom, mobile, or similar consumer service contract can be canceled, terminated, withdrawn from, challenged for poor service quality, impossible installation, forced bundling, misleading sales information, or unexpected billing are legal consumer-contract questions, not pure provider logistics. If an included legal question also depends on current operational state, add quality_flags=requires_live_operational_data. Do not treat a question about whether an appointment/application is procedurally required for a legal status document as appointment day confirmation or current slot availability. Do not treat questions about how long a card/document/application/letter/authority reply is usually made, issued, processed, or answered as legal deadline questions unless the source asks for a legal time limit, rights while waiting, consequence, delay remedy, or refusal/appeal. IMPORTANT MIXED-QUERY BOUNDARY: if one source text contains both unrelated non-legal/operational questions and at least one explicit standalone legal question, canonicalize only the legal question for the dataset and ignore the unrelated non-legal parts. Do not merge mailbox, shopping, transport, office-hour, or other practical logistics into canonical_question, facts, desired_outcome, or legal_issue_frame. Add quality_flags=mixed_with_non_legal_query when useful. If retry_context says a non-legal part was dropped, do not restore it; improve only the legal extraction, law_area, and flags. IMPORTANT SINGLE-QUESTION RULE: canonical_question must contain exactly one legal question. If the source contains several legal questions, keep only the central legal question that best matches the user's main request. Necessary sub-issues may be kept in facts or hidden_issues, but do not preserve multiple separate legal questions in canonical_question. If the legal part concerns cross-border money transfers, sanctions, AML, or bank compliance, use law_area=financial_regulation or banking_compliance rather than asylum/migration_status solely because the user mentions §24. IMPORTANT QUESTION-ANSWER BOUNDARY: do not recover, reconstruct, or guess a hidden legal question from an answer, legal explanation, reported question, quoted question, resource list, admin planning discussion, advice fragment, or fact-gathering reply. A sentence with a question mark is still excluded when it is only a clarifying question to someone else or depends on a missing previous message. Direct address to a named person or group member does not by itself make a self-contained question non-standalone. The canonicalization target is only the source author's own explicit standalone legal request/question. A legal topic, legal answer, explanation, resource list, admin discussion, or advice fragment is not enough: do not infer a hypothetical legal question from answer-like or discussion-like text. If the text contains legal information but no explicit standalone request/question from a user, keep legal fields empty and exclude it as not_standalone_question or dialogue_fragment. IMPORTANT PROBLEMATIC-PREMISE BOUNDARY: include standalone legal questions about fictitious residence/registration, unlawful tax/employment/benefit setups, non-existent entitlements, missing legal basis for stay/work, or third parties refusing legal status proof, but do not sanitize them into neutral procedures. Preserve the suspected unlawful premise, missing legal basis, non-existent entitlement, or refusal to accept legal proof in canonical_question or hidden_issues. If the user asks how to stay first, settle, and only later work without a clear current basis, frame it as permissibility, missing legal basis, and legal risks of that arrangement. For §24 automatic extensions, frame employer/bank/provider demands for an individual letter as whether they must accept general legal extension/status proof and what to do about refusal. If the source asks to be registered or allocated in accommodation while living elsewhere, or to later get housing by distribution, frame it as permissibility and consequences of fictitious residence/registration and any non-existent housing entitlement. If the source only asks current changing operational state, such as whether a camp, office, intake channel, city, or region is currently open, closed, accepting people, or offering appointment slots today/soon, keep legal fields empty, set exclusion_reason=non_legal_question, and add quality_flags=operational_logistics_only and requires_live_operational_data. Do not include such intake/capacity questions merely because asylum, §24, refugee, or authority context is mentioned. Do not add requires_live_operational_data just because the user mentions a personal date; dates from the user's own filing, appointment, move, or employment timeline are normal case facts, not live operational data. If retry_context is present, treat it as corrective review feedback from a previous pass: use it to avoid repeating identified mistakes, but re-read the source question independently and do not copy feedback blindly when it contradicts the source text. For unrelated non-legal text such as opening hours, entertainment, shopping, greetings, or casual chat, return the same schema with empty legal fields, is_legal_answer_required=false, is_standalone_question=true when the question is understandable, and exclusion_reason=non_legal_question.",
+  "few_shot_examples": [
+    {
+      "input": {
+        "question_text_redacted": "Переехал в Берлине. Нужно ли менять адрес на карточке ВНЖ?",
+        "topic_labels": [
+          "migration_status"
+        ],
+        "law_code_candidates": [
+          "AufenthG"
+        ],
+        "answer_candidate_status": "partial",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "Нужно ли обновить адрес в документе ВНЖ после переезда?",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Residence document address update after moving",
+        "legal_issue_frame_slug": "residence_document_address_update_after_moving",
+        "law_area": "migration_status",
+        "facts": [
+          "moved residence",
+          "has residence permit document"
+        ],
+        "desired_outcome": "update residence permit address record or sticker",
+        "authority_context": [
+          "Buergeramt",
+          "Auslaenderbehoerde"
+        ],
+        "hidden_issues": [
+          "current address registration evidence"
+        ],
+        "is_legal_answer_required": true,
+        "is_standalone_question": true,
+        "exclusion_reason": "none",
+        "confidence": "high",
+        "quality_flags": []
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Можно ли с Blue Card поменять работодателя через 8 месяцев?",
+        "topic_labels": [
+          "employment",
+          "migration_status"
+        ],
+        "law_code_candidates": [
+          "AufenthG"
+        ],
+        "answer_candidate_status": "strong",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "Можно ли владельцу Blue Card сменить работодателя через 8 месяцев?",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Blue Card employer change during early employment period",
+        "legal_issue_frame_slug": "blue_card_employer_change_during_early_employment_period",
+        "law_area": "employment",
+        "facts": [
+          "has Blue Card",
+          "wants employer change",
+          "8 months since start"
+        ],
+        "desired_outcome": "change employer without violating residence conditions",
+        "authority_context": [
+          "Auslaenderbehoerde",
+          "employer"
+        ],
+        "hidden_issues": [
+          "approval or notification requirement",
+          "employment condition on residence title"
+        ],
+        "is_legal_answer_required": true,
+        "is_standalone_question": true,
+        "exclusion_reason": "none",
+        "confidence": "high",
+        "quality_flags": []
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "А если уже подал?",
+        "topic_labels": [
+          "migration_status"
+        ],
+        "law_code_candidates": [],
+        "answer_candidate_status": "no_answer",
+        "quality_flags": [
+          "dialogue_context_missing"
+        ]
+      },
+      "output": {
+        "canonical_question": "",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "",
+        "legal_issue_frame_slug": "",
+        "law_area": "migration_status",
+        "facts": [],
+        "desired_outcome": "",
+        "authority_context": [],
+        "hidden_issues": [],
+        "is_legal_answer_required": false,
+        "is_standalone_question": false,
+        "exclusion_reason": "not_standalone_question",
+        "confidence": "high",
+        "quality_flags": [
+          "dialogue_context_missing"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Подскажите, в какое время работает дельфинарий, проходят представления?",
+        "topic_labels": [
+          "employment"
+        ],
+        "law_code_candidates": [
+          "BeschV"
+        ],
+        "answer_candidate_status": "strong",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "",
+        "legal_issue_frame_slug": "",
+        "law_area": "",
+        "facts": [],
+        "desired_outcome": "",
+        "authority_context": [],
+        "hidden_issues": [],
+        "is_legal_answer_required": false,
+        "is_standalone_question": true,
+        "exclusion_reason": "non_legal_question",
+        "confidence": "high",
+        "quality_flags": [
+          "topic_hint_false_positive"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Где адрес и часы работы Ausländerbehörde, чтобы подать документы на §24?",
+        "topic_labels": [
+          "migration_status"
+        ],
+        "law_code_candidates": [
+          "AufenthG"
+        ],
+        "answer_candidate_status": "partial",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "",
+        "legal_issue_frame_slug": "",
+        "law_area": "",
+        "facts": [],
+        "desired_outcome": "",
+        "authority_context": [],
+        "hidden_issues": [],
+        "is_legal_answer_required": false,
+        "is_standalone_question": true,
+        "exclusion_reason": "non_legal_question",
+        "confidence": "high",
+        "quality_flags": [
+          "operational_logistics_only"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "На BAföG могут претендовать не все учащиеся: важны тип Ausbildung, возраст, статус проживания и доход родителей. Документы подают в Amt für Ausbildungsförderung.",
+        "topic_labels": [
+          "education",
+          "social_benefits"
+        ],
+        "law_code_candidates": [],
+        "answer_candidate_status": "strong",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "",
+        "legal_issue_frame_slug": "",
+        "law_area": "social_benefits",
+        "facts": [],
+        "desired_outcome": "",
+        "authority_context": [],
+        "hidden_issues": [],
+        "is_legal_answer_required": false,
+        "is_standalone_question": false,
+        "exclusion_reason": "not_standalone_question",
+        "confidence": "high",
+        "quality_flags": [
+          "answer_or_explanation_without_question"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "На яку допомогу ви подавали: Jobcenter (SGB II) чи AsylbLG?",
+        "topic_labels": [
+          "social_benefits"
+        ],
+        "law_code_candidates": [
+          "SGB II",
+          "AsylbLG"
+        ],
+        "answer_candidate_status": "partial",
+        "quality_flags": [
+          "dialogue_context_missing"
+        ]
+      },
+      "output": {
+        "canonical_question": "",
+        "canonical_question_language": "uk",
+        "legal_issue_frame": "",
+        "legal_issue_frame_slug": "",
+        "law_area": "social_benefits",
+        "facts": [],
+        "desired_outcome": "",
+        "authority_context": [],
+        "hidden_issues": [],
+        "is_legal_answer_required": false,
+        "is_standalone_question": false,
+        "exclusion_reason": "not_standalone_question",
+        "confidence": "high",
+        "quality_flags": [
+          "dialogue_context_missing",
+          "clarifying_question_without_original_request"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Закрыта ли Нижняя Саксония для приема беженцев и принимает ли лагерь на Мессе в Ганновере новых прибывших?",
+        "topic_labels": [
+          "asylum"
+        ],
+        "law_code_candidates": [
+          "AsylG"
+        ],
+        "answer_candidate_status": "no_answer",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "",
+        "legal_issue_frame_slug": "",
+        "law_area": "",
+        "facts": [],
+        "desired_outcome": "",
+        "authority_context": [],
+        "hidden_issues": [],
+        "is_legal_answer_required": false,
+        "is_standalone_question": true,
+        "exclusion_reason": "non_legal_question",
+        "confidence": "high",
+        "quality_flags": [
+          "operational_logistics_only",
+          "requires_live_operational_data"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Работодатель не принимает постановление об автоматическом продлении §24 и требует именное письмо от Ausländerbehörde, иначе не допускает к работе. Куда обратиться?",
+        "topic_labels": [
+          "migration_status",
+          "employment"
+        ],
+        "law_code_candidates": [
+          "AufenthG"
+        ],
+        "answer_candidate_status": "strong",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "Обязан ли работодатель принимать автоматическое продление статуса и разрешения на работу по §24 AufenthG без индивидуального письма от Ausländerbehörde, и что делать при отказе допускать к работе?",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Employer refusal to accept automatic §24 residence and work authorization extension",
+        "legal_issue_frame_slug": "employer_refusal_to_accept_automatic_section_24_extension",
+        "law_area": "migration_status",
+        "facts": [
+          "has §24 status affected by automatic extension",
+          "employer demands individual Ausländerbehörde letter",
+          "employer threatens not to allow work"
+        ],
+        "desired_outcome": "make employer accept legal status proof or identify escalation path",
+        "authority_context": [
+          "employer",
+          "Auslaenderbehoerde"
+        ],
+        "hidden_issues": [
+          "general legal extension versus individual document date",
+          "third party refusal to accept legal status proof",
+          "work authorization consequence"
+        ],
+        "is_legal_answer_required": true,
+        "is_standalone_question": true,
+        "exclusion_reason": "none",
+        "confidence": "high",
+        "quality_flags": [
+          "third_party_refuses_legal_status_proof"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Можно оформить беженство, зарегистрироваться в общежитии, но жить у знакомых, а потом получить жилье по расселению? От знакомых нужны какие-то справки?",
+        "topic_labels": [
+          "asylum",
+          "housing"
+        ],
+        "law_code_candidates": [
+          "AsylG",
+          "AufenthG"
+        ],
+        "answer_candidate_status": "partial",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "Можно ли оформить защиту, числясь в общежитии, но фактически проживая у знакомых, и существуют ли право на последующее жилье по расселению или правовые последствия фиктивной регистрации/проживания?",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Fictitious accommodation registration and claimed right to later refugee housing allocation",
+        "legal_issue_frame_slug": "fictitious_accommodation_registration_and_later_housing_allocation",
+        "law_area": "migration_status",
+        "facts": [
+          "wants to register or be allocated in accommodation",
+          "plans to actually live with acquaintances",
+          "expects later housing by distribution"
+        ],
+        "desired_outcome": "understand whether the arrangement is permitted and whether later housing entitlement exists",
+        "authority_context": [
+          "reception_center",
+          "registration_authority",
+          "housing_authority"
+        ],
+        "hidden_issues": [
+          "fictitious residence or registration",
+          "public cost for unused accommodation place",
+          "non-existent automatic entitlement to later separate housing allocation"
+        ],
+        "is_legal_answer_required": true,
+        "is_standalone_question": true,
+        "exclusion_reason": "none",
+        "confidence": "medium",
+        "quality_flags": [
+          "potentially_unlawful_arrangement",
+          "nonexistent_entitlement"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Подскажите, пожалуйста, это правда, что в Германии беженцам на животного дают 300 €? То ли только на собаку?",
+        "topic_labels": [
+          "social_benefits",
+          "asylum"
+        ],
+        "law_code_candidates": [
+          "SGB II",
+          "AsylbLG"
+        ],
+        "answer_candidate_status": "no_answer",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "Предусмотрена ли в Германии для беженцев отдельная денежная выплата на содержание домашнего животного?",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Claimed refugee benefit for keeping a pet",
+        "legal_issue_frame_slug": "claimed_refugee_benefit_for_keeping_a_pet",
+        "law_area": "social_benefits",
+        "facts": [
+          "user heard about a 300 EUR payment",
+          "claim concerns refugees in Germany",
+          "claim may refer to support for a dog or other pet"
+        ],
+        "desired_outcome": "verify whether such a benefit exists and who could claim it",
+        "authority_context": [
+          "Jobcenter",
+          "Sozialamt"
+        ],
+        "hidden_issues": [
+          "possible rumor or misunderstanding about benefits",
+          "non-existent entitlement"
+        ],
+        "is_legal_answer_required": true,
+        "is_standalone_question": true,
+        "exclusion_reason": "none",
+        "confidence": "medium",
+        "quality_flags": [
+          "nonexistent_entitlement"
+        ]
+      }
+    },
+    {
+      "input": {
+        "question_text_redacted": "Заключили договор на интернет, но провайдер сказал, что он будет работать только при обязательном подключении ТВ. Можно ли расторгнуть контракт и вернуть роутер?",
+        "topic_labels": [
+          "employment"
+        ],
+        "law_code_candidates": [],
+        "answer_candidate_status": "strong",
+        "quality_flags": []
+      },
+      "output": {
+        "canonical_question": "Можно ли расторгнуть договор на интернет и вернуть роутер, если провайдер требует обязательного подключения ТВ для работы услуги?",
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Termination of internet contract due to forced service bundling",
+        "legal_issue_frame_slug": "termination_of_internet_contract_due_to_forced_service_bundling",
+        "law_area": "consumer_protection",
+        "facts": [
+          "internet contract already concluded",
+          "provider says service requires mandatory TV connection",
+          "user wants to terminate contract and return router"
+        ],
+        "desired_outcome": "terminate the contract and return equipment without unjustified penalty",
+        "authority_context": [
+          "internet_service_provider",
+          "consumer_protection_authority"
+        ],
+        "hidden_issues": [
+          "misleading pre-contract information",
+          "forced bundling of services",
+          "consumer termination rights for unusable or misdescribed service"
+        ],
+        "is_legal_answer_required": true,
+        "is_standalone_question": true,
+        "exclusion_reason": "none",
+        "confidence": "high",
+        "quality_flags": []
+      }
+    }
+  ]
+}

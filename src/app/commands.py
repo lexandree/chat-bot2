@@ -37,6 +37,29 @@ from evaluation.tg_qa_dataset import (
     vectorize_tg_qa_embedding_batch,
     verify_tg_qa_boundaries,
 )
+from evaluation.tg_question_canonicalization import (
+    build_tg_qa_canonicalization_adjudication_batch,
+    build_tg_qa_canonicalization_retry_batch_from_adjudication,
+    build_tg_qa_canonical_coverage_report,
+    build_tg_qa_canonicalization_routing,
+    build_tg_qa_issue_final_case_candidates,
+    build_tg_qa_question_bank,
+    build_tg_qa_reviewed_evaluation_dataset,
+    cluster_tg_qa_legal_issues,
+    emit_tg_qa_canonical_embedding_batch,
+    emit_tg_qa_canonicalization_batch,
+    export_tg_qa_canonicalization_review_cards,
+    import_tg_qa_canonical_embedding_records,
+    import_tg_qa_canonicalization_results,
+    import_tg_qa_canonicalization_review_decisions,
+    import_tg_qa_cluster_review_decisions,
+    run_tg_qa_canonicalization_adjudication_batch,
+    run_tg_qa_canonicalization_llm_batch,
+    run_tg_qa_canonicalization_deepseek_batch,
+    run_tg_qa_canonicalization_verifier_batch,
+    sample_tg_qa_canonicalization_batch,
+    verify_tg_question_canonicalization_boundaries,
+)
 from ingestion.legal_preview_loader import build_preview_from_manifest_path, write_preview_artifact
 from ingestion.verification import build_embedding_run_report
 from retrieval.embedding_backend import build_local_embedding_backend
@@ -288,6 +311,248 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_coverage_report_parser.add_argument("--chunk-size", type=int, default=4096)
     tg_qa_coverage_report_parser.add_argument("--max-samples-per-bucket", type=int, default=20)
     evaluation_subparsers.add_parser("tg-qa-boundary-check")
+    tg_qa_canonical_batch_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-batch")
+    tg_qa_canonical_batch_parser.add_argument("--candidates", required=True)
+    tg_qa_canonical_batch_parser.add_argument("--output", required=True)
+    tg_qa_canonical_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_batch_parser.add_argument(
+        "--filter-mode",
+        choices=["all", "law_or_topic", "legalish"],
+        default="all",
+    )
+    tg_qa_canonical_batch_parser.add_argument("--max-candidates", type=int, default=0)
+    tg_qa_canonical_batch_parser.add_argument("--candidate-offset", type=int, default=0)
+    tg_qa_canonical_sample_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-sample")
+    tg_qa_canonical_sample_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_sample_parser.add_argument("--output", required=True)
+    tg_qa_canonical_sample_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_sample_parser.add_argument("--sample-size", type=int, default=50)
+    tg_qa_canonical_review_cards_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-review-cards")
+    tg_qa_canonical_review_cards_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_review_cards_parser.add_argument("--html-output", required=True)
+    tg_qa_canonical_review_cards_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_review_cards_parser.add_argument("--qwen-results", default="")
+    tg_qa_canonical_review_cards_parser.add_argument("--verifier-results", default="")
+    tg_qa_canonical_review_cards_parser.add_argument("--max-cards", type=int, default=0)
+    tg_qa_canonical_llm_run_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-llm-run")
+    tg_qa_canonical_llm_run_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_llm_run_parser.add_argument("--output", required=True)
+    tg_qa_canonical_llm_run_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_llm_run_parser.add_argument("--endpoint-url", required=True)
+    tg_qa_canonical_llm_run_parser.add_argument("--model-id", required=True)
+    tg_qa_canonical_llm_run_parser.add_argument("--canonicalization-run-id", required=True)
+    tg_qa_canonical_llm_run_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_llm_run_parser.add_argument("--timeout-seconds", type=int, default=180)
+    tg_qa_canonical_llm_run_parser.add_argument("--max-tokens", type=int, default=1200)
+    tg_qa_canonical_llm_run_parser.add_argument(
+        "--structured-output-method",
+        choices=["function_calling", "json_mode", "json_schema"],
+        default="json_mode",
+    )
+    tg_qa_canonical_llm_run_parser.add_argument("--extra-body-json", default="")
+    tg_qa_canonical_llm_run_parser.add_argument("--stop-on-failure", action="store_true")
+    tg_qa_canonical_llm_run_parser.add_argument("--runtime-contour", default="opencode_go_openai_compatible_chat_completion")
+    tg_qa_canonical_llm_run_parser.add_argument("--backend", default="opencode")
+    tg_qa_canonical_llm_run_parser.add_argument("--api-key-env", default="")
+    tg_qa_canonical_llm_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
+    tg_qa_canonical_llm_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_llm_run_parser.add_argument("--no-resume", action="store_true")
+    tg_qa_canonical_llm_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_verifier_run_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-verifier-run")
+    tg_qa_canonical_verifier_run_parser.add_argument("--evidence", required=True)
+    tg_qa_canonical_verifier_run_parser.add_argument("--output", required=True)
+    tg_qa_canonical_verifier_run_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_verifier_run_parser.add_argument("--endpoint-url", required=True)
+    tg_qa_canonical_verifier_run_parser.add_argument("--model-id", required=True)
+    tg_qa_canonical_verifier_run_parser.add_argument("--verifier-run-id", required=True)
+    tg_qa_canonical_verifier_run_parser.add_argument("--provider", choices=["anthropic", "openai"], default="anthropic")
+    tg_qa_canonical_verifier_run_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_verifier_run_parser.add_argument("--timeout-seconds", type=int, default=180)
+    tg_qa_canonical_verifier_run_parser.add_argument("--max-tokens", type=int, default=1024)
+    tg_qa_canonical_verifier_run_parser.add_argument(
+        "--structured-output-method",
+        choices=["function_calling", "json_mode", "json_schema"],
+        default="function_calling",
+    )
+    tg_qa_canonical_verifier_run_parser.add_argument("--extra-body-json", default="")
+    tg_qa_canonical_verifier_run_parser.add_argument("--stop-on-failure", action="store_true")
+    tg_qa_canonical_verifier_run_parser.add_argument("--runtime-contour", default="minimax_anthropic_compatible_tool_use")
+    tg_qa_canonical_verifier_run_parser.add_argument("--backend", default="minimax")
+    tg_qa_canonical_verifier_run_parser.add_argument("--api-key-env", default="")
+    tg_qa_canonical_verifier_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
+    tg_qa_canonical_verifier_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_verifier_run_parser.add_argument("--no-resume", action="store_true")
+    tg_qa_canonical_verifier_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_adjudication_batch_parser = evaluation_subparsers.add_parser(
+        "tg-qa-canonicalization-adjudication-batch"
+    )
+    tg_qa_canonical_adjudication_batch_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_adjudication_batch_parser.add_argument(
+        "--candidate-results",
+        action="append",
+        default=[],
+        help="Candidate result spec key=path.",
+    )
+    tg_qa_canonical_adjudication_batch_parser.add_argument(
+        "--verifier-results",
+        action="append",
+        default=[],
+        help="Verifier result spec candidate:verifier=path.",
+    )
+    tg_qa_canonical_adjudication_batch_parser.add_argument("--output", required=True)
+    tg_qa_canonical_adjudication_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_adjudication_batch_parser.add_argument("--review-decisions", default="")
+    tg_qa_canonical_adjudication_batch_parser.add_argument(
+        "--mode",
+        choices=["all", "non_unanimous", "unanimous_only"],
+        default="non_unanimous",
+    )
+    tg_qa_canonical_adjudication_batch_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_adjudication_retry_batch_parser = evaluation_subparsers.add_parser(
+        "tg-qa-canonicalization-adjudication-retry-batch"
+    )
+    tg_qa_canonical_adjudication_retry_batch_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_adjudication_retry_batch_parser.add_argument("--adjudication-batch", required=True)
+    tg_qa_canonical_adjudication_retry_batch_parser.add_argument(
+        "--adjudication-results",
+        action="append",
+        required=True,
+        help="Adjudication result path or key=path. Repeat to pass all judge decisions.",
+    )
+    tg_qa_canonical_adjudication_retry_batch_parser.add_argument("--output", required=True)
+    tg_qa_canonical_adjudication_retry_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_adjudication_retry_batch_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_adjudication_run_parser = evaluation_subparsers.add_parser(
+        "tg-qa-canonicalization-adjudication-run"
+    )
+    tg_qa_canonical_adjudication_run_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--output", required=True)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--endpoint-url", required=True)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--model-id", required=True)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--adjudication-run-id", required=True)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--timeout-seconds", type=int, default=180)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--max-tokens", type=int, default=1024)
+    tg_qa_canonical_adjudication_run_parser.add_argument(
+        "--structured-output-method",
+        choices=["function_calling", "json_mode", "json_schema"],
+        default="json_mode",
+    )
+    tg_qa_canonical_adjudication_run_parser.add_argument("--extra-body-json", default="")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--stop-on-failure", action="store_true")
+    tg_qa_canonical_adjudication_run_parser.add_argument(
+        "--runtime-contour",
+        default="opencode_go_openai_compatible_chat_completion",
+    )
+    tg_qa_canonical_adjudication_run_parser.add_argument("--backend", default="opencode")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--api-key-env", default="")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--provider", choices=["anthropic", "openai"], default="openai")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--no-resume", action="store_true")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_deepseek_run_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-deepseek-run")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--output", required=True)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--endpoint-url", required=True)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--model-id", required=True)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--adjudication-run-id", required=True)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--timeout-seconds", type=int, default=180)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--max-tokens", type=int, default=1024)
+    tg_qa_canonical_deepseek_run_parser.add_argument(
+        "--structured-output-method",
+        choices=["function_calling", "json_mode", "json_schema"],
+        default="json_mode",
+    )
+    tg_qa_canonical_deepseek_run_parser.add_argument("--extra-body-json", default="")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--stop-on-failure", action="store_true")
+    tg_qa_canonical_deepseek_run_parser.add_argument(
+        "--runtime-contour",
+        default="opencode_go_openai_compatible_chat_completion",
+    )
+    tg_qa_canonical_deepseek_run_parser.add_argument("--backend", default="opencode")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--api-key-env", default="")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--no-resume", action="store_true")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_review_decisions_parser = evaluation_subparsers.add_parser(
+        "tg-qa-canonicalization-review-decisions-import"
+    )
+    tg_qa_canonical_review_decisions_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_review_decisions_parser.add_argument("--qwen-results", required=True)
+    tg_qa_canonical_review_decisions_parser.add_argument("--decisions", required=True)
+    tg_qa_canonical_review_decisions_parser.add_argument("--output", required=True)
+    tg_qa_canonical_review_decisions_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_review_decisions_parser.add_argument("--verifier-results", default="")
+    tg_qa_canonical_routing_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-routing")
+    tg_qa_canonical_routing_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_routing_parser.add_argument("--qwen-results", required=True)
+    tg_qa_canonical_routing_parser.add_argument("--output", required=True)
+    tg_qa_canonical_routing_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_routing_parser.add_argument("--review-decisions", default="")
+    tg_qa_canonical_routing_parser.add_argument("--verifier-results", default="")
+    tg_qa_canonical_routing_parser.add_argument("--decision-ledger-output", default="")
+    tg_qa_canonical_routing_parser.add_argument("--retry-qwen-batch-output", default="")
+    tg_qa_canonical_routing_parser.add_argument("--send-deepseek-batch-output", default="")
+    tg_qa_canonical_routing_parser.add_argument("--backlog-output", default="")
+    tg_qa_canonical_import_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-import")
+    tg_qa_canonical_import_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_import_parser.add_argument("--results", required=True)
+    tg_qa_canonical_import_parser.add_argument("--output", required=True)
+    tg_qa_canonical_import_parser.add_argument("--manifest-output", required=True)
+    tg_qa_canonical_import_parser.add_argument("--canonicalization-run-id", default="")
+    tg_qa_canonical_import_parser.add_argument("--only-results-task-ids", action="store_true")
+    tg_qa_canonical_embedding_batch_parser = evaluation_subparsers.add_parser("tg-qa-canonical-embedding-batch")
+    tg_qa_canonical_embedding_batch_parser.add_argument("--canonicalization-evidence", required=True)
+    tg_qa_canonical_embedding_batch_parser.add_argument("--output", required=True)
+    tg_qa_canonical_embedding_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_embedding_import_parser = evaluation_subparsers.add_parser("tg-qa-canonical-embeddings-import")
+    tg_qa_canonical_embedding_import_parser.add_argument("--embedding-batch", required=True)
+    tg_qa_canonical_embedding_import_parser.add_argument("--external-vectors", required=True)
+    tg_qa_canonical_embedding_import_parser.add_argument("--output", required=True)
+    tg_qa_canonical_embedding_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_embedding_import_parser.add_argument("--embedding-profile-id", default="")
+    tg_qa_canonical_embedding_import_parser.add_argument("--dimensions", type=int, default=0)
+    tg_qa_canonical_embedding_import_parser.add_argument("--model-id", default="")
+    tg_qa_issue_clusters_parser = evaluation_subparsers.add_parser("tg-qa-issue-clusters")
+    tg_qa_issue_clusters_parser.add_argument("--canonicalization-evidence", required=True)
+    tg_qa_issue_clusters_parser.add_argument("--embedding-records", default="")
+    tg_qa_issue_clusters_parser.add_argument("--output", required=True)
+    tg_qa_issue_clusters_parser.add_argument("--summary-output", required=True)
+    tg_qa_issue_clusters_parser.add_argument("--manifest-output", default="")
+    tg_qa_canonical_coverage_parser = evaluation_subparsers.add_parser("tg-qa-canonical-coverage")
+    tg_qa_canonical_coverage_parser.add_argument("--issue-clusters", required=True)
+    tg_qa_canonical_coverage_parser.add_argument("--reviewed-final-cases", required=True)
+    tg_qa_canonical_coverage_parser.add_argument("--question-bank", default="")
+    tg_qa_canonical_coverage_parser.add_argument("--output", required=True)
+    tg_qa_canonical_coverage_parser.add_argument("--summary-output", required=True)
+    tg_qa_cluster_review_import_parser = evaluation_subparsers.add_parser("tg-qa-cluster-review-import")
+    tg_qa_cluster_review_import_parser.add_argument("--issue-clusters", required=True)
+    tg_qa_cluster_review_import_parser.add_argument("--decisions", required=True)
+    tg_qa_cluster_review_import_parser.add_argument("--output", required=True)
+    tg_qa_cluster_review_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_question_bank_parser = evaluation_subparsers.add_parser("tg-qa-question-bank-build")
+    tg_qa_question_bank_parser.add_argument("--issue-clusters", required=True)
+    tg_qa_question_bank_parser.add_argument("--review-decisions", required=True)
+    tg_qa_question_bank_parser.add_argument("--output", required=True)
+    tg_qa_question_bank_parser.add_argument("--summary-output", required=True)
+    tg_qa_question_bank_parser.add_argument("--manifest-output", default="")
+    tg_qa_issue_final_candidates_parser = evaluation_subparsers.add_parser("tg-qa-issue-final-candidates")
+    tg_qa_issue_final_candidates_parser.add_argument("--question-bank", required=True)
+    tg_qa_issue_final_candidates_parser.add_argument("--review-decisions", required=True)
+    tg_qa_issue_final_candidates_parser.add_argument("--output", required=True)
+    tg_qa_issue_final_candidates_parser.add_argument("--summary-output", required=True)
+    tg_qa_issue_final_candidates_parser.add_argument("--manifest-output", default="")
+    tg_qa_reviewed_dataset_parser = evaluation_subparsers.add_parser("tg-qa-reviewed-evaluation-dataset-build")
+    tg_qa_reviewed_dataset_parser.add_argument("--final-case-candidates", required=True)
+    tg_qa_reviewed_dataset_parser.add_argument("--output", required=True)
+    tg_qa_reviewed_dataset_parser.add_argument("--manifest-output", required=True)
+    tg_qa_reviewed_dataset_parser.add_argument("--quality-output", required=True)
+    evaluation_subparsers.add_parser("tg-qa-canonical-boundary-check")
 
     embeddings_parser = subparsers.add_parser("embeddings")
     embeddings_subparsers = embeddings_parser.add_subparsers(dest="action")
@@ -817,8 +1082,307 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
         payload = dict(result["summary"])
         payload["status"] = "completed"
         return 0, payload
+    if args.action == "tg-qa-canonicalization-batch":
+        result = emit_tg_qa_canonicalization_batch(
+            candidates_path=args.candidates,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            filter_mode=args.filter_mode,
+            max_candidates=args.max_candidates,
+            candidate_offset=args.candidate_offset,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-sample":
+        result = sample_tg_qa_canonicalization_batch(
+            batch_path=args.batch,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            sample_size=args.sample_size,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-review-cards":
+        result = export_tg_qa_canonicalization_review_cards(
+            batch_path=args.batch,
+            html_output_path=args.html_output,
+            summary_output_path=args.summary_output,
+            qwen_results_path=args.qwen_results,
+            verifier_results_path=args.verifier_results,
+            max_cards=args.max_cards,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-llm-run":
+        result = run_tg_qa_canonicalization_llm_batch(
+            batch_path=args.batch,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            canonicalization_run_id=args.canonicalization_run_id,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            max_tokens=args.max_tokens,
+            structured_output_method=args.structured_output_method,
+            api_key_env=args.api_key_env,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            stop_on_failure=args.stop_on_failure,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            resume=not args.no_resume,
+            provider_max_attempts=args.provider_max_attempts,
+            provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            progress=not args.no_progress,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-verifier-run":
+        result = run_tg_qa_canonicalization_verifier_batch(
+            evidence_path=args.evidence,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            verifier_run_id=args.verifier_run_id,
+            provider=args.provider,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            max_tokens=args.max_tokens,
+            structured_output_method=args.structured_output_method,
+            api_key_env=args.api_key_env,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            stop_on_failure=args.stop_on_failure,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            resume=not args.no_resume,
+            provider_max_attempts=args.provider_max_attempts,
+            provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            progress=not args.no_progress,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-adjudication-batch":
+        result = build_tg_qa_canonicalization_adjudication_batch(
+            batch_path=args.batch,
+            candidate_result_specs=args.candidate_results,
+            verifier_result_specs=args.verifier_results,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            review_decisions_path=args.review_decisions or None,
+            mode=args.mode,
+            max_items=args.max_items,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-adjudication-retry-batch":
+        result = build_tg_qa_canonicalization_retry_batch_from_adjudication(
+            batch_path=args.batch,
+            adjudication_batch_path=args.adjudication_batch,
+            adjudication_results_paths=args.adjudication_results,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            max_items=args.max_items,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-adjudication-run":
+        result = run_tg_qa_canonicalization_adjudication_batch(
+            batch_path=args.batch,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            adjudication_run_id=args.adjudication_run_id,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            max_tokens=args.max_tokens,
+            structured_output_method=args.structured_output_method,
+            api_key_env=args.api_key_env,
+            provider=args.provider,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            stop_on_failure=args.stop_on_failure,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            resume=not args.no_resume,
+            provider_max_attempts=args.provider_max_attempts,
+            provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            progress=not args.no_progress,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-deepseek-run":
+        result = run_tg_qa_canonicalization_deepseek_batch(
+            batch_path=args.batch,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            adjudication_run_id=args.adjudication_run_id,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            max_tokens=args.max_tokens,
+            structured_output_method=args.structured_output_method,
+            api_key_env=args.api_key_env,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            stop_on_failure=args.stop_on_failure,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            resume=not args.no_resume,
+            provider_max_attempts=args.provider_max_attempts,
+            provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            progress=not args.no_progress,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-review-decisions-import":
+        result = import_tg_qa_canonicalization_review_decisions(
+            batch_path=args.batch,
+            qwen_results_path=args.qwen_results,
+            decisions_path=args.decisions,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            verifier_results_path=args.verifier_results or None,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-routing":
+        result = build_tg_qa_canonicalization_routing(
+            batch_path=args.batch,
+            qwen_results_path=args.qwen_results,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            review_decisions_path=args.review_decisions or None,
+            verifier_results_path=args.verifier_results or None,
+            decision_ledger_output_path=args.decision_ledger_output or None,
+            retry_qwen_batch_output_path=args.retry_qwen_batch_output or None,
+            send_deepseek_batch_output_path=args.send_deepseek_batch_output or None,
+            backlog_output_path=args.backlog_output or None,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-import":
+        result = import_tg_qa_canonicalization_results(
+            batch_path=args.batch,
+            result_path=args.results,
+            output_path=args.output,
+            manifest_output_path=args.manifest_output,
+            canonicalization_run_id=args.canonicalization_run_id,
+            only_results_task_ids=args.only_results_task_ids,
+        )
+        payload = dict(result["manifest"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonical-embedding-batch":
+        result = emit_tg_qa_canonical_embedding_batch(
+            canonicalization_evidence_path=args.canonicalization_evidence,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonical-embeddings-import":
+        result = import_tg_qa_canonical_embedding_records(
+            embedding_batch_path=args.embedding_batch,
+            external_vectors_path=args.external_vectors,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            profile_metadata={
+                "embedding_profile_id": args.embedding_profile_id or settings.embedding_profile_id,
+                "provider": settings.embedding_provider,
+                "model_id": args.model_id or settings.embedding_model_id,
+                "variant": settings.embedding_variant,
+                "dimensions": args.dimensions or settings.embedding_vector_dimensions,
+                "normalized": settings.embedding_normalized,
+                "query_prefix": settings.embedding_query_prefix,
+                "document_prefix": settings.embedding_document_prefix,
+                "routing_mode": settings.embedding_routing_mode,
+            },
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-issue-clusters":
+        result = cluster_tg_qa_legal_issues(
+            canonicalization_evidence_path=args.canonicalization_evidence,
+            embedding_records_path=args.embedding_records or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            manifest_output_path=args.manifest_output or None,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-canonical-coverage":
+        result = build_tg_qa_canonical_coverage_report(
+            issue_clusters_path=args.issue_clusters,
+            reviewed_final_cases_path=args.reviewed_final_cases,
+            question_bank_path=args.question_bank or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-cluster-review-import":
+        result = import_tg_qa_cluster_review_decisions(
+            issue_clusters_path=args.issue_clusters,
+            decisions_path=args.decisions,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-question-bank-build":
+        result = build_tg_qa_question_bank(
+            issue_clusters_path=args.issue_clusters,
+            review_decisions_path=args.review_decisions,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            manifest_output_path=args.manifest_output or None,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-issue-final-candidates":
+        result = build_tg_qa_issue_final_case_candidates(
+            question_bank_path=args.question_bank,
+            review_decisions_path=args.review_decisions,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            manifest_output_path=args.manifest_output or None,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-reviewed-evaluation-dataset-build":
+        result = build_tg_qa_reviewed_evaluation_dataset(
+            final_case_candidates_path=args.final_case_candidates,
+            output_path=args.output,
+            manifest_output_path=args.manifest_output,
+            quality_output_path=args.quality_output,
+        )
+        payload = dict(result["manifest"])
+        payload["status"] = "completed"
+        return 0, payload
     if args.action == "tg-qa-boundary-check":
         payload = verify_tg_qa_boundaries()
+        return (0 if payload["status"] == "passed" else 1), payload
+    if args.action == "tg-qa-canonical-boundary-check":
+        payload = verify_tg_question_canonicalization_boundaries()
         return (0 if payload["status"] == "passed" else 1), payload
     raise ValueError(f"unknown evaluation action: {args.action}")
 

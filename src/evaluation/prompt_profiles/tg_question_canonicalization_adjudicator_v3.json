@@ -1,0 +1,98 @@
+{
+  "prompt_version": "tg_question_canonicalization_adjudicator_v3",
+  "system_instruction": "Adjudicate one escalated canonicalization record. Return exactly one valid json object only. Do not answer the legal question and do not rewrite source text. The payload may contain one or more candidate canonicalizations and one or more verifier votes per candidate. Models may disagree; disagreement alone is not proof that every candidate is wrong. Compare the source text, candidate routing, law-area fit, standalone-vs-exclusion behavior, and verifier reasons. IMPORTANT LEGAL-OPERATIONAL BOUNDARY: legal context alone is not enough. Prefer exclusion for pure operational/logistics questions about office hours, addresses, website/app availability, appointment day confirmation, shopping locations, provider acceptance of a card/voucher/SIM/payment method, current service availability, whether a city/region/camp is currently accepting refugees/new arrivals, or ordinary processing/production/response/wait time for a document, card, application, appointment, letter, or authority reply. Prefer inclusion only when the source asks about a legal right, eligibility, obligation, legal deadline, status consequence, refusal/appeal, official procedure choice, appointment/application requirement for a legal status action, whether/where/how to apply for or renew a residence permit, Fiktionsbescheinigung, §24 status, visa, or other legal status document, mandatory reporting or arrival timing, travel/exit/re-entry restriction tied to status, personal re-admission/placement after prior departure or closed case, or whether an authority/private provider must accept legal status proof. Questions about whether an internet, telecom, mobile, or similar consumer service contract can be canceled, terminated, withdrawn from, challenged for poor service quality, impossible installation, forced bundling, misleading sales information, or unexpected billing should be treated as legal consumer-contract questions rather than pure provider logistics. Do not treat a question about whether an appointment/application is procedurally required for a legal status document as appointment day confirmation or current slot availability. Do not treat questions about how long a card/document/application/letter/authority reply is usually made, issued, processed, or answered as legal deadline questions unless the source asks for a legal time limit, rights while waiting, consequence, delay remedy, or refusal/appeal. IMPORTANT MIXED-QUERY BOUNDARY: for a mixed source with unrelated non-legal/operational content plus a legal question, prefer the candidate that extracts only the legal question and ignores unrelated logistics. Do not penalize a candidate for dropping unrelated non-legal parts. Penalize candidates that merge mailbox, shopping, transport, office-hour, or other practical logistics into the legal canonical question. IMPORTANT SINGLE-QUESTION RULE: prefer a candidate whose canonical_question contains exactly one legal question. Penalize candidates that combine several distinct legal questions into one canonical question; keep only the central legal question and treat remaining legal sub-issues as facts or hidden issues when needed. For cross-border money transfers, sanctions, AML, or bank compliance, prefer financial_regulation or banking_compliance over asylum/migration_status when §24 is only background context. Use verdict exactly as one of: pass, fail, uncertain. Use final_recommendation exactly as one of: accept, reject, retry_generator, human_review. Use selected_candidate_key when recommending accept or retry_generator, and leave it empty when recommending reject or human_review. For a one-candidate payload, selected_candidate_key must be that candidate_key when final_recommendation is accept or retry_generator. Routing semantics: final_recommendation=accept means accept the selected candidate as the final pipeline outcome; this includes a candidate that correctly excludes the source. final_recommendation=reject means no current candidate is acceptable as the final pipeline outcome. If a candidate is correctly excluded, do not fail, reject, or retry only because secondary fields such as law_area, confidence, quality_flags, is_standalone_question, or adjacent exclusion subtypes are imperfect. Secondary fields in excluded cases matter only when they show the source should be included or the exclusion routing is wrong. Exclusion subtype differences such as not_standalone_question vs rhetorical_or_complaint_only are lower priority than the include/exclude routing outcome. Do not return pass with reject, or fail with accept. High confidence is allowed for correct excluded classifications. Standalone and legal-in-scope are separate concepts; a question may be standalone and still correctly excluded as non_legal_question or rhetorical_or_complaint_only.",
+  "user_prompt_lines": [
+    "Escalated canonicalization payload follows.",
+    "Choose the best current candidate when possible, otherwise reject, retry the generator, or send to human review.",
+    "If verifier votes are mixed, weigh their reasons against the source text rather than counting votes blindly.",
+    "Return exactly one structured json object only."
+  ],
+  "few_shot_examples": [
+    {
+      "input": {
+        "task_id": "fixture:operational-office-hours",
+        "candidate_id": "fixture:candidate:1",
+        "source_question_text_redacted": "Работает ли Ausländerbehörde в воскресенье 8 декабря?",
+        "candidates": [
+          {
+            "candidate_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "canonical_question": "Работает ли Ausländerbehörde в воскресенье 8 декабря?",
+            "canonical_question_language": "ru",
+            "legal_issue_frame": "Verification of Ausländerbehörde operational hours on a Sunday",
+            "legal_issue_frame_slug": "verification_of_auslaenderbehoerde_operational_hours_on_a_sunday",
+            "law_area": "migration_status",
+            "facts": [
+              "appointment scheduled for Sunday 8 December"
+            ],
+            "desired_outcome": "confirm operational hours",
+            "authority_context": [
+              "Auslaenderbehorde"
+            ],
+            "hidden_issues": [
+              "time-sensitive operational office hours"
+            ],
+            "is_legal_answer_required": true,
+            "is_standalone_question": true,
+            "exclusion_reason": "none",
+            "confidence": "high",
+            "quality_flags": [
+              "requires_live_operational_data"
+            ]
+          }
+        ],
+        "verifier_votes": [
+          {
+            "candidate_key": "qwen",
+            "verifier_key": "deepseek",
+            "model_id": "deepseek-v4-pro",
+            "status": "completed",
+            "verdict": "fail",
+            "confidence": 91,
+            "risk": "medium",
+            "bad_fields": [
+              "is_legal_answer_required",
+              "law_area"
+            ],
+            "short_reason": "Source is a factual inquiry about office hours, not a legal question.",
+            "suggested_action": "retry_generator"
+          }
+        ],
+        "consensus_summary": {
+          "unanimous": false,
+          "escalation_reason_codes": [
+            "verifier_non_pass"
+          ],
+          "candidate_summaries": [
+            {
+              "candidate_key": "qwen",
+              "pass_count": 0,
+              "fail_count": 1,
+              "uncertain_count": 0,
+              "vote_count": 1
+            }
+          ]
+        },
+        "human_triage": {
+          "decision": "",
+          "decision_reason": "",
+          "reviewer_hash": ""
+        }
+      },
+      "output": {
+        "verdict": "fail",
+        "confidence": 93,
+        "risk": "medium",
+        "bad_fields": [
+          "is_legal_answer_required",
+          "law_area",
+          "exclusion_reason"
+        ],
+        "short_reason": "The source asks only about current office hours, so the legal framing is incorrect and the record should be excluded.",
+        "final_recommendation": "reject",
+        "selected_candidate_key": ""
+      }
+    }
+  ]
+}

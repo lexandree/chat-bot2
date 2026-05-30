@@ -505,6 +505,456 @@ def test_cli_tg_qa_coverage_embeddings_import_uses_settings_profile_when_only_mo
     assert records[0]["model"] == "jina-q8"
 
 
+def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) -> None:
+    candidates = tmp_path / "canonical_candidates.jsonl"
+    canonical_batch = tmp_path / "canonical_batch.jsonl"
+    canonical_batch_summary = tmp_path / "canonical_batch_summary.json"
+    canonical_sample = tmp_path / "canonical_sample.jsonl"
+    canonical_sample_summary = tmp_path / "canonical_sample_summary.json"
+    canonical_results = tmp_path / "canonical_results.jsonl"
+    canonical_review_html = tmp_path / "canonical_review.html"
+    canonical_review_summary = tmp_path / "canonical_review_summary.json"
+    canonical_evidence = tmp_path / "canonical_evidence.jsonl"
+    canonical_manifest = tmp_path / "canonical_manifest.json"
+    embedding_batch = tmp_path / "canonical_embedding_batch.jsonl"
+    embedding_batch_summary = tmp_path / "canonical_embedding_batch_summary.json"
+    embedding_vectors = tmp_path / "canonical_vectors.jsonl"
+    embedding_records = tmp_path / "canonical_embedding_records.jsonl"
+    embedding_summary = tmp_path / "canonical_embedding_summary.json"
+    clusters = tmp_path / "issue_clusters.jsonl"
+    cluster_summary = tmp_path / "issue_cluster_summary.json"
+    cluster_manifest = tmp_path / "issue_cluster_manifest.json"
+    reviewed_cases = tmp_path / "reviewed_cases.jsonl"
+    coverage = tmp_path / "coverage.jsonl"
+    coverage_summary = tmp_path / "coverage_summary.json"
+    review_input = tmp_path / "cluster_review_input.jsonl"
+    review_decisions = tmp_path / "cluster_review_decisions.jsonl"
+    review_summary = tmp_path / "cluster_review_summary.json"
+    question_bank = tmp_path / "question_bank.jsonl"
+    question_bank_summary = tmp_path / "question_bank_summary.json"
+    question_bank_manifest = tmp_path / "question_bank_manifest.json"
+    case_candidates = tmp_path / "case_candidates.jsonl"
+    case_candidate_summary = tmp_path / "case_candidate_summary.json"
+    case_candidate_manifest = tmp_path / "case_candidate_manifest.json"
+    final_cases = tmp_path / "final_cases.jsonl"
+    final_manifest = tmp_path / "final_manifest.json"
+    final_quality = tmp_path / "final_quality.json"
+    settings = FoundationSettings(
+        embedding_profile_id="fixture_profile",
+        embedding_vector_dimensions=3,
+    )
+    _write_jsonl(candidates, [_tg_canonical_fixture_candidate()])
+
+    batch_exit, batch_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-batch",
+            "--candidates",
+            str(candidates),
+            "--output",
+            str(canonical_batch),
+            "--summary-output",
+            str(canonical_batch_summary),
+            "--filter-mode",
+            "law_or_topic",
+        ],
+        settings=settings,
+    )
+
+    batch_items = [json.loads(line) for line in canonical_batch.read_text(encoding="utf-8").splitlines()]
+    sample_exit, sample_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-sample",
+            "--batch",
+            str(canonical_batch),
+            "--output",
+            str(canonical_sample),
+            "--summary-output",
+            str(canonical_sample_summary),
+            "--sample-size",
+            "50",
+        ],
+        settings=settings,
+    )
+    _write_jsonl(canonical_results, [_tg_canonical_fixture_result(batch_items[0])])
+    review_cards_exit, review_cards_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-review-cards",
+            "--batch",
+            str(canonical_sample),
+            "--html-output",
+            str(canonical_review_html),
+            "--summary-output",
+            str(canonical_review_summary),
+            "--qwen-results",
+            str(canonical_results),
+        ],
+        settings=settings,
+    )
+    import_exit, import_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-import",
+            "--batch",
+            str(canonical_batch),
+            "--results",
+            str(canonical_results),
+            "--output",
+            str(canonical_evidence),
+            "--manifest-output",
+            str(canonical_manifest),
+            "--canonicalization-run-id",
+            "tg-question-canonicalization-run:smoke",
+        ],
+        settings=settings,
+    )
+
+    embed_batch_exit, embed_batch_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonical-embedding-batch",
+            "--canonicalization-evidence",
+            str(canonical_evidence),
+            "--output",
+            str(embedding_batch),
+            "--summary-output",
+            str(embedding_batch_summary),
+        ],
+        settings=settings,
+    )
+
+    embedding_items = [json.loads(line) for line in embedding_batch.read_text(encoding="utf-8").splitlines()]
+    _write_jsonl(embedding_vectors, [_tg_canonical_fixture_vector(item) for item in embedding_items])
+    embed_import_exit, embed_import_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonical-embeddings-import",
+            "--embedding-batch",
+            str(embedding_batch),
+            "--external-vectors",
+            str(embedding_vectors),
+            "--output",
+            str(embedding_records),
+            "--summary-output",
+            str(embedding_summary),
+            "--embedding-profile-id",
+            "fixture_profile",
+            "--dimensions",
+            "3",
+        ],
+        settings=settings,
+    )
+
+    cluster_exit, cluster_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-issue-clusters",
+            "--canonicalization-evidence",
+            str(canonical_evidence),
+            "--embedding-records",
+            str(embedding_records),
+            "--output",
+            str(clusters),
+            "--summary-output",
+            str(cluster_summary),
+            "--manifest-output",
+            str(cluster_manifest),
+        ],
+        settings=settings,
+    )
+
+    cluster_items = [json.loads(line) for line in clusters.read_text(encoding="utf-8").splitlines()]
+    _write_jsonl(
+        reviewed_cases,
+        [
+            {
+                "case_id": "tg-reviewed-case:fixture",
+                "legal_issue_frame_slug": cluster_items[0]["legal_issue_frame_slug"],
+            }
+        ],
+    )
+    coverage_exit, coverage_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonical-coverage",
+            "--issue-clusters",
+            str(clusters),
+            "--reviewed-final-cases",
+            str(reviewed_cases),
+            "--output",
+            str(coverage),
+            "--summary-output",
+            str(coverage_summary),
+        ],
+        settings=settings,
+    )
+
+    _write_jsonl(
+        review_input,
+        [
+            {
+                "legal_issue_cluster_id": cluster_items[0]["legal_issue_cluster_id"],
+                "decision": "approve_final_evaluation",
+                "reference_answer_action": "keep_selected_telegram_answer",
+                "selected_reference_answer_text_redacted": "Reviewed Telegram answer fixture.",
+                "reviewer_hash": "smoke-reviewer",
+                "decision_reason": "smoke promotion fixture",
+            }
+        ],
+    )
+    review_exit, review_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-cluster-review-import",
+            "--issue-clusters",
+            str(clusters),
+            "--decisions",
+            str(review_input),
+            "--output",
+            str(review_decisions),
+            "--summary-output",
+            str(review_summary),
+        ],
+        settings=settings,
+    )
+    bank_exit, bank_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-question-bank-build",
+            "--issue-clusters",
+            str(clusters),
+            "--review-decisions",
+            str(review_decisions),
+            "--output",
+            str(question_bank),
+            "--summary-output",
+            str(question_bank_summary),
+            "--manifest-output",
+            str(question_bank_manifest),
+        ],
+        settings=settings,
+    )
+    candidate_exit, candidate_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-issue-final-candidates",
+            "--question-bank",
+            str(question_bank),
+            "--review-decisions",
+            str(review_decisions),
+            "--output",
+            str(case_candidates),
+            "--summary-output",
+            str(case_candidate_summary),
+            "--manifest-output",
+            str(case_candidate_manifest),
+        ],
+        settings=settings,
+    )
+    final_exit, final_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-reviewed-evaluation-dataset-build",
+            "--final-case-candidates",
+            str(case_candidates),
+            "--output",
+            str(final_cases),
+            "--manifest-output",
+            str(final_manifest),
+            "--quality-output",
+            str(final_quality),
+        ],
+        settings=settings,
+    )
+    boundary_exit, boundary_payload = dispatch(["evaluation", "tg-qa-canonical-boundary-check"], settings=settings)
+
+    assert batch_exit == sample_exit == review_cards_exit == import_exit == embed_batch_exit == embed_import_exit == 0
+    assert cluster_exit == coverage_exit == review_exit == bank_exit == candidate_exit == final_exit == boundary_exit == 0
+    assert batch_payload["emitted_task_count"] == 1
+    assert sample_payload["emitted_sample_count"] == 1
+    assert review_cards_payload["card_count"] == 1
+    assert "Export JSONL" in canonical_review_html.read_text(encoding="utf-8")
+    assert import_payload["completed_count"] == 1
+    assert embed_batch_payload["emitted_item_count"] == 2
+    assert embed_import_payload["completed_count"] == 2
+    assert cluster_payload["emitted_cluster_count"] == 1
+    assert coverage_payload["counts_by_coverage_status"] == {"covered": 1}
+    assert review_payload["imported_count"] == 1
+    assert bank_payload["completed_entry_count"] == 1
+    assert candidate_payload["eligible_count"] == 1
+    assert final_payload["case_count"] == 1
+    assert boundary_payload["status"] == "passed"
+
+
+def test_cli_canonicalization_review_decision_import_and_routing_support_partial_disputed_subset(tmp_path: Path) -> None:
+    candidates = tmp_path / "canonical_candidates.jsonl"
+    canonical_batch = tmp_path / "canonical_batch.jsonl"
+    canonical_batch_summary = tmp_path / "canonical_batch_summary.json"
+    qwen_results = tmp_path / "qwen_results.jsonl"
+    verifier_results = tmp_path / "verifier_results.jsonl"
+    raw_review_decisions = tmp_path / "review_with_verifier_decisions.jsonl"
+    imported_review_decisions = tmp_path / "review_decisions_imported.jsonl"
+    imported_review_summary = tmp_path / "review_decisions_imported_summary.json"
+    routed_results = tmp_path / "routed_results.jsonl"
+    routed_summary = tmp_path / "routed_summary.json"
+    decision_ledger = tmp_path / "decision_ledger.jsonl"
+    retry_qwen_batch = tmp_path / "retry_qwen_batch.jsonl"
+    send_deepseek_batch = tmp_path / "send_deepseek_batch.jsonl"
+    backlog = tmp_path / "routing_backlog.jsonl"
+    settings = FoundationSettings()
+
+    _write_jsonl(
+        candidates,
+        [
+            _tg_canonical_fixture_candidate(),
+            {
+                **_tg_canonical_fixture_candidate(),
+                "candidate_id": "tg-qa-candidate:canonical-smoke-non-legal",
+                "question_text_redacted": "Где купить детскую смесь в Кронахе?",
+                "source_message_id": "canonical-smoke-message-2",
+                "topic_labels": [],
+                "law_code_candidates": [],
+            },
+            {
+                **_tg_canonical_fixture_candidate(),
+                "candidate_id": "tg-qa-candidate:canonical-smoke-retry",
+                "question_text_redacted": "Как обновить статус в C24 при автоматическом продлении?",
+                "source_message_id": "canonical-smoke-message-3",
+            },
+        ],
+    )
+    batch_exit, _batch_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-batch",
+            "--candidates",
+            str(candidates),
+            "--output",
+            str(canonical_batch),
+            "--summary-output",
+            str(canonical_batch_summary),
+            "--filter-mode",
+            "all",
+        ],
+        settings=settings,
+    )
+    batch_items = [json.loads(line) for line in canonical_batch.read_text(encoding="utf-8").splitlines()]
+    _write_jsonl(
+        qwen_results,
+        [
+            _tg_canonical_fixture_result(batch_items[0]),
+            {
+                **_tg_canonical_fixture_result(batch_items[1]),
+                "canonical_question": "",
+                "legal_issue_frame": "",
+                "legal_issue_frame_slug": "",
+                "law_area": "",
+                "facts": [],
+                "desired_outcome": "",
+                "authority_context": [],
+                "hidden_issues": [],
+                "is_legal_answer_required": False,
+                "exclusion_reason": "non_legal_question",
+            },
+            _tg_canonical_fixture_result(batch_items[2]),
+        ],
+    )
+    _write_jsonl(
+        verifier_results,
+        [
+            {
+                "task_id": batch_items[2]["task_id"],
+                "verdict": "fail",
+                "confidence": 81,
+                "risk": "medium",
+                "bad_fields": ["law_area"],
+                "short_reason": "Retry fixture.",
+                "suggested_action": "retry_qwen",
+            }
+        ],
+    )
+    _write_jsonl(
+        raw_review_decisions,
+        [
+            {
+                "task_id": batch_items[2]["task_id"],
+                "candidate_id": batch_items[2]["candidate_id"],
+                "decision": "retry_qwen",
+            }
+        ],
+    )
+
+    review_exit, review_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-review-decisions-import",
+            "--batch",
+            str(canonical_batch),
+            "--qwen-results",
+            str(qwen_results),
+            "--decisions",
+            str(raw_review_decisions),
+            "--output",
+            str(imported_review_decisions),
+            "--summary-output",
+            str(imported_review_summary),
+            "--verifier-results",
+            str(verifier_results),
+        ],
+        settings=settings,
+    )
+    routing_exit, routing_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-routing",
+            "--batch",
+            str(canonical_batch),
+            "--qwen-results",
+            str(qwen_results),
+            "--output",
+            str(routed_results),
+            "--summary-output",
+            str(routed_summary),
+            "--review-decisions",
+            str(imported_review_decisions),
+            "--verifier-results",
+            str(verifier_results),
+            "--decision-ledger-output",
+            str(decision_ledger),
+            "--retry-qwen-batch-output",
+            str(retry_qwen_batch),
+            "--send-deepseek-batch-output",
+            str(send_deepseek_batch),
+            "--backlog-output",
+            str(backlog),
+        ],
+        settings=settings,
+    )
+
+    routed = [json.loads(line) for line in routed_results.read_text(encoding="utf-8").splitlines()]
+    ledger = [json.loads(line) for line in decision_ledger.read_text(encoding="utf-8").splitlines()]
+    backlog_rows = [json.loads(line) for line in backlog.read_text(encoding="utf-8").splitlines()]
+    retry_rows = [json.loads(line) for line in retry_qwen_batch.read_text(encoding="utf-8").splitlines()]
+
+    assert batch_exit == review_exit == routing_exit == 0
+    assert review_payload["counts_by_decision"] == {"retry_qwen": 1}
+    assert routing_payload["accepted_result_count"] == 1
+    assert routing_payload["retry_qwen_count"] == 1
+    assert routing_payload["send_deepseek_count"] == 0
+    assert routing_payload["counts_by_decision"] == {"accept": 1, "reject": 1, "retry_qwen": 1}
+    assert [row["task_id"] for row in routed] == [batch_items[0]["task_id"]]
+    assert {row["decision_source"] for row in ledger} == {
+        "implicit_accept_qwen_included",
+        "implicit_reject_qwen_exclusion",
+        "human_review",
+    }
+    assert {row["decision"] for row in backlog_rows} == {"reject", "retry_qwen"}
+    assert [row["task_id"] for row in retry_rows] == [batch_items[2]["task_id"]]
+    assert send_deepseek_batch.read_text(encoding="utf-8") == ""
+
+
 def test_cli_traversal_neighborhood_writes_seed_artifact_with_injected_repository(tmp_path: Path) -> None:
     cases = _load_cli_cases()
     output_path = tmp_path / "seed_neighborhood.json"
@@ -765,6 +1215,61 @@ def _tg_qa_fixture_vector(item: dict) -> dict:
         "candidate_id": item["candidate_id"],
         "answer_candidate_id": item.get("answer_candidate_id", ""),
         "text_role": text_role,
+        "backend_name": "fixture_vectors",
+        "vector": vector,
+    }
+
+
+def _tg_canonical_fixture_candidate() -> dict:
+    return {
+        "candidate_id": "tg-qa-candidate:canonical-smoke",
+        "question_text_redacted": "Нужно ли менять адрес на ВНЖ после переезда?",
+        "topic_labels": ["migration_status"],
+        "law_code_candidates": ["AufenthG"],
+        "question_date": "2026-01-01T00:00:00",
+        "answer_candidate_status": "strong",
+        "quality_flags": [],
+        "source_message_id": "canonical-smoke-message",
+    }
+
+
+def _tg_canonical_fixture_result(batch_item: dict) -> dict:
+    return {
+        "task_id": batch_item["task_id"],
+        "task_scope": "question_candidate",
+        "candidate_id": batch_item["candidate_id"],
+        "canonicalization_run_id": "tg-question-canonicalization-run:smoke",
+        "canonicalization_contract_version": "tg_question_canonicalization_v1",
+        "prompt_version": "tg_question_canonicalizer_v4",
+        "runtime_contour": "fixture",
+        "backend": "deterministic_fixture",
+        "model_id": "",
+        "status": "completed",
+        "failure_reason": "",
+        "canonical_question": batch_item["input"]["question_text_redacted"],
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Residence document address update after moving",
+        "legal_issue_frame_slug": "residence_document_address_update_after_moving",
+        "law_area": "migration_status",
+        "facts": ["moved residence"],
+        "desired_outcome": "update residence document address",
+        "authority_context": ["Buergeramt", "Auslaenderbehoerde"],
+        "hidden_issues": ["continued lawful stay evidence"],
+        "is_legal_answer_required": True,
+        "is_standalone_question": True,
+        "exclusion_reason": "none",
+        "confidence": "high",
+        "quality_flags": [],
+    }
+
+
+def _tg_canonical_fixture_vector(item: dict) -> dict:
+    if item["text_role"] == "canonical_question":
+        vector = [1.0, 0.0, 0.0]
+    else:
+        vector = [0.0, 1.0, 0.0]
+    return {
+        "embedding_item_id": item["embedding_item_id"],
         "backend_name": "fixture_vectors",
         "vector": vector,
     }
