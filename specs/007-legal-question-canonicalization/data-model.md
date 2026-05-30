@@ -139,6 +139,10 @@ Embedding records are evaluation artifacts and do not write vectors to Neo4j.
 Optional diagnostic interpretation of one included canonical question for
 pair-equivalence evaluation.
 
+Phase 8 artifacts live under ignored
+`data/evaluation/tg_qa_legal_intent_equivalence/` unless a later publication
+step explicitly sanitizes them.
+
 Required fields:
 
 - `legal_intent_candidate_id`

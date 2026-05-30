@@ -116,14 +116,22 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - **FR-015**: The system MUST emit run summaries and manifests with input artifact paths, output artifact paths, processed counts, completed counts, excluded counts, uncertain counts, failed counts, policy versions, runtime contour, known limitations, and unresolved backlog counts.
 - **FR-016**: The system MUST keep generated data, vectors, LLM batches, LLM results, review sheets, and coverage reports under ignored data paths unless a later explicit publication step sanitizes them.
 - **FR-017**: The system MUST NOT mutate Neo4j graph state, import chatbot handlers, generate user-facing answers, or hide missing evidence behind fallback answers in this feature.
-- **FR-018**: The system MUST treat legal intent equivalence diagnostics as a separate optional layer over completed canonicalization artifacts, not as a replacement for 007 canonicalization or human review.
-- **FR-019**: The system MUST define legal intent candidates that capture material legal distinctions, explicit unknowns, ambiguities, evidence references, validation flags, provenance, and review state.
-- **FR-020**: The system MUST define a pair benchmark contract for canonical question pairs with stable pair ids, pair source reasons, left/right provenance, similarity evidence when available, and review status.
-- **FR-021**: The system MUST classify legal-intent pairs using the bounded classes `exact_duplicate`, `same_legal_intent`, `same_topic_different_issue`, `related_context`, `different`, and `uncertain`.
-- **FR-022**: The system MUST record downstream safety decisions separately from pair class, including duplicate removal, canonical-question sharing, reference-answer sharing, FAQ-pattern grouping, retrieval-cluster grouping, and human-review routing.
-- **FR-023**: The system MUST preserve high-similarity hard negatives for evaluation instead of silently deduplicating or discarding them.
-- **FR-024**: The system MUST prevent embedding similarity, lexical similarity, reranker scores, clustering scores, or LLM confidence from directly creating trusted duplicate, answer-equivalence, or question-bank decisions.
-- **FR-025**: The system MUST report legal-intent equivalence method quality against reviewed pair labels and must state insufficient-label limitations when labels are too few or imbalanced.
+
+### Deferred Diagnostic Extension Requirements
+
+The following requirements document Phase 8. They are part of the 007 design
+record, but they are not required for the current 007 implementation checkpoint.
+They become mandatory only after a separate explicit implementation command for
+legal intent equivalence diagnostics.
+
+- **FR-018**: Phase 8 MUST treat legal intent equivalence diagnostics as a separate optional layer over completed canonicalization artifacts, not as a replacement for 007 canonicalization or human review.
+- **FR-019**: Phase 8 MUST define legal intent candidates that capture material legal distinctions, explicit unknowns, ambiguities, evidence references, validation flags, provenance, and review state.
+- **FR-020**: Phase 8 MUST define a pair benchmark contract for canonical question pairs with stable pair ids, pair source reasons, left/right provenance, similarity evidence when available, and review status.
+- **FR-021**: Phase 8 MUST classify legal-intent pairs using the bounded classes `exact_duplicate`, `same_legal_intent`, `same_topic_different_issue`, `related_context`, `different`, and `uncertain`.
+- **FR-022**: Phase 8 MUST record downstream safety decisions separately from pair class, including duplicate removal, canonical-question sharing, reference-answer sharing, FAQ-pattern grouping, retrieval-cluster grouping, and human-review routing.
+- **FR-023**: Phase 8 MUST preserve high-similarity hard negatives for evaluation instead of silently deduplicating or discarding them.
+- **FR-024**: Phase 8 MUST prevent embedding similarity, lexical similarity, reranker scores, clustering scores, or LLM confidence from directly creating trusted duplicate, answer-equivalence, or question-bank decisions.
+- **FR-025**: Phase 8 MUST report legal-intent equivalence method quality against reviewed pair labels and must state insufficient-label limitations when labels are too few or imbalanced.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -152,10 +160,10 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - **SC-004**: No promoted reviewed evaluation case can be emitted unless it has a reviewed reference answer source and a recorded answer trust boundary.
 - **SC-005**: Every output artifact type includes provenance, policy or prompt version, generated timestamp, and run or source artifact references sufficient for audit.
 - **SC-006**: Default unit tests for canonicalization schemas, clustering fixtures, review promotion rules, and coverage summary generation run without live Neo4j, live Jina, paid APIs, network services, or remote notebooks.
-- **SC-007**: Pair benchmark review artifacts allow an operator to classify at least 100 canonical-question pairs without editing raw JSON.
-- **SC-008**: Evaluation reports identify high-similarity hard negatives separately from true duplicates and same-legal-intent pairs.
-- **SC-009**: No pair receives trusted duplicate-removal or answer-reuse status solely from embedding, lexical, reranker, clustering, or LLM-confidence scores.
-- **SC-010**: When reviewed pair labels are insufficient, equivalence reports state the limitation instead of recommending an automatic threshold.
+- **SC-007**: After Phase 8 implementation, pair benchmark review artifacts allow an operator to classify at least 100 canonical-question pairs without editing raw JSON.
+- **SC-008**: After Phase 8 implementation, evaluation reports identify high-similarity hard negatives separately from true duplicates and same-legal-intent pairs.
+- **SC-009**: After Phase 8 implementation, no pair receives trusted duplicate-removal or answer-reuse status solely from embedding, lexical, reranker, clustering, or LLM-confidence scores.
+- **SC-010**: After Phase 8 implementation, equivalence reports state the limitation instead of recommending an automatic threshold when reviewed pair labels are insufficient.
 
 ## Assumptions
 

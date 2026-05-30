@@ -61,6 +61,12 @@ data/evaluation/tg_qa_question_bank/*.tsv
 data/evaluation/tg_qa_canonical_coverage/*.json
 data/evaluation/tg_qa_canonical_coverage/*.jsonl
 data/evaluation/tg_qa_canonical_coverage/*.html
+data/evaluation/tg_qa_legal_intent_equivalence/*.json
+data/evaluation/tg_qa_legal_intent_equivalence/*.jsonl
+data/evaluation/tg_qa_legal_intent_equivalence/*.html
+data/evaluation/tg_qa_legal_intent_equivalence/*.md
+data/evaluation/tg_qa_legal_intent_equivalence/*.tsv
+data/evaluation/tg_qa_legal_intent_equivalence/*.txt
 data/**/.gitkeep
 tmp/
 *.tmp

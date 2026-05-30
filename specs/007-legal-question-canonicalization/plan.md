@@ -16,8 +16,9 @@ This remains an artifact pipeline. It does not mutate Neo4j, create chatbot
 answers, produce trusted legal facts, or allow LLM output to approve final
 records by itself.
 
-The legal-intent equivalence diagnostic extension remains inside 007 as an
-evaluation contract, not a new feature branch. It documents how canonical
+The legal-intent equivalence diagnostic extension remains inside 007 as a
+deferred optional evaluation contract, not a new feature branch and not a
+requirement for the current 007 checkpoint. It documents how canonical
 questions may later be transformed into structured legal-intent candidates and
 pair-review benchmarks so embeddings can generate candidates without becoming a
 legal-equivalence decision boundary.
@@ -45,8 +46,8 @@ orchestration, autonomous chains, retrieval agents, chatbot inference, and
 default-test dependencies remain out of scope for 007.
 **Storage**: Redacted 006 generated artifacts under ignored `data/evaluation/`;
 new generated canonicalization, embedding, cluster, coverage, review, question
-bank, and promotion artifacts under ignored `data/evaluation/` paths; no Neo4j
-writes.
+bank, promotion, and deferred legal-intent equivalence artifacts under ignored
+`data/evaluation/` paths; no Neo4j writes.
 **Testing**: pytest unit tests and offline CLI smoke tests with fixtures/fakes.
 Live Jina, live LLM endpoints, paid APIs, remote notebooks, and Neo4j are
 excluded from default tests and must be explicit integration or smoke contours.
@@ -168,7 +169,8 @@ data/
     ├── tg_qa_canonical_embeddings/
     ├── tg_qa_issue_clusters/
     ├── tg_qa_question_bank/
-    └── tg_qa_canonical_coverage/
+    ├── tg_qa_canonical_coverage/
+    └── tg_qa_legal_intent_equivalence/
 ```
 
 **Structure Decision**: Keep 007 in the evaluation layer and reuse 006

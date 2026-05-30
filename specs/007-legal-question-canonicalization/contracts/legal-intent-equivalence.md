@@ -15,6 +15,25 @@ LLM pair judgments are candidate-generation or diagnostic evidence only.
 consume completed 007 artifacts and write separate private evaluation
 artifacts.
 
+## Artifact Directory
+
+Generated Phase 8 artifacts must live under:
+
+```text
+data/evaluation/tg_qa_legal_intent_equivalence/
+```
+
+Expected artifact classes include:
+
+- legal-intent candidate JSONL, summary JSON, and manifest JSON;
+- pair benchmark JSONL, summary JSON, and manifest JSON;
+- pair-decision JSONL, summary JSON, and manifest JSON;
+- pair-review HTML and exported review label JSONL;
+- equivalence evaluation report JSON, JSONL, Markdown, or TSV artifacts.
+
+The directory is private generated data and must remain ignored unless a later
+explicit publication step sanitizes specific outputs.
+
 ## Pair Classes
 
 Allowed pair classes:
