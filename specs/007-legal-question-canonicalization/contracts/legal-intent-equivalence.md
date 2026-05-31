@@ -239,6 +239,35 @@ Validation rules:
 - Similarity scores must not directly set pair class, answer equivalence, or
   canonical-question equivalence.
 
+## Pair Decision Producers
+
+The implementation provides three diagnostic decision producers. All three
+write `PairEquivalenceDecision` JSONL and remain review evidence only.
+
+1. `tg-qa-legal-intent-similarity-baseline`
+   - uses stored `similarity_evidence` plus optional embedding records;
+   - computes `recos_canonical_question_score` and
+     `recos_legal_issue_frame_score` when vectors are available;
+   - defines recos as `dot(a, b) / dot(sort(abs(a)), sort(abs(b)))`, clamped to
+     the `[-1, 1]` range, with `0.0` used when vectors are missing, empty, or
+     dimension-mismatched;
+   - records cosine and recos thresholds in `runtime_metadata`;
+   - always flags that similarity-only output is not safe for automatic
+     trusted action.
+
+2. `tg-qa-legal-intent-slot-comparator`
+   - compares imported `LegalIntentCandidate` material slots;
+   - treats explicit differences in `desired_action`, `legal_object`, status,
+     authority, third-party context, temporal condition, location scope, or
+     operational boundary as material;
+   - routes missing or ambiguous slots to `uncertain` rather than guessing.
+
+3. `tg-qa-legal-intent-pair-judge-run`
+   - runs an operator-managed structured-output LLM judge over benchmark pairs;
+   - may consume legal-intent candidates when available;
+   - uses prompt profile `tg_legal_intent_pair_judge_v1`;
+   - supports resume/retry/progress behavior like the existing 007 LLM runners.
+
 ## Pair Review Label Shape
 
 Manual review labels must be exportable without editing raw JSON directly.

@@ -217,6 +217,14 @@ Required fields:
 
 Pair decisions must record downstream safety separately from pair class.
 
+Implemented diagnostic decision sources:
+
+- similarity baseline over cosine plus optional recos scores;
+- deterministic legal-slot comparator over imported `LegalIntentCandidate`
+  records;
+- operator-managed LLM pair judge with structured `PairEquivalenceDecision`
+  output.
+
 ## PairReviewLabel
 
 Human label for one benchmark pair.

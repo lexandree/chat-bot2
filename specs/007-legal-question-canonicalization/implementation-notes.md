@@ -24,15 +24,19 @@
   import, pair-decision import, static pair-review HTML export, human label
   import, and equivalence evaluation reports. Outputs remain review evidence
   under `data/evaluation/tg_qa_legal_intent_equivalence/`.
+- Added Phase 8 decision producers for method comparison: a cosine+recos
+  similarity baseline, a deterministic legal-slot comparator over imported
+  legal-intent candidates, and an operator-managed structured-output LLM pair
+  judge runner using `tg_legal_intent_pair_judge_v1`.
 
 ## Verification
 
 - `python -m compileall src tests`:
   passed.
 - `python -m pytest tests/unit/test_tg_question_canonicalization.py tests/smoke/test_cli_offline.py`:
-  41 passed.
+  44 passed.
 - `python -m pytest`:
-  145 passed, 11 skipped.
+  148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:
   passed with no failed source checks and no missing ignore patterns.
 - `git diff --check`:
@@ -43,12 +47,12 @@
   `ChatOpenAI(...).with_structured_output(CanonicalizationResultPayload)` and
   `ChatAnthropic(...).with_structured_output(VerifierVerdictPayload)` both
   built `RunnableSequence` chains without a network call.
-- `python -m pytest tests/unit/test_tg_question_canonicalization.py -k "legal_intent"`:
-  3 passed, 23 deselected.
+- `python -m pytest tests/unit/test_tg_question_canonicalization.py -k "legal_intent or langchain_review_prompt"`:
+  7 passed, 22 deselected.
 - `python -m pytest tests/smoke/test_cli_offline.py -k "legal_intent_pair_review"`:
   1 passed, 14 deselected.
 - `python -m pytest tests/unit/test_tg_question_canonicalization.py tests/smoke/test_cli_offline.py`:
-  41 passed.
+  44 passed.
 
 ## Skipped Live-Service Tests
 

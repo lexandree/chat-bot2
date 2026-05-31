@@ -16,12 +16,12 @@ This remains an artifact pipeline. It does not mutate Neo4j, create chatbot
 answers, produce trusted legal facts, or allow LLM output to approve final
 records by itself.
 
-The legal-intent equivalence diagnostic extension remains inside 007 as a
-deferred optional evaluation contract, not a new feature branch and not a
-requirement for the current 007 checkpoint. It documents how canonical
-questions may later be transformed into structured legal-intent candidates and
-pair-review benchmarks so embeddings can generate candidates without becoming a
-legal-equivalence decision boundary.
+The legal-intent equivalence diagnostic extension remains inside 007 as an
+optional evaluation layer, not a new feature branch and not a production
+retrieval policy change. It documents and implements how canonical questions
+can be transformed into structured legal-intent candidates, pair-review
+benchmarks, and review-evidence pair decisions so embeddings can generate
+candidates without becoming a legal-equivalence decision boundary.
 
 ## Technical Context
 
@@ -46,7 +46,7 @@ orchestration, autonomous chains, retrieval agents, chatbot inference, and
 default-test dependencies remain out of scope for 007.
 **Storage**: Redacted 006 generated artifacts under ignored `data/evaluation/`;
 new generated canonicalization, embedding, cluster, coverage, review, question
-bank, promotion, and deferred legal-intent equivalence artifacts under ignored
+bank, promotion, and optional legal-intent equivalence artifacts under ignored
 `data/evaluation/` paths; no Neo4j writes.
 **Testing**: pytest unit tests and offline CLI smoke tests with fixtures/fakes.
 Live Jina, live LLM endpoints, paid APIs, remote notebooks, and Neo4j are
@@ -236,6 +236,10 @@ The planned operator tools are:
 6. A DeepSeek V4 Pro adjudication runner for the manually selected subset only.
 7. A decision merger that emits `real_data_007_canonicalization_results.jsonl`
    for the existing import command.
+8. A legal-intent pair judge runner for Phase 8 diagnostics. It consumes pair
+   benchmark records and optional legal-intent candidates, returns structured
+   `PairEquivalenceDecision` records, supports resume/retry/progress behavior,
+   and remains review evidence only.
 
 Manual review must be card-based, not raw JSON browsing. Review cards should
 show only the source question, Qwen normalized fields, validation flags,
@@ -255,6 +259,10 @@ MiniMax verdict, optional DeepSeek verdict, and a compact decision/edit form.
 8. Promote only reviewed clusters with reviewed reference answer material into
    evaluation dataset candidates.
 9. Add offline unit/smoke coverage and boundary checks.
+10. Run optional legal-intent equivalence diagnostics after accepted
+    canonicalization artifacts exist: pair benchmark, legal-intent candidates,
+    similarity+recos baseline, slot comparator, pair judge, review labels, and
+    equivalence evaluation report.
 
 ## Complexity Tracking
 

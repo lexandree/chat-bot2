@@ -117,12 +117,13 @@ An evaluation operator needs a review workflow that can approve, reject, merge, 
 - **FR-016**: The system MUST keep generated data, vectors, LLM batches, LLM results, review sheets, and coverage reports under ignored data paths unless a later explicit publication step sanitizes them.
 - **FR-017**: The system MUST NOT mutate Neo4j graph state, import chatbot handlers, generate user-facing answers, or hide missing evidence behind fallback answers in this feature.
 
-### Deferred Diagnostic Extension Requirements
+### Optional Diagnostic Extension Requirements
 
 The following requirements document Phase 8. They are part of the 007 design
-record, but they are not required for the current 007 implementation checkpoint.
-They become mandatory only after a separate explicit implementation command for
-legal intent equivalence diagnostics.
+record and were activated after the operator explicitly requested legal intent
+equivalence diagnostics. Phase 8 remains an optional diagnostic layer: it does
+not replace canonicalization review, does not change production retrieval
+policy, and does not approve automatic answer reuse.
 
 - **FR-018**: Phase 8 MUST treat legal intent equivalence diagnostics as a separate optional layer over completed canonicalization artifacts, not as a replacement for 007 canonicalization or human review.
 - **FR-019**: Phase 8 MUST define legal intent candidates that capture material legal distinctions, explicit unknowns, ambiguities, evidence references, validation flags, provenance, and review state.
@@ -132,6 +133,7 @@ legal intent equivalence diagnostics.
 - **FR-023**: Phase 8 MUST preserve high-similarity hard negatives for evaluation instead of silently deduplicating or discarding them.
 - **FR-024**: Phase 8 MUST prevent embedding similarity, lexical similarity, reranker scores, clustering scores, or LLM confidence from directly creating trusted duplicate, answer-equivalence, or question-bank decisions.
 - **FR-025**: Phase 8 MUST report legal-intent equivalence method quality against reviewed pair labels and must state insufficient-label limitations when labels are too few or imbalanced.
+- **FR-026**: Phase 8 MUST provide review-evidence decision producers for method comparison, including a cosine+recos similarity baseline, a deterministic legal-slot comparator over imported legal-intent candidates, and an operator-managed structured-output LLM pair judge.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -164,6 +166,7 @@ legal intent equivalence diagnostics.
 - **SC-008**: After Phase 8 implementation, evaluation reports identify high-similarity hard negatives separately from true duplicates and same-legal-intent pairs.
 - **SC-009**: After Phase 8 implementation, no pair receives trusted duplicate-removal or answer-reuse status solely from embedding, lexical, reranker, clustering, or LLM-confidence scores.
 - **SC-010**: After Phase 8 implementation, equivalence reports state the limitation instead of recommending an automatic threshold when reviewed pair labels are insufficient.
+- **SC-011**: After Phase 8 implementation, offline tests exercise all three legal-intent decision producer contours without live LLMs, live embedding services, paid APIs, Neo4j, or network dependencies.
 
 ## Assumptions
 

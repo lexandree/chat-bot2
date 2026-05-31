@@ -792,6 +792,13 @@ def test_cli_legal_intent_pair_review_exports_100_pair_html(tmp_path: Path) -> N
     evidence = tmp_path / "legal_intent_evidence.jsonl"
     pairs = tmp_path / "legal_intent_pairs.jsonl"
     pairs_summary = tmp_path / "legal_intent_pairs_summary.json"
+    intent_candidates_input = tmp_path / "legal_intent_candidates_input.jsonl"
+    intent_candidates = tmp_path / "legal_intent_candidates.jsonl"
+    intent_candidates_summary = tmp_path / "legal_intent_candidates_summary.json"
+    similarity_decisions = tmp_path / "legal_intent_similarity_decisions.jsonl"
+    similarity_summary = tmp_path / "legal_intent_similarity_summary.json"
+    slot_decisions = tmp_path / "legal_intent_slot_decisions.jsonl"
+    slot_summary = tmp_path / "legal_intent_slot_summary.json"
     decisions_input = tmp_path / "legal_intent_decisions_input.jsonl"
     decisions = tmp_path / "legal_intent_decisions.jsonl"
     decisions_summary = tmp_path / "legal_intent_decisions_summary.json"
@@ -848,6 +855,63 @@ def test_cli_legal_intent_pair_review_exports_100_pair_html(tmp_path: Path) -> N
     )
     pair_records = [json.loads(line) for line in pairs.read_text(encoding="utf-8").splitlines()]
     selected_pair_id = pair_records[0]["pair_id"]
+    _write_jsonl(
+        intent_candidates_input,
+        [
+            {
+                "canonicalization_evidence_id": record["canonicalization_evidence_id"],
+                "desired_action": "update_residence_document_address",
+                "legal_object": "residence_document_address",
+                "authority_context": ["Buergeramt"],
+                "evidence_refs": [{"field": "desired_action", "source_field": "canonical_question"}],
+                "confidence": "medium",
+            }
+            for record in records
+        ],
+    )
+    intent_import_exit, intent_import_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-candidates-import",
+            "--canonicalization-evidence",
+            str(evidence),
+            "--candidates",
+            str(intent_candidates_input),
+            "--output",
+            str(intent_candidates),
+            "--summary-output",
+            str(intent_candidates_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    similarity_exit, similarity_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-similarity-baseline",
+            "--pair-benchmark",
+            str(pairs),
+            "--output",
+            str(similarity_decisions),
+            "--summary-output",
+            str(similarity_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    slot_exit, slot_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-legal-intent-slot-comparator",
+            "--pair-benchmark",
+            str(pairs),
+            "--legal-intent-candidates",
+            str(intent_candidates),
+            "--output",
+            str(slot_decisions),
+            "--summary-output",
+            str(slot_summary),
+        ],
+        settings=FoundationSettings(),
+    )
     _write_jsonl(
         decisions_input,
         [
@@ -940,8 +1004,11 @@ def test_cli_legal_intent_pair_review_exports_100_pair_html(tmp_path: Path) -> N
         settings=FoundationSettings(),
     )
 
-    assert pair_exit == decision_exit == html_exit == label_exit == report_exit == 0
+    assert pair_exit == intent_import_exit == similarity_exit == slot_exit == decision_exit == html_exit == label_exit == report_exit == 0
     assert pair_payload["pair_count"] == 105
+    assert intent_import_payload["completed_count"] == 15
+    assert similarity_payload["processed_count"] == 105
+    assert slot_payload["processed_count"] == 105
     assert decision_payload["completed_count"] == 1
     assert html_payload["card_count"] == 105
     assert label_payload["completed_count"] == 1

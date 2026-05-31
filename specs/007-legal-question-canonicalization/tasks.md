@@ -166,15 +166,15 @@ operator-managed smoke contours only.
 
 ---
 
-## Phase 8: Legal Intent Equivalence Diagnostics (Deferred Optional Extension)
+## Phase 8: Legal Intent Equivalence Diagnostics (Optional Diagnostic Extension)
 
 **Purpose**: Close the similarity-search reliability gap discovered during
 007 dataset review without treating embeddings as legal truth or starting a
 new feature branch.
 
-These tasks are intentionally not implemented in the current checkpoint. They
-require a separate explicit implementation command and are not required for
-closing the current 007 implementation checkpoint.
+These tasks were activated after a separate explicit implementation command.
+They remain an optional diagnostic layer and do not create production retrieval
+policy, trusted duplicate removal, or answer-reuse approval.
 
 - [X] T062 [P] Add fixture data for hard-positive, hard-negative, same-topic-different-issue, related-context, and random-negative canonical question pairs in `tests/fixtures/tg_question_canonicalization/`
 - [X] T063 [P] Add unit tests for order-independent stable `pair_id` generation and unchanged-input benchmark rebuild stability in `tests/unit/test_tg_question_canonicalization.py`
@@ -185,6 +185,9 @@ closing the current 007 implementation checkpoint.
 - [X] T068 Export pair-review HTML with all pair evidence, material differences, method judgments, and manual label export in `src/evaluation/tg_question_canonicalization.py`
 - [X] T069 Build equivalence evaluation reports with per-class counts, hard-negative examples, false duplicate risks, false separation risks, insufficient-label warnings, and explicit method-suitability conclusions in `src/evaluation/tg_question_canonicalization.py`
 - [X] T070 Add CLI commands and offline smoke tests for legal-intent pair benchmark, review export, label import, and method evaluation in `src/app/commands.py` and `tests/smoke/test_cli_offline.py`
+- [X] T071 Add cosine+recos legal-intent similarity baseline decision producer in `src/evaluation/tg_question_canonicalization.py`
+- [X] T072 Add deterministic legal-slot comparator decision producer over imported legal-intent candidates in `src/evaluation/tg_question_canonicalization.py`
+- [X] T073 Add structured-output LLM pair judge runner and prompt profile for legal-intent pair decisions in `src/evaluation/tg_question_canonicalization.py` and `src/evaluation/prompt_profiles/`
 
 ---
 
@@ -199,7 +202,7 @@ closing the current 007 implementation checkpoint.
 - **User Story 3 (Phase 5)**: Depends on issue clusters from US2 or equivalent fixtures; delivers canonical coverage
 - **User Story 4 (Phase 6)**: Depends on issue clusters from US2 or equivalent fixtures and may consume US3 coverage or equivalent fixtures; delivers question bank, promotion candidates, and reviewed evaluation dataset artifacts
 - **Polish (Phase 7)**: Depends on desired user stories being complete
-- **Legal Intent Equivalence Diagnostics (Phase 8)**: Deferred optional extension; depends on accepted canonicalization artifacts and requires a separate implementation command
+- **Legal Intent Equivalence Diagnostics (Phase 8)**: Optional diagnostic extension activated by separate implementation command; depends on accepted canonicalization artifacts
 
 ### User Story Dependencies
 

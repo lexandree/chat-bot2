@@ -10,6 +10,7 @@ import pytest
 from evaluation.prompts import (
     CANONICALIZATION_ADJUDICATOR_PROMPT_PROFILE,
     CANONICALIZATION_VERIFIER_PROMPT_PROFILE,
+    LEGAL_INTENT_PAIR_JUDGE_PROMPT_PROFILE,
 )
 from evaluation.tg_question_canonicalization import (
     AdjudicationPayload,
@@ -28,10 +29,13 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_issue_final_case_candidates,
     build_tg_qa_legal_intent_equivalence_report,
     build_tg_qa_legal_intent_pair_benchmark,
+    build_tg_qa_legal_intent_similarity_baseline,
+    build_tg_qa_legal_intent_slot_comparator_decisions,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
     build_langchain_deepseek_adjudication_chain,
     build_langchain_adjudication_chain,
+    build_langchain_legal_intent_pair_judge_chain,
     build_langchain_verifier_chain,
     canonicalization_prompt_profile,
     compact_canonicalization_llm_payload,
@@ -46,6 +50,7 @@ from evaluation.tg_question_canonicalization import (
     import_tg_qa_legal_intent_candidates,
     import_tg_qa_legal_intent_pair_decisions,
     import_tg_qa_legal_intent_pair_review_labels,
+    run_tg_qa_legal_intent_pair_judge_batch,
     run_tg_qa_canonicalization_adjudication_batch,
     run_tg_qa_canonicalization_deepseek_batch,
     run_tg_qa_canonicalization_llm_batch,
@@ -195,6 +200,11 @@ def test_canonicalization_constants_slug_ids_and_privacy_guard_are_stable() -> N
     assert "nonexistent_entitlement" in adjudicator_instruction
     assert "Do not return pass with reject, or fail with accept" in adjudicator_instruction
     assert "currently accepting refugees/new arrivals" in adjudicator_instruction
+    legal_intent_pair_judge_instruction = LEGAL_INTENT_PAIR_JUDGE_PROMPT_PROFILE["system_instruction"]
+    assert "Similarity scores" in legal_intent_pair_judge_instruction
+    assert "recos scores" in legal_intent_pair_judge_instruction
+    assert "material legal slots" in legal_intent_pair_judge_instruction
+    assert "same_topic_different_issue" in legal_intent_pair_judge_instruction
     assert "none" in EXCLUSION_REASONS
     assert CONFIDENCE_VALUES == ("low", "medium", "high")
     assert canonicalization._slugify("Residence Document Address Update") == "residence_document_address_update"
@@ -416,9 +426,14 @@ def test_langchain_review_prompt_builders_accept_literal_json_few_shots() -> Non
         _StructuredOutputOnlyChatModel(),
         method="json_mode",
     )
+    pair_judge_chain = build_langchain_legal_intent_pair_judge_chain(
+        _StructuredOutputOnlyChatModel(),
+        method="json_mode",
+    )
 
     assert verifier_chain is not None
     assert adjudication_chain is not None
+    assert pair_judge_chain is not None
 
 
 def test_openai_verifier_chain_passes_extra_body(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1825,6 +1840,163 @@ def test_legal_intent_candidate_and_pair_decision_import_validate_contracts(tmp_
     ]
 
 
+def test_legal_intent_similarity_baseline_uses_cosine_and_recos(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    similarity_pairs_path = tmp_path / "similarity_pairs.jsonl"
+    embedding_records_path = tmp_path / "embedding_records.jsonl"
+    decisions_path = tmp_path / "similarity_decisions.jsonl"
+    decisions_summary_path = tmp_path / "similarity_decisions_summary.json"
+    evidence = [
+        _evidence("e1", "tg-qa-candidate:1", "Нужно ли менять адрес на ВНЖ после переезда?"),
+        _evidence("e2", "tg-qa-candidate:2", "Как обновить адрес на пластиковой карте ВНЖ?"),
+    ]
+    _write_jsonl(evidence_path, evidence)
+    _write_jsonl(
+        similarity_pairs_path,
+        [
+            {
+                "left_canonicalization_evidence_id": "e1",
+                "right_canonicalization_evidence_id": "e2",
+                "canonical_question_score": 0.74,
+                "legal_issue_frame_score": 0.72,
+            }
+        ],
+    )
+    _write_jsonl(
+        embedding_records_path,
+        [
+            {
+                "canonicalization_evidence_id": "e1",
+                "text_role": "canonical_question",
+                "embedding_status": "completed",
+                "vector": [1.0, 0.0],
+            },
+            {
+                "canonicalization_evidence_id": "e2",
+                "text_role": "canonical_question",
+                "embedding_status": "completed",
+                "vector": [0.9, 0.1],
+            },
+        ],
+    )
+    build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        similarity_pairs_path=similarity_pairs_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+    )
+
+    result = build_tg_qa_legal_intent_similarity_baseline(
+        pair_benchmark_path=pairs_path,
+        embedding_records_path=embedding_records_path,
+        output_path=decisions_path,
+        summary_output_path=decisions_summary_path,
+        same_intent_threshold=0.90,
+    )
+
+    decision = _read_jsonl(decisions_path)[0]
+    assert result["summary"]["recos_available_count"] == 1
+    assert decision["pair_class"] == "same_legal_intent"
+    assert decision["answer_equivalence"] == "uncertain"
+    assert float(decision["runtime_metadata"]["recos_canonical_question_score"]) >= 0.99
+    assert "similarity_only_baseline_not_safe_for_automatic_action" in decision["validation_flags"]
+
+
+def test_legal_intent_slot_comparator_flags_material_slot_differences(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    candidates_input_path = tmp_path / "intent_candidates_input.jsonl"
+    candidates_path = tmp_path / "intent_candidates.jsonl"
+    candidates_summary_path = tmp_path / "intent_candidates_summary.json"
+    decisions_path = tmp_path / "slot_decisions.jsonl"
+    decisions_summary_path = tmp_path / "slot_decisions_summary.json"
+    evidence = [
+        _evidence("e1", "tg-qa-candidate:1", "Можно ли подать заявление на ВНЖ?"),
+        _evidence("e2", "tg-qa-candidate:2", "Можно ли подать заявление на ВНЖ без регистрации?"),
+    ]
+    _write_jsonl(evidence_path, evidence)
+    build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+    )
+    _write_jsonl(
+        candidates_input_path,
+        [
+            {
+                "canonicalization_evidence_id": "e1",
+                "desired_action": "apply_for_residence_permit",
+                "legal_object": "residence_permit",
+                "evidence_refs": [{"field": "desired_action", "source_field": "canonical_question"}],
+                "confidence": "medium",
+            },
+            {
+                "canonicalization_evidence_id": "e2",
+                "desired_action": "apply_for_residence_permit_without_registration",
+                "legal_object": "residence_permit_application_condition",
+                "evidence_refs": [{"field": "desired_action", "source_field": "canonical_question"}],
+                "confidence": "medium",
+            },
+        ],
+    )
+    import_tg_qa_legal_intent_candidates(
+        canonicalization_evidence_path=evidence_path,
+        candidates_path=candidates_input_path,
+        output_path=candidates_path,
+        summary_output_path=candidates_summary_path,
+    )
+
+    result = build_tg_qa_legal_intent_slot_comparator_decisions(
+        pair_benchmark_path=pairs_path,
+        legal_intent_candidates_path=candidates_path,
+        output_path=decisions_path,
+        summary_output_path=decisions_summary_path,
+    )
+
+    decision = _read_jsonl(decisions_path)[0]
+    assert result["summary"]["counts_by_pair_class"] == {"same_topic_different_issue": 1}
+    assert decision["answer_equivalence"] == "not_safe_to_share_answer"
+    assert decision["material_differences"][0]["field"] == "desired_action"
+
+
+def test_legal_intent_pair_judge_runner_streams_review_evidence(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    results_path = tmp_path / "pair_judge_results.jsonl"
+    summary_path = tmp_path / "pair_judge_summary.json"
+    evidence = [
+        _evidence("e1", "tg-qa-candidate:1", "Нужно ли менять адрес на ВНЖ после переезда?"),
+        _evidence("e2", "tg-qa-candidate:2", "Как обновить адрес на пластиковой карте ВНЖ?"),
+    ]
+    _write_jsonl(evidence_path, evidence)
+    build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+    )
+
+    result = run_tg_qa_legal_intent_pair_judge_batch(
+        pair_benchmark_path=pairs_path,
+        output_path=results_path,
+        summary_output_path=summary_path,
+        endpoint_url="https://redacted.test/v1/chat/completions",
+        model_id="fixture-qwen",
+        judge_run_id="tg-legal-intent-pair-judge-run:fixture",
+        chain=_FakeLegalIntentPairJudgeChain(),
+    )
+
+    record = _read_jsonl(results_path)[0]
+    assert result["summary"]["completed_count"] == 1
+    assert record["task_id"] == record["pair_id"]
+    assert record["decision_source"] == "tg-legal-intent-pair-judge-run:fixture"
+    assert record["pair_class"] == "same_legal_intent"
+    assert record["runtime_metadata"]["model_id"] == "fixture-qwen"
+
+
 def test_legal_intent_review_labels_and_evaluation_report_flag_hard_negatives(tmp_path: Path) -> None:
     evidence_path = tmp_path / "evidence.jsonl"
     pairs_path = tmp_path / "pairs.jsonl"
@@ -2134,6 +2306,24 @@ class _FakeVerifierChain:
             bad_fields=[],
             short_reason="Fixture canonicalization is internally consistent.",
             suggested_action="accept",
+        )
+
+
+class _FakeLegalIntentPairJudgeChain:
+    def invoke(self, payload: dict) -> canonicalization.LegalIntentPairDecisionPayload:
+        pair_payload = json.loads(payload["pair_payload"])
+        assert "source_message_ids" not in payload["pair_payload"]
+        return canonicalization.LegalIntentPairDecisionPayload(
+            pair_id=pair_payload["pair_id"],
+            pair_class="same_legal_intent",
+            answer_equivalence="safe_to_share_answer",
+            canonical_question_equivalence="safe_to_share_question",
+            allowed_downstream_actions=["allow_reference_answer_sharing"],
+            material_differences=[],
+            shared_material_facts=["fixture"],
+            short_reason="Fixture pair judge accepts same legal intent.",
+            confidence="high",
+            risk="low",
         )
 
 

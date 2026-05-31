@@ -45,6 +45,8 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_issue_final_case_candidates,
     build_tg_qa_legal_intent_equivalence_report,
     build_tg_qa_legal_intent_pair_benchmark,
+    build_tg_qa_legal_intent_similarity_baseline,
+    build_tg_qa_legal_intent_slot_comparator_decisions,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
     cluster_tg_qa_legal_issues,
@@ -59,6 +61,7 @@ from evaluation.tg_question_canonicalization import (
     import_tg_qa_legal_intent_candidates,
     import_tg_qa_legal_intent_pair_decisions,
     import_tg_qa_legal_intent_pair_review_labels,
+    run_tg_qa_legal_intent_pair_judge_batch,
     run_tg_qa_canonicalization_adjudication_batch,
     run_tg_qa_canonicalization_llm_batch,
     run_tg_qa_canonicalization_deepseek_batch,
@@ -574,6 +577,47 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_legal_pair_decision_import_parser.add_argument("--decisions", required=True)
     tg_qa_legal_pair_decision_import_parser.add_argument("--output", required=True)
     tg_qa_legal_pair_decision_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_similarity_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-similarity-baseline")
+    tg_qa_legal_similarity_parser.add_argument("--pair-benchmark", required=True)
+    tg_qa_legal_similarity_parser.add_argument("--embedding-records", default="")
+    tg_qa_legal_similarity_parser.add_argument("--decision-source", default="similarity_baseline_cosine_recos_v1")
+    tg_qa_legal_similarity_parser.add_argument("--exact-duplicate-threshold", type=float, default=0.97)
+    tg_qa_legal_similarity_parser.add_argument("--same-intent-threshold", type=float, default=0.90)
+    tg_qa_legal_similarity_parser.add_argument("--related-threshold", type=float, default=0.80)
+    tg_qa_legal_similarity_parser.add_argument("--output", required=True)
+    tg_qa_legal_similarity_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_slot_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-slot-comparator")
+    tg_qa_legal_slot_parser.add_argument("--pair-benchmark", required=True)
+    tg_qa_legal_slot_parser.add_argument("--legal-intent-candidates", required=True)
+    tg_qa_legal_slot_parser.add_argument("--decision-source", default="legal_slot_comparator_v1")
+    tg_qa_legal_slot_parser.add_argument("--output", required=True)
+    tg_qa_legal_slot_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_pair_judge_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-judge-run")
+    tg_qa_legal_pair_judge_parser.add_argument("--pair-benchmark", required=True)
+    tg_qa_legal_pair_judge_parser.add_argument("--legal-intent-candidates", default="")
+    tg_qa_legal_pair_judge_parser.add_argument("--output", required=True)
+    tg_qa_legal_pair_judge_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_pair_judge_parser.add_argument("--endpoint-url", required=True)
+    tg_qa_legal_pair_judge_parser.add_argument("--model-id", required=True)
+    tg_qa_legal_pair_judge_parser.add_argument("--judge-run-id", required=True)
+    tg_qa_legal_pair_judge_parser.add_argument("--provider", choices=["anthropic", "openai"], default="openai")
+    tg_qa_legal_pair_judge_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_legal_pair_judge_parser.add_argument("--timeout-seconds", type=int, default=180)
+    tg_qa_legal_pair_judge_parser.add_argument("--max-tokens", type=int, default=1536)
+    tg_qa_legal_pair_judge_parser.add_argument(
+        "--structured-output-method",
+        choices=["function_calling", "json_mode", "json_schema"],
+        default="json_mode",
+    )
+    tg_qa_legal_pair_judge_parser.add_argument("--extra-body-json", default="")
+    tg_qa_legal_pair_judge_parser.add_argument("--stop-on-failure", action="store_true")
+    tg_qa_legal_pair_judge_parser.add_argument("--runtime-contour", default="operator_managed_pair_judge")
+    tg_qa_legal_pair_judge_parser.add_argument("--backend", default="opencode")
+    tg_qa_legal_pair_judge_parser.add_argument("--api-key-env", default="")
+    tg_qa_legal_pair_judge_parser.add_argument("--provider-max-attempts", type=int, default=3)
+    tg_qa_legal_pair_judge_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_legal_pair_judge_parser.add_argument("--no-resume", action="store_true")
+    tg_qa_legal_pair_judge_parser.add_argument("--no-progress", action="store_true")
     tg_qa_legal_pair_review_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-review-html")
     tg_qa_legal_pair_review_parser.add_argument("--pair-benchmark", required=True)
     tg_qa_legal_pair_review_parser.add_argument("--pair-decisions", default="")
@@ -1443,6 +1487,58 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             decisions_path=args.decisions,
             output_path=args.output,
             summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-similarity-baseline":
+        result = build_tg_qa_legal_intent_similarity_baseline(
+            pair_benchmark_path=args.pair_benchmark,
+            embedding_records_path=args.embedding_records or None,
+            decision_source=args.decision_source,
+            exact_duplicate_threshold=args.exact_duplicate_threshold,
+            same_intent_threshold=args.same_intent_threshold,
+            related_threshold=args.related_threshold,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-slot-comparator":
+        result = build_tg_qa_legal_intent_slot_comparator_decisions(
+            pair_benchmark_path=args.pair_benchmark,
+            legal_intent_candidates_path=args.legal_intent_candidates,
+            decision_source=args.decision_source,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count", 0) == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-pair-judge-run":
+        result = run_tg_qa_legal_intent_pair_judge_batch(
+            pair_benchmark_path=args.pair_benchmark,
+            legal_intent_candidates_path=args.legal_intent_candidates or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            judge_run_id=args.judge_run_id,
+            provider=args.provider,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            max_tokens=args.max_tokens,
+            structured_output_method=args.structured_output_method,
+            api_key_env=args.api_key_env,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            stop_on_failure=args.stop_on_failure,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            resume=not args.no_resume,
+            provider_max_attempts=args.provider_max_attempts,
+            provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            progress=not args.no_progress,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
