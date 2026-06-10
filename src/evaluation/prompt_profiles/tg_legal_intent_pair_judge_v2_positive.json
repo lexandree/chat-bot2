@@ -1,0 +1,132 @@
+{
+  "prompt_version": "tg_legal_intent_pair_judge_v2_positive",
+  "system_instruction": "Judge whether two canonical legal-question records have the same legal intent. Return exactly one valid json object only. Produce a pair-equivalence judgment rather than legal answers. This Telegram corpus concerns Ukrainian refugees in Germany and German law unless a record explicitly targets another jurisdiction. Treat similarity scores, cosine scores, recos scores, shared vocabulary, same law_area, and same broad topic as candidate evidence only; make the final decision through material-slot comparison. Compare material legal slots: actor, subject, current_status, target_status, desired_action, legal_object, authority_context, third_party_context, location_scope, temporal_condition, operational_boundary, and material unknowns. Use pair_class exactly as one of: exact_duplicate, same_legal_intent, same_topic_different_issue, related_context, different, uncertain. exact_duplicate means same legal question and same material facts. same_legal_intent means different wording but the same right, duty, remedy, procedure, status question, or authority-competence question, with material slots stable enough for the same answer. same_topic_different_issue means the broad topic is similar but at least one material legal distinction differs. related_context means useful surrounding context while canonical-question or answer reuse remains unsafe. different means no material legal overlap. uncertain means missing, conflicting, or ambiguous evidence. Record answer_equivalence separately from canonical_question_equivalence. Mark safe_to_share_answer only when the legal answer could be reused without changing legal assumptions. Mark safe_to_share_question only when one canonical question can replace both without losing material meaning. For non-equivalent pairs, include material_differences. For unclear or missing slots, use unknowns or ambiguities and prefer route_human_review. Keep allowed_downstream_actions conservative: exact_duplicate may allow duplicate removal; same_legal_intent may allow canonical-question or reference-answer sharing only when safe; same_topic_different_issue should preserve_hard_negative or route_human_review; high-similarity non-equivalent pairs should preserve_hard_negative.",
+  "user_prompt_lines": [
+    "Compare the two sides at legal-intent level using material slots and answer-reuse safety.",
+    "Return the structured decision json.",
+    "Pair payload:"
+  ],
+  "few_shot_examples": [
+    {
+      "input": {
+        "pair_id": "fixture:address-update-pair",
+        "pair_source_reasons": [
+          "preserved_variant_candidate",
+          "same_law_area"
+        ],
+        "similarity_evidence": {
+          "canonical_question_score": 0.89,
+          "recos_canonical_question_score": 0.91,
+          "legal_issue_frame_score": 1.0
+        },
+        "left": {
+          "canonical_question": "Нужно ли менять адрес на ВНЖ после переезда?",
+          "legal_issue_frame": "Residence document address update after moving",
+          "law_area": "migration_status"
+        },
+        "right": {
+          "canonical_question": "Как обновить адрес на пластиковой карте ВНЖ после переезда?",
+          "legal_issue_frame": "Residence document address update after moving",
+          "law_area": "migration_status"
+        },
+        "left_legal_intent_candidate": {
+          "desired_action": "update_residence_document_address",
+          "legal_object": "residence_document_address",
+          "authority_context": [
+            "Buergeramt",
+            "Auslaenderbehoerde"
+          ],
+          "material_slots_unknown": []
+        },
+        "right_legal_intent_candidate": {
+          "desired_action": "update_residence_document_address",
+          "legal_object": "residence_document_address",
+          "authority_context": [
+            "Buergeramt",
+            "Auslaenderbehoerde"
+          ],
+          "material_slots_unknown": []
+        }
+      },
+      "output": {
+        "pair_class": "same_legal_intent",
+        "answer_equivalence": "safe_to_share_answer",
+        "canonical_question_equivalence": "safe_to_share_question",
+        "allowed_downstream_actions": [
+          "allow_canonical_question_sharing",
+          "allow_reference_answer_sharing",
+          "allow_faq_pattern_grouping",
+          "allow_retrieval_cluster_grouping"
+        ],
+        "material_differences": [],
+        "shared_material_facts": [
+          "same desired action: update residence document address",
+          "same legal object: residence document address"
+        ],
+        "unknowns": [],
+        "ambiguities": [],
+        "short_reason": "Both sides ask the same address-update legal/procedural question for a residence document after moving.",
+        "confidence": "high",
+        "risk": "low"
+      }
+    },
+    {
+      "input": {
+        "pair_id": "fixture:registration-condition-hard-negative",
+        "pair_source_reasons": [
+          "high_canonical_question_similarity"
+        ],
+        "similarity_evidence": {
+          "canonical_question_score": 0.92,
+          "recos_canonical_question_score": 0.93,
+          "legal_issue_frame_score": 0.86
+        },
+        "left": {
+          "canonical_question": "Можно ли подать заявление на ВНЖ?",
+          "legal_issue_frame": "Residence permit application",
+          "law_area": "migration_status"
+        },
+        "right": {
+          "canonical_question": "Можно ли подать заявление на ВНЖ без регистрации?",
+          "legal_issue_frame": "Residence permit application without registration",
+          "law_area": "migration_status"
+        },
+        "left_legal_intent_candidate": {
+          "desired_action": "apply_for_residence_permit",
+          "legal_object": "residence_permit",
+          "material_slots_unknown": []
+        },
+        "right_legal_intent_candidate": {
+          "desired_action": "apply_for_residence_permit_without_registration",
+          "legal_object": "residence_permit_application_condition",
+          "material_slots_unknown": []
+        }
+      },
+      "output": {
+        "pair_class": "same_topic_different_issue",
+        "answer_equivalence": "not_safe_to_share_answer",
+        "canonical_question_equivalence": "not_safe_to_share_question",
+        "allowed_downstream_actions": [
+          "route_human_review",
+          "preserve_hard_negative"
+        ],
+        "material_differences": [
+          {
+            "field": "desired_action",
+            "left": "apply_for_residence_permit",
+            "right": "apply_for_residence_permit_without_registration",
+            "why_material": "The registration condition can change procedure, eligibility, and answer."
+          }
+        ],
+        "shared_material_facts": [
+          "both concern residence permit application"
+        ],
+        "unknowns": [],
+        "ambiguities": [],
+        "short_reason": "The questions are highly similar but the second adds a material no-registration condition.",
+        "confidence": "high",
+        "risk": "high"
+      }
+    }
+  ]
+}

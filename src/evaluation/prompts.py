@@ -15,13 +15,31 @@ CANONICALIZATION_PROMPT_VERSION = os.environ.get(
     "tg_question_canonicalizer_v6",
 ) or "tg_question_canonicalizer_v6"
 CANONICALIZATION_PROMPT_PROFILE_PATH = PROMPT_PROFILE_DIR / f"{CANONICALIZATION_PROMPT_VERSION}.json"
-TG_QA_CANDIDATE_PROMPT_VERSION = "tg_qa_candidate_classifier_v4_1"
-TG_QA_CLUSTER_PROMPT_VERSION = "tg_qa_cluster_reviewer_v4_1"
-TG_QA_CLUSTER_COMPACT_PROMPT_VERSION = "tg_qa_cluster_reviewer_compact_v4_1"
-CANONICALIZATION_VERIFIER_PROMPT_VERSION = "tg_question_canonicalization_verifier_v7"
-CANONICALIZATION_ADJUDICATOR_PROMPT_VERSION = "tg_question_canonicalization_adjudicator_v7"
+TG_QA_CANDIDATE_PROMPT_VERSION = os.environ.get(
+    "TG_QA_CANDIDATE_PROMPT_VERSION",
+    "tg_qa_candidate_classifier_v4_1",
+) or "tg_qa_candidate_classifier_v4_1"
+TG_QA_CLUSTER_PROMPT_VERSION = os.environ.get(
+    "TG_QA_CLUSTER_PROMPT_VERSION",
+    "tg_qa_cluster_reviewer_v4_1",
+) or "tg_qa_cluster_reviewer_v4_1"
+TG_QA_CLUSTER_COMPACT_PROMPT_VERSION = os.environ.get(
+    "TG_QA_CLUSTER_COMPACT_PROMPT_VERSION",
+    "tg_qa_cluster_reviewer_compact_v4_1",
+) or "tg_qa_cluster_reviewer_compact_v4_1"
+CANONICALIZATION_VERIFIER_PROMPT_VERSION = os.environ.get(
+    "TG_QUESTION_CANONICALIZATION_VERIFIER_PROMPT_VERSION",
+    "tg_question_canonicalization_verifier_v7",
+) or "tg_question_canonicalization_verifier_v7"
+CANONICALIZATION_ADJUDICATOR_PROMPT_VERSION = os.environ.get(
+    "TG_QUESTION_CANONICALIZATION_ADJUDICATOR_PROMPT_VERSION",
+    "tg_question_canonicalization_adjudicator_v7",
+) or "tg_question_canonicalization_adjudicator_v7"
 CANONICALIZATION_DEEPSEEK_ADJUDICATOR_PROMPT_VERSION = CANONICALIZATION_ADJUDICATOR_PROMPT_VERSION
-LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION = "tg_legal_intent_pair_judge_v1"
+LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION = os.environ.get(
+    "TG_LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION",
+    "tg_legal_intent_pair_judge_v1",
+) or "tg_legal_intent_pair_judge_v1"
 
 
 @lru_cache(maxsize=None)

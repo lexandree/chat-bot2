@@ -1247,9 +1247,13 @@ def build_tg_qa_canonicalization_retry_batch_from_adjudication(
         if len(completed_results) != len(adjudication_results):
             skipped_reasons["human_review_before_retry:non_completed_adjudication"] += 1
             continue
+        manual_results = [
+            result for result in completed_results if _is_manual_adjudication_result(result)
+        ]
+        routing_results = manual_results or completed_results
         recommendations = {
             str(result.get("final_recommendation", ""))
-            for result in completed_results
+            for result in routing_results
         }
         if recommendations != {"retry_generator"}:
             for recommendation in sorted(recommendations):
@@ -1265,13 +1269,13 @@ def build_tg_qa_canonicalization_retry_batch_from_adjudication(
             continue
         selected_candidate_keys = {
             _selected_adjudication_candidate_key(result, adjudication_item)
-            for result in completed_results
+            for result in routing_results
         }
         selected_candidate_keys = {key for key in selected_candidate_keys if key}
         if len(selected_candidate_keys) != 1:
             skipped_reasons["human_review_before_retry:selected_candidate_disagreement"] += 1
             continue
-        representative_result = completed_results[0]
+        representative_result = routing_results[0]
         selected_candidate_key = _selected_adjudication_candidate_key(
             representative_result,
             adjudication_item,
@@ -1281,7 +1285,7 @@ def build_tg_qa_canonicalization_retry_batch_from_adjudication(
             skipped_reasons["missing_selected_candidate"] += 1
             continue
         retry_triage = _retry_consensus_triage(
-            adjudication_results=completed_results,
+            adjudication_results=routing_results,
             adjudication_item=adjudication_item,
             selected_candidate_key=selected_candidate_key,
         )
@@ -1336,6 +1340,7 @@ def run_tg_qa_canonicalization_llm_batch(
     timeout_seconds: int = 180,
     max_tokens: int = 1200,
     structured_output_method: str = "json_mode",
+    provider: str = "openai",
     api_key_env: str = "",
     extra_body: Mapping[str, Any] | None = None,
     stop_on_failure: bool = False,
@@ -1349,6 +1354,8 @@ def run_tg_qa_canonicalization_llm_batch(
 ) -> dict[str, Any]:
     """Run Qwen-style canonicalization over a bounded batch with structured output."""
 
+    if provider not in {"anthropic", "openai"}:
+        raise ValueError("provider must be anthropic or openai")
     if structured_output_method not in {"function_calling", "json_mode", "json_schema"}:
         raise ValueError("structured_output_method must be function_calling, json_mode, or json_schema")
     if provider_max_attempts < 0:
@@ -1363,7 +1370,8 @@ def run_tg_qa_canonicalization_llm_batch(
     selected_items = remaining_items[:max_items] if max_items > 0 else remaining_items
     started_at = _utc_timestamp()
     started = perf_counter()
-    runner = chain or _build_openai_canonicalization_chain(
+    runner = chain or _build_canonicalization_chain(
+        provider=provider,
         endpoint_url=endpoint_url,
         model_id=model_id,
         timeout_seconds=timeout_seconds,
@@ -1393,10 +1401,13 @@ def run_tg_qa_canonicalization_llm_batch(
             counts["processed"] += 1
             compact_payload = compact_canonicalization_llm_payload(item)
             attempts_used = 0
+            item_started = perf_counter()
+            last_raw_result: Any = None
             while True:
                 attempts_used += 1
                 try:
                     raw_result = runner.invoke({"task_payload": _json_for_prompt(compact_payload)})
+                    last_raw_result = raw_result
                     record = _canonicalization_record_from_structured_output(
                         raw_result,
                         item,
@@ -1448,6 +1459,14 @@ def run_tg_qa_canonicalization_llm_batch(
                         model_id=model_id,
                     )
                     break
+            record = _attach_runtime_metadata(
+                record,
+                _operator_record_runtime_metadata(
+                    last_raw_result,
+                    request_duration_seconds=perf_counter() - item_started,
+                    attempts_used=attempts_used,
+                ),
+            )
             counts[str(record.get("status", "failed"))] += 1
             records.append(record)
             _write_jsonl_stream_record(output_handle, record)
@@ -1486,6 +1505,7 @@ def run_tg_qa_canonicalization_llm_batch(
         "summary_output_path": str(summary_output_path),
         "canonicalization_run_id": canonicalization_run_id,
         "endpoint_shape": _redacted_endpoint_shape(endpoint_url),
+        "provider": provider,
         "runtime_contour": runtime_contour,
         "backend": backend,
         "model_id": model_id,
@@ -1521,6 +1541,7 @@ def run_tg_qa_canonicalization_llm_batch(
         "items_per_second": round(len(selected_items) / duration, 3) if duration > 0 else 0,
         "trust_boundary": "canonicalization_results_are_review_evidence_only",
     }
+    summary.update(_operator_runtime_summary(records))
     _write_json(summary_output_path, summary)
     return {"results": records, "summary": summary}
 
@@ -1606,10 +1627,13 @@ def run_tg_qa_canonicalization_verifier_batch(
             else:
                 verifier_payload = _compact_verifier_llm_payload(evidence)
                 attempts_used = 0
+                item_started = perf_counter()
+                last_raw_result: Any = None
                 while True:
                     attempts_used += 1
                     try:
-                        raw_result = runner.invoke({"verifier_payload": _json_for_prompt(verifier_payload)})
+                        raw_result = runner.invoke({"verifier_payload": _review_payload_for_prompt(verifier_payload)})
+                        last_raw_result = raw_result
                         record = _verifier_record_from_structured_output(
                             raw_result,
                             evidence,
@@ -1654,6 +1678,23 @@ def run_tg_qa_canonicalization_verifier_batch(
                             model_id=model_id,
                         )
                         break
+                record = _attach_runtime_metadata(
+                    record,
+                    _operator_record_runtime_metadata(
+                        last_raw_result,
+                        request_duration_seconds=perf_counter() - item_started,
+                        attempts_used=attempts_used,
+                    ),
+                )
+            if str(evidence.get("status", "")) != "completed":
+                record = _attach_runtime_metadata(
+                    record,
+                    _operator_record_runtime_metadata(
+                        None,
+                        request_duration_seconds=0.0,
+                        attempts_used=0,
+                    ),
+                )
             counts[str(record.get("status", "failed"))] += 1
             records.append(record)
             _write_jsonl_stream_record(output_handle, record)
@@ -1699,6 +1740,7 @@ def run_tg_qa_canonicalization_verifier_batch(
         "api_key_env": api_key_env,
         "auth_mode": "bearer_env" if api_key_env else "none",
         "structured_output_method": structured_output_method,
+        "extra_body_keys": sorted(extra_body.keys()) if isinstance(extra_body, Mapping) else [],
         "stop_on_failure": stop_on_failure,
         "resume": resume,
         "progress": progress,
@@ -1725,6 +1767,7 @@ def run_tg_qa_canonicalization_verifier_batch(
         "items_per_second": round(len(selected_records) / duration, 3) if duration > 0 else 0,
         "trust_boundary": "verifier_results_are_review_evidence_only",
     }
+    summary.update(_operator_runtime_summary(records))
     _write_json(summary_output_path, summary)
     return {"results": records, "summary": summary}
 
@@ -1802,10 +1845,13 @@ def run_tg_qa_canonicalization_adjudication_batch(
             counts["processed"] += 1
             compact_payload = _compact_adjudication_payload(item)
             attempts_used = 0
+            item_started = perf_counter()
+            last_raw_result: Any = None
             while True:
                 attempts_used += 1
                 try:
-                    raw_result = runner.invoke({"adjudication_payload": _json_for_prompt(compact_payload)})
+                    raw_result = runner.invoke({"adjudication_payload": _review_payload_for_prompt(compact_payload)})
+                    last_raw_result = raw_result
                     record = _adjudication_record_from_structured_output(
                         raw_result,
                         item,
@@ -1850,6 +1896,14 @@ def run_tg_qa_canonicalization_adjudication_batch(
                         model_id=model_id,
                     )
                     break
+            record = _attach_runtime_metadata(
+                record,
+                _operator_record_runtime_metadata(
+                    last_raw_result,
+                    request_duration_seconds=perf_counter() - item_started,
+                    attempts_used=attempts_used,
+                ),
+            )
             counts[str(record.get("status", "failed"))] += 1
             records.append(record)
             _write_jsonl_stream_record(output_handle, record)
@@ -1922,6 +1976,7 @@ def run_tg_qa_canonicalization_adjudication_batch(
         "items_per_second": round(len(selected_items) / duration, 3) if duration > 0 else 0,
         "trust_boundary": "adjudication_results_are_review_evidence_only",
     }
+    summary.update(_operator_runtime_summary(records))
     _write_json(summary_output_path, summary)
     return {"results": records, "summary": summary}
 
@@ -2074,8 +2129,8 @@ def build_langchain_canonicalization_chain(chat_model: Any, *, method: str = "")
         few_shot_examples=_json_for_prompt(profile["few_shot_examples"]),
     )
     if method:
-        return prompt | chat_model.with_structured_output(CanonicalizationResultPayload, method=method)
-    return prompt | chat_model.with_structured_output(CanonicalizationResultPayload)
+        return prompt | chat_model.with_structured_output(CanonicalizationResultPayload, method=method, include_raw=True)
+    return prompt | chat_model.with_structured_output(CanonicalizationResultPayload, include_raw=True)
 
 
 def build_langchain_verifier_chain(chat_model: Any, *, method: str = "") -> Any:
@@ -2101,8 +2156,8 @@ def build_langchain_verifier_chain(chat_model: Any, *, method: str = "") -> Any:
     messages.append(("human", "\n".join([*user_lines, "{verifier_payload}"])))
     prompt = ChatPromptTemplate.from_messages(messages)
     if method:
-        return prompt | chat_model.with_structured_output(VerifierVerdictPayload, method=method)
-    return prompt | chat_model.with_structured_output(VerifierVerdictPayload)
+        return prompt | chat_model.with_structured_output(VerifierVerdictPayload, method=method, include_raw=True)
+    return prompt | chat_model.with_structured_output(VerifierVerdictPayload, include_raw=True)
 
 
 def build_langchain_adjudication_chain(chat_model: Any, *, method: str = "") -> Any:
@@ -2132,8 +2187,8 @@ def build_langchain_adjudication_chain(chat_model: Any, *, method: str = "") -> 
     messages.append(("human", "\n".join([*user_lines, "{adjudication_payload}"])))
     prompt = ChatPromptTemplate.from_messages(messages)
     if method:
-        return prompt | chat_model.with_structured_output(AdjudicationPayload, method=method)
-    return prompt | chat_model.with_structured_output(AdjudicationPayload)
+        return prompt | chat_model.with_structured_output(AdjudicationPayload, method=method, include_raw=True)
+    return prompt | chat_model.with_structured_output(AdjudicationPayload, include_raw=True)
 
 
 def build_langchain_legal_intent_pair_judge_chain(chat_model: Any, *, method: str = "") -> Any:
@@ -2161,8 +2216,8 @@ def build_langchain_legal_intent_pair_judge_chain(chat_model: Any, *, method: st
     messages.append(("human", "\n".join([*user_lines, "{pair_payload}"])))
     prompt = ChatPromptTemplate.from_messages(messages)
     if method:
-        return prompt | chat_model.with_structured_output(LegalIntentPairDecisionPayload, method=method)
-    return prompt | chat_model.with_structured_output(LegalIntentPairDecisionPayload)
+        return prompt | chat_model.with_structured_output(LegalIntentPairDecisionPayload, method=method, include_raw=True)
+    return prompt | chat_model.with_structured_output(LegalIntentPairDecisionPayload, include_raw=True)
 
 
 def build_langchain_deepseek_adjudication_chain(chat_model: Any, *, method: str = "") -> Any:
@@ -2864,9 +2919,17 @@ def build_tg_qa_legal_intent_pair_benchmark(
     """Build stable legal-intent pair benchmark records from canonical questions."""
 
     evidence_records = [
-        item for item in _read_jsonl(canonicalization_evidence_path) if _included_canonical_evidence(item)
+        _legal_intent_source_evidence_record(item)
+        for item in _read_jsonl(canonicalization_evidence_path)
+        if _included_canonical_evidence(item)
     ]
     evidence_by_id = {str(item.get("canonicalization_evidence_id", "")): item for item in evidence_records}
+    evidence_by_task_id = {
+        str(item.get("task_id", "")): item for item in evidence_records if str(item.get("task_id", ""))
+    }
+    evidence_by_candidate_id = {
+        str(item.get("candidate_id", "")): item for item in evidence_records if str(item.get("candidate_id", ""))
+    }
     pairs: dict[str, dict[str, Any]] = {}
 
     for group in _group_records(evidence_records, key_func=lambda item: str(item.get("legal_issue_frame_slug", ""))):
@@ -2893,7 +2956,12 @@ def build_tg_qa_legal_intent_pair_benchmark(
 
     if similarity_pairs_path:
         for raw_pair in _read_jsonl(similarity_pairs_path):
-            left, right = _similarity_pair_evidence(raw_pair, evidence_by_id)
+            left, right = _similarity_pair_evidence(
+                raw_pair,
+                evidence_by_id=evidence_by_id,
+                evidence_by_task_id=evidence_by_task_id,
+                evidence_by_candidate_id=evidence_by_candidate_id,
+            )
             if not left or not right:
                 continue
             reasons = _as_string_list(raw_pair.get("pair_source_reasons", raw_pair.get("reasons", [])))
@@ -3249,10 +3317,13 @@ def run_tg_qa_legal_intent_pair_judge_batch(
                 candidates_by_evidence_id=candidates_by_evidence_id,
             )
             attempts_used = 0
+            item_started = perf_counter()
+            last_raw_result: Any = None
             while True:
                 attempts_used += 1
                 try:
                     raw_result = runner.invoke({"pair_payload": _json_for_prompt(compact_payload)})
+                    last_raw_result = raw_result
                     record = _legal_intent_pair_judge_record_from_structured_output(
                         raw_result,
                         pair,
@@ -3297,6 +3368,14 @@ def run_tg_qa_legal_intent_pair_judge_batch(
                         model_id=model_id,
                     )
                     break
+            record = _attach_runtime_metadata(
+                record,
+                _operator_record_runtime_metadata(
+                    last_raw_result,
+                    request_duration_seconds=perf_counter() - item_started,
+                    attempts_used=attempts_used,
+                ),
+            )
             counts[str(record.get("status", "failed"))] += 1
             records.append(record)
             _write_jsonl_stream_record(output_handle, record)
@@ -3372,6 +3451,7 @@ def run_tg_qa_legal_intent_pair_judge_batch(
         "prompt_version": LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION,
         "trust_boundary": "llm_pair_judge_results_are_review_evidence_only",
     }
+    summary.update(_operator_runtime_summary(records))
     _write_json(summary_output_path, summary)
     return {"results": records, "summary": summary}
 
@@ -3624,6 +3704,22 @@ def _legal_intent_pair_id(left_evidence_id: str, right_evidence_id: str) -> str:
     return _stable_id("tg-legal-intent-pair", left, right)
 
 
+def _legal_intent_source_evidence_record(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    record = dict(evidence)
+    evidence_id = str(record.get("canonicalization_evidence_id", ""))
+    if not evidence_id:
+        evidence_id = str(record.get("dataset_record_id", ""))
+    if not evidence_id:
+        evidence_id = _stable_id(
+            "tg-question-canonicalization-evidence",
+            str(record.get("canonicalization_run_id", "")),
+            str(record.get("task_id", "")),
+            str(record.get("candidate_id", "")),
+        )
+    record["canonicalization_evidence_id"] = evidence_id
+    return record
+
+
 def _ordered_pair_evidence(left: Mapping[str, Any], right: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     left_id = str(left.get("canonicalization_evidence_id", ""))
     right_id = str(right.get("canonicalization_evidence_id", ""))
@@ -3711,21 +3807,60 @@ def _merge_legal_intent_pair(pairs: dict[str, dict[str, Any]], pair: Mapping[str
 
 def _similarity_pair_evidence(
     raw_pair: Mapping[str, Any],
+    *,
     evidence_by_id: Mapping[str, Mapping[str, Any]],
+    evidence_by_task_id: Mapping[str, Mapping[str, Any]],
+    evidence_by_candidate_id: Mapping[str, Mapping[str, Any]],
 ) -> tuple[Mapping[str, Any] | None, Mapping[str, Any] | None]:
-    left_id = str(
+    left_raw = raw_pair.get("left", {})
+    right_raw = raw_pair.get("right", {})
+    left = _similarity_pair_side_evidence(
+        raw_pair,
+        left_raw if isinstance(left_raw, Mapping) else {},
+        side="left",
+        evidence_by_id=evidence_by_id,
+        evidence_by_task_id=evidence_by_task_id,
+        evidence_by_candidate_id=evidence_by_candidate_id,
+    )
+    right = _similarity_pair_side_evidence(
+        raw_pair,
+        right_raw if isinstance(right_raw, Mapping) else {},
+        side="right",
+        evidence_by_id=evidence_by_id,
+        evidence_by_task_id=evidence_by_task_id,
+        evidence_by_candidate_id=evidence_by_candidate_id,
+    )
+    return left, right
+
+
+def _similarity_pair_side_evidence(
+    raw_pair: Mapping[str, Any],
+    side_payload: Mapping[str, Any],
+    *,
+    side: str,
+    evidence_by_id: Mapping[str, Mapping[str, Any]],
+    evidence_by_task_id: Mapping[str, Mapping[str, Any]],
+    evidence_by_candidate_id: Mapping[str, Mapping[str, Any]],
+) -> Mapping[str, Any] | None:
+    opposite = "target" if side == "right" else "source"
+    evidence_id = str(
         raw_pair.get(
-            "left_canonicalization_evidence_id",
-            raw_pair.get("left_id", raw_pair.get("source_canonicalization_evidence_id", "")),
+            f"{side}_canonicalization_evidence_id",
+            raw_pair.get(
+                f"{side}_id",
+                raw_pair.get(f"{opposite}_canonicalization_evidence_id", side_payload.get("canonicalization_evidence_id", "")),
+            ),
         )
     )
-    right_id = str(
-        raw_pair.get(
-            "right_canonicalization_evidence_id",
-            raw_pair.get("right_id", raw_pair.get("target_canonicalization_evidence_id", "")),
-        )
-    )
-    return evidence_by_id.get(left_id), evidence_by_id.get(right_id)
+    if evidence_id and evidence_id in evidence_by_id:
+        return evidence_by_id[evidence_id]
+    task_id = str(side_payload.get("task_id", raw_pair.get(f"{side}_task_id", "")))
+    if task_id and task_id in evidence_by_task_id:
+        return evidence_by_task_id[task_id]
+    candidate_id = str(side_payload.get("candidate_id", raw_pair.get(f"{side}_candidate_id", "")))
+    if candidate_id and candidate_id in evidence_by_candidate_id:
+        return evidence_by_candidate_id[candidate_id]
+    return None
 
 
 def _similarity_evidence_from_pair(raw_pair: Mapping[str, Any]) -> dict[str, Any]:
@@ -3753,14 +3888,19 @@ def _legal_intent_embedding_vectors_by_evidence_role(
         if str(record.get("embedding_status", "")) != "completed":
             continue
         evidence_id = str(record.get("canonicalization_evidence_id", ""))
+        candidate_id = str(record.get("candidate_id", ""))
         text_role = str(record.get("text_role", ""))
         vector = record.get("vector", [])
-        if not evidence_id or not text_role or not isinstance(vector, Sequence) or isinstance(vector, (str, bytes)):
+        if not text_role or not isinstance(vector, Sequence) or isinstance(vector, (str, bytes)):
             continue
         try:
-            vectors[(evidence_id, text_role)] = [float(value) for value in vector]
+            normalized_vector = [float(value) for value in vector]
         except (TypeError, ValueError):
             continue
+        if evidence_id:
+            vectors[(evidence_id, text_role)] = normalized_vector
+        if candidate_id:
+            vectors[(f"candidate:{candidate_id}", text_role)] = normalized_vector
     return vectors
 
 
@@ -3771,8 +3911,10 @@ def _recos_for_pair_role(
 ) -> float | None:
     left_id = str(pair.get("left_canonicalization_evidence_id", ""))
     right_id = str(pair.get("right_canonicalization_evidence_id", ""))
-    left = embedding_vectors.get((left_id, text_role))
-    right = embedding_vectors.get((right_id, text_role))
+    left_candidate_id = str(pair.get("left_candidate_id", ""))
+    right_candidate_id = str(pair.get("right_candidate_id", ""))
+    left = embedding_vectors.get((left_id, text_role)) or embedding_vectors.get((f"candidate:{left_candidate_id}", text_role))
+    right = embedding_vectors.get((right_id, text_role)) or embedding_vectors.get((f"candidate:{right_candidate_id}", text_role))
     if left is None or right is None:
         return None
     return _recos_score(left, right)
@@ -4366,7 +4508,7 @@ def _legal_intent_pair_judge_record_from_structured_output(
     backend: str,
     model_id: str,
 ) -> dict[str, Any]:
-    payload = raw_result.model_dump() if hasattr(raw_result, "model_dump") else _extract_result_payload(dict(raw_result))
+    payload = _extract_result_payload(_structured_output_payload(raw_result))
     pair_id = str(pair.get("pair_id", ""))
     payload["pair_id"] = str(payload.get("pair_id", "")) or pair_id
     payload["decision_source"] = str(payload.get("decision_source", "")) or judge_run_id
@@ -4483,7 +4625,11 @@ def _legal_intent_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
   <select id="filter">
     <option value="all">all</option>
     <option value="undecided">undecided</option>
-    <option value="hard">hard negatives</option>
+    <option value="source-hard">source hard pairs</option>
+    <option value="not-different">not different</option>
+    <option value="same-or-duplicate">same/duplicate</option>
+    <option value="related-or-uncertain">related/uncertain</option>
+    <option value="random-control">random control</option>
   </select>
   <button id="export" class="primary">Export JSONL</button>
 </header>
@@ -4499,8 +4645,15 @@ function chips(values) {{
 function filtered() {{
   return cards.filter(card => {{
     const current = decisions.get(card.pair_id);
+    const reasons = (card.pair_source_reasons || []).map(v => String(v));
+    const modelClasses = (card.decisions || []).map(d => String(d.pair_class || '')).filter(Boolean);
+    const visibleClasses = current && current.pair_class ? [current.pair_class] : modelClasses;
     if (filter === 'undecided') return !current || !current.pair_class;
-    if (filter === 'hard') return (card.pair_source_reasons || []).some(v => String(v).includes('negative')) || Number((card.similarity_evidence || {{}}).canonical_question_score || 0) >= 0.85;
+    if (filter === 'source-hard') return reasons.some(v => v !== 'random_negative');
+    if (filter === 'not-different') return visibleClasses.some(v => v && v !== 'different');
+    if (filter === 'same-or-duplicate') return visibleClasses.some(v => ['exact_duplicate', 'same_legal_intent'].includes(v));
+    if (filter === 'related-or-uncertain') return visibleClasses.some(v => ['same_topic_different_issue', 'related_context', 'uncertain'].includes(v));
+    if (filter === 'random-control') return reasons.includes('random_negative');
     return true;
   }});
 }}
@@ -5661,6 +5814,21 @@ def _adjudication_verifier_vote_entry(
     }
 
 
+def _field_scope_review_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Repeat only the candidate fields that models often confuse with source text."""
+
+    return {
+        "candidate_key": str(candidate.get("candidate_key", "")),
+        "status": str(candidate.get("status", "")),
+        "exclusion_reason": str(candidate.get("exclusion_reason", "")),
+        "canonical_question_under_review": str(candidate.get("canonical_question", "")),
+        "legal_issue_frame_under_review": str(candidate.get("legal_issue_frame", "")),
+        "facts_under_review": _as_string_list(candidate.get("facts", [])),
+        "hidden_issues_under_review": _as_string_list(candidate.get("hidden_issues", [])),
+        "quality_flags_under_review": _as_string_list(candidate.get("quality_flags", [])),
+    }
+
+
 def _candidate_signature_for_adjudication(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
     status = str(candidate.get("status", ""))
     if status != "completed":
@@ -5925,14 +6093,6 @@ def _retry_consensus_triage(
             ),
         }
 
-    signatures = {_retry_reason_signature(result) for result in adjudication_results}
-    if len(signatures) > 1:
-        return {
-            "route": "human_review_before_retry",
-            "reason_code": "retry_consensus_but_reason_disagreement",
-            "reason_signatures": [list(signature) for signature in sorted(signatures)],
-        }
-
     bad_fields = sorted(
         {
             field
@@ -5940,14 +6100,8 @@ def _retry_consensus_triage(
             for field in _as_string_list(result.get("bad_fields", []))
         }
     )
+    signatures = {_retry_reason_signature(result) for result in adjudication_results}
     blocking_fields = [field for field in bad_fields if field in AUTO_RETRY_BLOCKING_BAD_FIELDS]
-    if blocking_fields:
-        return {
-            "route": "human_review_before_retry",
-            "reason_code": "retry_touches_core_routing_fields",
-            "blocking_bad_fields": blocking_fields,
-        }
-
     verifier_bad_fields = sorted(
         {
             field
@@ -5959,11 +6113,14 @@ def _retry_consensus_triage(
     verifier_blocking_fields = [
         field for field in verifier_bad_fields if field in AUTO_RETRY_BLOCKING_BAD_FIELDS
     ]
-    if verifier_blocking_fields:
+    if len(signatures) > 1 or blocking_fields or verifier_blocking_fields:
         return {
-            "route": "human_review_before_retry",
-            "reason_code": "verifier_retry_touches_core_routing_fields",
-            "blocking_bad_fields": verifier_blocking_fields,
+            "route": "auto_retry",
+            "reason_code": "retry_consensus_with_cautions",
+            "bad_fields": bad_fields,
+            "reason_signatures": [list(signature) for signature in sorted(signatures)],
+            "blocking_bad_fields": blocking_fields,
+            "verifier_blocking_bad_fields": verifier_blocking_fields,
         }
 
     return {
@@ -6476,6 +6633,234 @@ def _json_for_prompt(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
 
+def _review_payload_for_prompt(payload: Mapping[str, Any]) -> str:
+    """Place candidate field scope after all source text and review reasons."""
+
+    field_scope = payload.get("field_scope_review", {})
+    if not isinstance(field_scope, Mapping) or not field_scope:
+        return _json_for_prompt(payload)
+    return (
+        f"{_json_for_prompt(payload)}\n\n"
+        "FINAL FIELD-SCOPE REVIEW: use this block to verify what text is actually inside candidate fields.\n"
+        f"{json.dumps(field_scope, ensure_ascii=False, indent=2, sort_keys=False)}"
+    )
+
+
+def _raw_message_text_blocks(raw_message: Any) -> list[str]:
+    content = getattr(raw_message, "content", None)
+    if isinstance(content, str):
+        return [content]
+    if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+        return []
+    blocks: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            blocks.append(block)
+            continue
+        if not isinstance(block, Mapping):
+            continue
+        if block.get("type") != "text":
+            continue
+        text = block.get("text")
+        if isinstance(text, str) and text.strip():
+            blocks.append(text)
+    return blocks
+
+
+def _extract_json_object_from_text(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        stripped = fenced.group(1).strip()
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, Mapping):
+            return dict(value)
+    return None
+
+
+def _structured_output_payload_from_raw_message(raw_message: Any) -> dict[str, Any] | None:
+    for text in _raw_message_text_blocks(raw_message):
+        payload = _extract_json_object_from_text(text)
+        if payload is not None:
+            return payload
+    return None
+
+
+def _structured_output_payload(raw_result: Any) -> dict[str, Any]:
+    if isinstance(raw_result, Mapping) and "parsed" in raw_result:
+        parsing_error = raw_result.get("parsing_error")
+        if parsing_error:
+            raise ValueError(f"structured_output_parsing_error:{_sanitize_operator_error_text(str(parsing_error))}")
+        parsed = raw_result.get("parsed")
+        if parsed is None:
+            fallback_payload = _structured_output_payload_from_raw_message(raw_result.get("raw"))
+            if fallback_payload is not None:
+                return fallback_payload
+            raise ValueError("structured_output_missing_parsed_payload")
+        if isinstance(parsed, BaseModel):
+            return parsed.model_dump()
+        if isinstance(parsed, Mapping):
+            return dict(parsed)
+        raise ValueError(f"structured_output_unsupported_parsed_type:{type(parsed).__name__}")
+    if isinstance(raw_result, BaseModel):
+        return raw_result.model_dump()
+    if isinstance(raw_result, Mapping):
+        return dict(raw_result)
+    raise ValueError(f"structured_output_unsupported_type:{type(raw_result).__name__}")
+
+
+def _langchain_raw_message(raw_result: Any) -> Any:
+    if isinstance(raw_result, Mapping):
+        return raw_result.get("raw")
+    return None
+
+
+def _safe_int_value(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    try:
+        return int(str(value))
+    except ValueError:
+        return None
+
+
+def _first_int_value(*values: Any) -> int | None:
+    for value in values:
+        parsed = _safe_int_value(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _llm_usage_metadata_from_structured_output(raw_result: Any) -> dict[str, Any]:
+    raw_message = _langchain_raw_message(raw_result)
+    if raw_message is None:
+        return {}
+    usage_metadata = getattr(raw_message, "usage_metadata", None)
+    response_metadata = getattr(raw_message, "response_metadata", None)
+    usage = usage_metadata if isinstance(usage_metadata, Mapping) else {}
+    response = response_metadata if isinstance(response_metadata, Mapping) else {}
+    token_usage = response.get("token_usage", {})
+    if not isinstance(token_usage, Mapping):
+        token_usage = response.get("usage", {})
+    if not isinstance(token_usage, Mapping):
+        token_usage = {}
+    completion_details = token_usage.get("completion_tokens_details", {})
+    if not isinstance(completion_details, Mapping):
+        completion_details = {}
+    output_details = usage.get("output_token_details", {})
+    if not isinstance(output_details, Mapping):
+        output_details = {}
+
+    normalized: dict[str, Any] = {}
+    input_tokens = _first_int_value(usage.get("input_tokens"), token_usage.get("prompt_tokens"))
+    output_tokens = _first_int_value(usage.get("output_tokens"), token_usage.get("completion_tokens"))
+    total_tokens = _first_int_value(usage.get("total_tokens"), token_usage.get("total_tokens"))
+    reasoning_tokens = _first_int_value(
+        output_details.get("reasoning"),
+        output_details.get("reasoning_tokens"),
+        completion_details.get("reasoning_tokens"),
+    )
+    if input_tokens is not None:
+        normalized["input_tokens"] = input_tokens
+    if output_tokens is not None:
+        normalized["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        normalized["total_tokens"] = total_tokens
+    if reasoning_tokens is not None:
+        normalized["reasoning_tokens"] = reasoning_tokens
+    if normalized:
+        sources: list[str] = []
+        if usage:
+            sources.append("langchain_usage_metadata")
+        if token_usage:
+            sources.append("response_metadata_token_usage")
+        normalized["usage_source"] = "+".join(sources) if sources else "unknown"
+    return normalized
+
+
+def _operator_record_runtime_metadata(
+    raw_result: Any,
+    *,
+    request_duration_seconds: float,
+    attempts_used: int,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "request_duration_seconds": round(max(request_duration_seconds, 0.0), 3),
+        "attempts_used": attempts_used,
+    }
+    usage = _llm_usage_metadata_from_structured_output(raw_result)
+    if usage:
+        metadata.update(usage)
+        metadata["llm_usage_available"] = True
+    else:
+        metadata["llm_usage_available"] = False
+    return metadata
+
+
+def _attach_runtime_metadata(record: dict[str, Any], metadata: Mapping[str, Any]) -> dict[str, Any]:
+    existing = record.get("runtime_metadata", {})
+    merged = dict(existing) if isinstance(existing, Mapping) else {}
+    merged.update(dict(metadata))
+    record["runtime_metadata"] = merged
+    return record
+
+
+def _operator_runtime_summary(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    metadata_items = [
+        item.get("runtime_metadata", {})
+        for item in records
+        if isinstance(item.get("runtime_metadata", {}), Mapping)
+    ]
+    durations = [
+        float(metadata.get("request_duration_seconds", 0.0))
+        for metadata in metadata_items
+        if _safe_int_value(metadata.get("request_duration_seconds")) is not None or metadata.get("request_duration_seconds") not in {None, ""}
+    ]
+    usage_items = [metadata for metadata in metadata_items if _bool_value(metadata.get("llm_usage_available", False))]
+    summary: dict[str, Any] = {
+        "runtime_metadata_record_count": len(metadata_items),
+        "usage_metadata_record_count": len(usage_items),
+    }
+    if durations:
+        summary.update(
+            {
+                "request_duration_seconds_total": round(sum(durations), 3),
+                "request_duration_seconds_avg": round(sum(durations) / len(durations), 3),
+                "request_duration_seconds_max": round(max(durations), 3),
+            }
+        )
+    for field_name in ("input_tokens", "output_tokens", "total_tokens", "reasoning_tokens"):
+        values = [
+            _safe_int_value(metadata.get(field_name))
+            for metadata in usage_items
+            if _safe_int_value(metadata.get(field_name)) is not None
+        ]
+        if values:
+            summary[f"{field_name}_total"] = sum(value for value in values if value is not None)
+            summary[f"{field_name}_avg"] = round(
+                sum(value for value in values if value is not None) / len(values),
+                3,
+            )
+            summary[f"{field_name}_record_count"] = len(values)
+    return summary
+
+
 def _build_openai_canonicalization_chain(
     *,
     endpoint_url: str,
@@ -6503,6 +6888,51 @@ def _build_openai_canonicalization_chain(
     return build_langchain_canonicalization_chain(model, method=structured_output_method)
 
 
+def _build_canonicalization_chain(
+    *,
+    provider: str,
+    endpoint_url: str,
+    model_id: str,
+    timeout_seconds: int,
+    max_tokens: int,
+    structured_output_method: str,
+    api_key_env: str,
+    extra_body: Mapping[str, Any] | None,
+) -> Any:
+    api_key = _api_key_from_env(api_key_env) or "not-needed"
+    if provider == "anthropic":
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError as exc:  # pragma: no cover - optional operator dependency
+            raise RuntimeError("Install the operator-llm optional dependencies to run live canonicalization.") from exc
+        normalized_base_url = endpoint_url.rstrip("/")
+        if normalized_base_url.endswith("/v1/messages"):
+            normalized_base_url = normalized_base_url[: -len("/v1/messages")]
+        elif normalized_base_url.endswith("/messages"):
+            normalized_base_url = normalized_base_url[: -len("/messages")]
+        model_kwargs: dict[str, Any] = {}
+        if isinstance(extra_body, Mapping) and isinstance(extra_body.get("thinking"), Mapping):
+            model_kwargs["thinking"] = dict(extra_body["thinking"])
+        model = ChatAnthropic(
+            model=model_id,
+            base_url=normalized_base_url,
+            api_key=api_key,
+            timeout=timeout_seconds,
+            max_tokens=max_tokens,
+            **model_kwargs,
+        )
+        return build_langchain_canonicalization_chain(model, method=structured_output_method)
+    return _build_openai_canonicalization_chain(
+        endpoint_url=endpoint_url,
+        model_id=model_id,
+        timeout_seconds=timeout_seconds,
+        max_tokens=max_tokens,
+        structured_output_method=structured_output_method,
+        api_key_env=api_key_env,
+        extra_body=extra_body,
+    )
+
+
 def _build_verifier_chain(
     *,
     provider: str,
@@ -6525,12 +6955,16 @@ def _build_verifier_chain(
             normalized_base_url = normalized_base_url[: -len("/v1/messages")]
         elif normalized_base_url.endswith("/messages"):
             normalized_base_url = normalized_base_url[: -len("/messages")]
+        model_kwargs: dict[str, Any] = {}
+        if isinstance(extra_body, Mapping) and isinstance(extra_body.get("thinking"), Mapping):
+            model_kwargs["thinking"] = dict(extra_body["thinking"])
         model = ChatAnthropic(
             model=model_id,
             base_url=normalized_base_url,
             api_key=api_key,
             timeout=timeout_seconds,
             max_tokens=max_tokens,
+            **model_kwargs,
         )
         return build_langchain_verifier_chain(model, method=structured_output_method)
     try:
@@ -6703,7 +7137,7 @@ def _canonicalization_record_from_structured_output(
     backend: str,
     model_id: str,
 ) -> dict[str, Any]:
-    payload = raw_result.model_dump() if isinstance(raw_result, BaseModel) else dict(raw_result)
+    payload = _structured_output_payload(raw_result)
     payload["task_id"] = str(payload.get("task_id", "")) or str(batch_item.get("task_id", ""))
     payload["task_scope"] = str(payload.get("task_scope", "")) or str(batch_item.get("task_scope", "question_candidate"))
     payload["candidate_id"] = str(payload.get("candidate_id", "")) or str(batch_item.get("candidate_id", ""))
@@ -6763,25 +7197,39 @@ def _operator_failed_canonicalization_record(
 
 
 def _compact_verifier_llm_payload(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    qwen_payload = {
+        "candidate_key": "qwen",
+        "status": str(evidence.get("status", "")),
+        "canonical_question": str(evidence.get("canonical_question", "")),
+        "legal_issue_frame": str(evidence.get("legal_issue_frame", "")),
+        "facts": _as_string_list(evidence.get("facts", [])),
+        "hidden_issues": _as_string_list(evidence.get("hidden_issues", [])),
+        "quality_flags": _as_string_list(evidence.get("quality_flags", [])),
+        "exclusion_reason": str(evidence.get("exclusion_reason", "")),
+    }
     payload = {
         "task_id": str(evidence.get("task_id", "")),
         "candidate_id": str(evidence.get("candidate_id", "")),
         "source_question_text_redacted": str(evidence.get("source_question_text_redacted", "")),
         "qwen": {
-            "canonical_question": str(evidence.get("canonical_question", "")),
+            "canonical_question": qwen_payload["canonical_question"],
             "canonical_question_language": str(evidence.get("canonical_question_language", "")),
-            "legal_issue_frame": str(evidence.get("legal_issue_frame", "")),
+            "legal_issue_frame": qwen_payload["legal_issue_frame"],
             "legal_issue_frame_slug": str(evidence.get("legal_issue_frame_slug", "")),
             "law_area": str(evidence.get("law_area", "")),
-            "facts": _as_string_list(evidence.get("facts", [])),
+            "facts": qwen_payload["facts"],
             "desired_outcome": str(evidence.get("desired_outcome", "")),
             "authority_context": _as_string_list(evidence.get("authority_context", [])),
-            "hidden_issues": _as_string_list(evidence.get("hidden_issues", [])),
+            "hidden_issues": qwen_payload["hidden_issues"],
             "is_legal_answer_required": _bool_value(evidence.get("is_legal_answer_required", False)),
             "is_standalone_question": _bool_value(evidence.get("is_standalone_question", False)),
-            "exclusion_reason": str(evidence.get("exclusion_reason", "")),
+            "exclusion_reason": qwen_payload["exclusion_reason"],
             "confidence": str(evidence.get("confidence", "")),
-            "quality_flags": _as_string_list(evidence.get("quality_flags", [])),
+            "quality_flags": qwen_payload["quality_flags"],
+        },
+        "field_scope_review": {
+            "instruction": "Before marking canonical_question or legal_issue_frame as bad, check these candidate fields only; source text and verifier reasons are context, not the field text.",
+            "qwen": _field_scope_review_candidate(qwen_payload),
         },
         "local_validation": {"status": str(evidence.get("status", "")), "failure_reason": str(evidence.get("failure_reason", ""))},
     }
@@ -6816,6 +7264,14 @@ def _compact_adjudication_payload(batch_item: Mapping[str, Any]) -> dict[str, An
         "source_question_text_redacted": str(batch_item.get("source_question_text_redacted", "")),
         "candidates": [dict(item) for item in candidates if isinstance(item, Mapping)],
         "verifier_votes": [dict(item) for item in verifier_votes if isinstance(item, Mapping)],
+        "field_scope_review": {
+            "instruction": "Before repeating a verifier claim that canonical_question or legal_issue_frame merged source details, inspect these candidate fields only. Source text, facts, hidden_issues, quality_flags, and verifier reasons may mention intentionally omitted source details.",
+            "candidates": [
+                _field_scope_review_candidate(item)
+                for item in candidates
+                if isinstance(item, Mapping)
+            ],
+        },
         "consensus_summary": (
             dict(batch_item.get("consensus_summary", {}))
             if isinstance(batch_item.get("consensus_summary"), Mapping)
@@ -6847,12 +7303,7 @@ def _verifier_record_from_structured_output(
     backend: str,
     model_id: str,
 ) -> dict[str, Any]:
-    if raw_result is None:
-        payload: dict[str, Any] = {}
-    elif isinstance(raw_result, BaseModel):
-        payload = raw_result.model_dump()
-    else:
-        payload = dict(raw_result)
+    payload = _structured_output_payload(raw_result) if raw_result is not None else {}
     payload = _unwrap_structured_output_mapping(payload)
     verdict = VerifierVerdictPayload.model_validate(payload)
     record = verdict.model_dump()
@@ -6882,12 +7333,7 @@ def _adjudication_record_from_structured_output(
     backend: str,
     model_id: str,
 ) -> dict[str, Any]:
-    if raw_result is None:
-        payload: dict[str, Any] = {}
-    elif isinstance(raw_result, BaseModel):
-        payload = raw_result.model_dump()
-    else:
-        payload = dict(raw_result)
+    payload = _structured_output_payload(raw_result) if raw_result is not None else {}
     payload = _unwrap_structured_output_mapping(payload)
     if not str(payload.get("selected_candidate_key", "")).strip():
         candidates = batch_item.get("candidates", [])

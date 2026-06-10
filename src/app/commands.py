@@ -353,6 +353,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_llm_run_parser.add_argument("--max-items", type=int, default=0)
     tg_qa_canonical_llm_run_parser.add_argument("--timeout-seconds", type=int, default=180)
     tg_qa_canonical_llm_run_parser.add_argument("--max-tokens", type=int, default=1200)
+    tg_qa_canonical_llm_run_parser.add_argument("--provider", choices=["anthropic", "openai"], default="openai")
     tg_qa_canonical_llm_run_parser.add_argument(
         "--structured-output-method",
         choices=["function_calling", "json_mode", "json_schema"],
@@ -1210,6 +1211,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             timeout_seconds=args.timeout_seconds,
             max_tokens=args.max_tokens,
             structured_output_method=args.structured_output_method,
+            provider=args.provider,
             api_key_env=args.api_key_env,
             extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
             stop_on_failure=args.stop_on_failure,

@@ -1,0 +1,377 @@
+{
+  "prompt_version": "tg_question_canonicalization_adjudicator_v8_positive",
+  "system_instruction": "Adjudicate one escalated canonicalization record. Return exactly one valid json object only. Produce an adjudication decision only; leave the legal question unanswered and the source text unrevised. The payload may contain one or more candidate canonicalizations and one or more verifier votes per candidate. Models may disagree; compare the source text, candidate routing, law-area fit, standalone-vs-exclusion behavior, and verifier reasons before deciding. IMPORTANT GENERALIZED CANONICAL QUESTION: canonical_question should be a minimal reusable legal question, not a detailed paraphrase of the source. Abstract away city names, districts, local office names, personal locations, dates, and disputed factual rumors unless the specific place/date/office changes the legal rule being tested. Keep such concrete details in facts or hidden_issues when they help review. IMPORTANT ISSUE-FRAME ALIGNMENT: legal_issue_frame is a planning anchor for the abstract legal issue. Prefer a candidate whose canonical_question is an idiomatic question preserving the same abstract issue at a useful level of generality. Penalize non-idiomatic, literal, source-copied, mechanically translated, or overloaded questions when legal_issue_frame is clearer and more faithful. Secondary issues may belong in facts or hidden_issues instead of canonical_question. For example, a source asking whether a mother may register in Mannheim because her child lives there despite Baden-Wuerttemberg being allegedly closed should canonicalize to whether family ties can justify choosing the registration/allocation location despite distribution rules, not to a Mannheim-specific question. IMPORTANT DEFAULT CORPUS CONTEXT: this Telegram corpus concerns Ukrainian refugees in Germany and German law. Unless the source explicitly asks for another jurisdiction's law as the target, interpret unresolved deictic references such as here/there/у нас/тут/сюда/здесь as Germany and German legal status/procedure. Keep explicitly mentioned third countries such as Israel, Poland, or Ukraine as facts or hidden_issues about prior stay, documents, travel, or family location; treat them as the target jurisdiction only when the source explicitly asks for that jurisdiction's law. Example: if the source says people with Ukrainian passports are in Israel and asks whether they will be accepted here, the legal target is acceptance/protection in Germany, while Israel is prior/current third-country context. IMPORTANT LEGAL-OPERATIONAL BOUNDARY: legal context alone is insufficient for inclusion. Prefer exclusion for pure operational/logistics questions about office hours, addresses, website/app availability, appointment day confirmation, shopping locations, provider acceptance of a card/voucher/SIM/payment method, current service availability, whether a city/region/camp is currently accepting refugees/new arrivals, or ordinary processing/production/response/wait time for a document, card, application, appointment, letter, or authority reply. Prefer inclusion only when the source asks about a legal right, eligibility, obligation, legal deadline, status consequence, refusal/appeal, official procedure choice, appointment/application requirement for a legal status action, whether/where/how to apply for or renew a residence permit, Fiktionsbescheinigung, §24 status, visa, or other legal status document, mandatory reporting or arrival timing, travel/exit/re-entry restriction tied to status, personal re-admission/placement after prior departure or closed case, or whether an authority/private provider must accept legal status proof. Questions about whether an internet, telecom, mobile, or similar consumer service contract can be canceled, terminated, withdrawn from, challenged for poor service quality, impossible installation, forced bundling, misleading sales information, or unexpected billing should be treated as legal consumer-contract questions rather than pure provider logistics. A question asking whether a social benefit, payment, or other legal entitlement exists remains a legal question even if the likely answer is no or the claimed benefit is mythical; prefer inclusion with quality_flags such as nonexistent_entitlement rather than exclusion as non_legal_question. Treat questions about whether an appointment/application is procedurally required for a legal status document as legal procedure questions. Treat ordinary card/document/application/letter/authority-reply production or response time as operational wait-time unless the source asks for a legal time limit, rights while waiting, consequence, delay remedy, or refusal/appeal. IMPORTANT MIXED-QUERY BOUNDARY: for a mixed source with unrelated non-legal/operational content plus a legal question, prefer the candidate that extracts only the legal question and ignores unrelated logistics. Accept candidates that drop unrelated non-legal parts. Penalize candidates that merge mailbox, shopping, transport, office-hour, or other practical logistics into the legal canonical question. IMPORTANT FIELD-SCOPE CHECK: when judging whether canonical_question merged non-legal or operational details, inspect the candidate canonical_question text itself. Source text, facts, hidden_issues, quality_flags, and verifier reasons may mention operational details that were present in the source but intentionally omitted from canonical_question. Fail canonical_question or legal_issue_frame for language of instruction, study duration, office logistics, or similar details only when those details actually appear in the candidate canonical_question or distort the legal issue frame. If only facts or hidden_issues preserve source context, judge those fields directly instead of claiming the canonical question merged it. IMPORTANT SINGLE-QUESTION RULE: prefer a candidate whose canonical_question contains exactly one legal question. Penalize candidates that combine several distinct legal questions into one canonical question; keep only the central legal question and treat remaining legal sub-issues as facts or hidden issues when needed. For cross-border money transfers, sanctions, AML, or bank compliance, prefer financial_regulation or banking_compliance over asylum/migration_status when §24 is only background context. Repeat a verifier's claim that a candidate merged omitted source details only after checking the candidate canonical_question and legal_issue_frame themselves. Use verdict exactly as one of: pass, fail, uncertain. Use final_recommendation exactly as one of: accept, reject, retry_generator, human_review. Use selected_candidate_key when recommending accept or retry_generator, and leave it empty when recommending reject or human_review. For a one-candidate payload, selected_candidate_key must be that candidate_key when final_recommendation is accept or retry_generator. Routing semantics: final_recommendation=accept means accept the selected candidate as the final pipeline outcome; this includes a candidate that correctly excludes the source. final_recommendation=reject means no current candidate is acceptable as the final pipeline outcome. If a candidate is correctly excluded, accept that routing despite secondary fields such as law_area, confidence, quality_flags, is_standalone_question, or adjacent exclusion subtypes being imperfect. Secondary fields in excluded cases matter only when they show the source should be included or the exclusion routing is wrong. Exclusion subtype differences such as not_standalone_question vs rhetorical_or_complaint_only are lower priority than the include/exclude routing outcome. Use consistent verdict/recommendation pairs: pass with accept, fail with reject or retry_generator, uncertain with human_review unless a clearer route is justified. High confidence is allowed for correct excluded classifications. Standalone and legal-in-scope are separate concepts; a question may be standalone and still correctly excluded as non_legal_question or rhetorical_or_complaint_only.",
+  "user_prompt_lines": [
+    "Escalated canonicalization payload follows.",
+    "Choose the best current candidate when possible, otherwise reject, retry the generator, or send to human review.",
+    "If verifier votes are mixed, weigh their reasons against the source text rather than counting votes blindly.",
+    "Use field_scope_review as the final check for what text is actually inside each candidate field.",
+    "Return exactly one structured json object only."
+  ],
+  "few_shot_examples": [
+    {
+      "input": {
+        "task_id": "fixture:nonexistent-entitlement-adjudication",
+        "candidate_id": "fixture:candidate:entitlement",
+        "source_question_text_redacted": "Подскажите, пожалуйста, это правда, что в Германии беженцам на животного дают 300 €? То ли только на собаку?",
+        "candidates": [
+          {
+            "candidate_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "canonical_question": "",
+            "canonical_question_language": "ru",
+            "legal_issue_frame": "",
+            "legal_issue_frame_slug": "",
+            "law_area": "",
+            "facts": [],
+            "desired_outcome": "",
+            "authority_context": [],
+            "hidden_issues": [],
+            "is_legal_answer_required": false,
+            "is_standalone_question": true,
+            "exclusion_reason": "non_legal_question",
+            "confidence": "high",
+            "quality_flags": []
+          }
+        ],
+        "verifier_votes": [
+          {
+            "candidate_key": "qwen",
+            "verifier_key": "deepseek",
+            "model_id": "deepseek-v4-pro",
+            "status": "completed",
+            "verdict": "pass",
+            "confidence": 82,
+            "risk": "none",
+            "bad_fields": [],
+            "short_reason": "This is a factual myth-check rather than a legal rights question, so exclusion is correct.",
+            "suggested_action": "accept"
+          },
+          {
+            "candidate_key": "qwen",
+            "verifier_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "verdict": "fail",
+            "confidence": 92,
+            "risk": "low",
+            "bad_fields": [
+              "exclusion_reason",
+              "canonical_question",
+              "law_area"
+            ],
+            "short_reason": "The source asks whether a social-benefit entitlement exists. Even if the answer is no, this should be included as a legal question.",
+            "suggested_action": "retry_qwen"
+          }
+        ],
+        "consensus_summary": {
+          "unanimous": false,
+          "escalation_reason_codes": [
+            "verifier_disagreement",
+            "verifier_non_pass"
+          ],
+          "candidate_summaries": [
+            {
+              "candidate_key": "qwen",
+              "pass_count": 1,
+              "fail_count": 1,
+              "uncertain_count": 0,
+              "vote_count": 2
+            }
+          ]
+        },
+        "human_triage": {
+          "decision": "",
+          "decision_reason": "",
+          "reviewer_hash": ""
+        }
+      },
+      "output": {
+        "verdict": "fail",
+        "confidence": 94,
+        "risk": "low",
+        "bad_fields": [
+          "exclusion_reason",
+          "canonical_question",
+          "law_area"
+        ],
+        "short_reason": "The source asks whether a refugee social-benefit entitlement exists. A likely negative answer or mythical premise does not make it non-legal.",
+        "final_recommendation": "retry_generator",
+        "selected_candidate_key": "qwen"
+      }
+    },
+    {
+      "input": {
+        "task_id": "fixture:operational-office-hours",
+        "candidate_id": "fixture:candidate:1",
+        "source_question_text_redacted": "Работает ли Ausländerbehörde в воскресенье 8 декабря?",
+        "candidates": [
+          {
+            "candidate_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "canonical_question": "Работает ли Ausländerbehörde в воскресенье 8 декабря?",
+            "canonical_question_language": "ru",
+            "legal_issue_frame": "Verification of Ausländerbehörde operational hours on a Sunday",
+            "legal_issue_frame_slug": "verification_of_auslaenderbehoerde_operational_hours_on_a_sunday",
+            "law_area": "migration_status",
+            "facts": [
+              "appointment scheduled for Sunday 8 December"
+            ],
+            "desired_outcome": "confirm operational hours",
+            "authority_context": [
+              "Auslaenderbehorde"
+            ],
+            "hidden_issues": [
+              "time-sensitive operational office hours"
+            ],
+            "is_legal_answer_required": true,
+            "is_standalone_question": true,
+            "exclusion_reason": "none",
+            "confidence": "high",
+            "quality_flags": [
+              "requires_live_operational_data"
+            ]
+          }
+        ],
+        "verifier_votes": [
+          {
+            "candidate_key": "qwen",
+            "verifier_key": "deepseek",
+            "model_id": "deepseek-v4-pro",
+            "status": "completed",
+            "verdict": "fail",
+            "confidence": 91,
+            "risk": "medium",
+            "bad_fields": [
+              "is_legal_answer_required",
+              "law_area"
+            ],
+            "short_reason": "Source is a factual inquiry about office hours, not a legal question.",
+            "suggested_action": "retry_generator"
+          }
+        ],
+        "consensus_summary": {
+          "unanimous": false,
+          "escalation_reason_codes": [
+            "verifier_non_pass"
+          ],
+          "candidate_summaries": [
+            {
+              "candidate_key": "qwen",
+              "pass_count": 0,
+              "fail_count": 1,
+              "uncertain_count": 0,
+              "vote_count": 1
+            }
+          ]
+        },
+        "human_triage": {
+          "decision": "",
+          "decision_reason": "",
+          "reviewer_hash": ""
+        }
+      },
+      "output": {
+        "verdict": "fail",
+        "confidence": 93,
+        "risk": "medium",
+        "bad_fields": [
+          "is_legal_answer_required",
+          "law_area",
+          "exclusion_reason"
+        ],
+        "short_reason": "The source asks only about current office hours, so the legal framing is incorrect and the record should be excluded.",
+        "final_recommendation": "reject",
+        "selected_candidate_key": ""
+      }
+    },
+    {
+      "input": {
+        "task_id": "fixture:mixed-education-adjudication",
+        "candidate_id": "fixture:candidate:education",
+        "source_question_text_redacted": "По поводу учебы, можно ли беженцам пойти учиться в колледж или университет, выбрать направление? На каком языке преподают? Сколько лет учиться? Кто оплачивает учебу?",
+        "candidates": [
+          {
+            "candidate_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "canonical_question": "Имеют ли лица со статусом беженца право на поступление в колледж или университет, выбор направления обучения, и кто оплачивает учебу?",
+            "canonical_question_language": "ru",
+            "legal_issue_frame": "Refugee access to higher education and financial support eligibility",
+            "legal_issue_frame_slug": "refugee_access_to_higher_education_and_financial_support",
+            "law_area": "education",
+            "facts": [
+              "user has refugee status",
+              "interested in college or university education",
+              "source also asks about language requirements and duration"
+            ],
+            "desired_outcome": "clarify eligibility for higher education and funding sources for refugees",
+            "authority_context": [
+              "university",
+              "college"
+            ],
+            "hidden_issues": [
+              "eligibility for BAföG or other educational support",
+              "recognition of prior qualifications",
+              "language proficiency requirements for admission"
+            ],
+            "is_legal_answer_required": true,
+            "is_standalone_question": true,
+            "exclusion_reason": "none",
+            "confidence": "high",
+            "quality_flags": [
+              "mixed_with_non_legal_query"
+            ]
+          }
+        ],
+        "verifier_votes": [
+          {
+            "candidate_key": "qwen",
+            "verifier_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "verdict": "fail",
+            "confidence": 85,
+            "risk": "medium",
+            "bad_fields": [
+              "canonical_question",
+              "legal_issue_frame"
+            ],
+            "short_reason": "The canonicalization merges non-legal operational questions (language requirements, study duration) into the legal issue frame.",
+            "suggested_action": "retry_qwen"
+          },
+          {
+            "candidate_key": "qwen",
+            "verifier_key": "deepseek",
+            "model_id": "deepseek-v4-pro",
+            "status": "completed",
+            "verdict": "pass",
+            "confidence": 85,
+            "risk": "low",
+            "bad_fields": [
+              "quality_flags"
+            ],
+            "short_reason": "The source is a standalone legal question about refugee education rights and funding.",
+            "suggested_action": "accept"
+          }
+        ],
+        "consensus_summary": {
+          "unanimous": false,
+          "escalation_reason_codes": [
+            "verifier_fail"
+          ],
+          "candidate_summaries": [
+            {
+              "candidate_key": "qwen",
+              "pass_count": 1,
+              "fail_count": 1,
+              "uncertain_count": 0,
+              "vote_count": 2
+            }
+          ]
+        },
+        "human_triage": {
+          "decision": "",
+          "decision_reason": "",
+          "reviewer_hash": ""
+        }
+      },
+      "output": {
+        "verdict": "pass",
+        "confidence": 89,
+        "risk": "low",
+        "bad_fields": [],
+        "short_reason": "The candidate omits language and study-duration logistics from canonical_question; the contrary verifier reason repeats source details, not candidate text.",
+        "final_recommendation": "accept",
+        "selected_candidate_key": "qwen"
+      }
+    },
+    {
+      "input": {
+        "task_id": "fixture:family-ties-allocation-adjudication",
+        "candidate_id": "fixture:candidate:family-allocation",
+        "source_question_text_redacted": "Добрый день, помогите пожалуйста разобраться. Я проживаю в Коламбусе и моя мама хочет приехать ко мне и оформиться как беженец, но насколько я знаю, Баден-Вюртемберг закрыт для беженцев. Скажите, могут ли ей разрешить прописаться в Манхайме, потому что я здесь?",
+        "candidates": [
+          {
+            "candidate_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "canonical_question": "Может ли проситель защиты выбрать место регистрации или распределения из-за проживания там близкого родственника, несмотря на общие правила распределения?",
+            "canonical_question_language": "ru",
+            "legal_issue_frame": "Choice of asylum registration or allocation location based on close family ties",
+            "legal_issue_frame_slug": "choice_of_asylum_registration_or_allocation_location_based_on_close_family_ties",
+            "law_area": "migration_status",
+            "facts": [
+              "source mentions Mannheim and Baden-Wuerttemberg",
+              "user lives in the desired location",
+              "mother wants to arrive and seek protection",
+              "source repeats a rumor that the region is closed to refugees"
+            ],
+            "desired_outcome": "know whether family ties can affect registration or allocation location",
+            "authority_context": [
+              "initial_reception_center",
+              "Auslaenderbehoerde",
+              "BAMF"
+            ],
+            "hidden_issues": [
+              "allocation and residence-assignment rules",
+              "family-ties or hardship exception",
+              "distinction between legal allocation rules and current intake capacity",
+              "asylum versus temporary protection route ambiguity"
+            ],
+            "is_legal_answer_required": true,
+            "is_standalone_question": true,
+            "exclusion_reason": "none",
+            "confidence": "high",
+            "quality_flags": [
+              "generalized_from_local_context"
+            ]
+          }
+        ],
+        "verifier_votes": [
+          {
+            "candidate_key": "qwen",
+            "verifier_key": "qwen",
+            "model_id": "qwen3.6-plus",
+            "status": "completed",
+            "verdict": "pass",
+            "confidence": 92,
+            "risk": "none",
+            "bad_fields": [],
+            "short_reason": "Question correctly generalized from Mannheim to family ties and allocation rules.",
+            "suggested_action": "accept"
+          }
+        ],
+        "consensus_summary": {
+          "unanimous": true,
+          "escalation_reason_codes": [],
+          "candidate_summaries": [
+            {
+              "candidate_key": "qwen",
+              "pass_count": 1,
+              "fail_count": 0,
+              "uncertain_count": 0,
+              "vote_count": 1
+            }
+          ]
+        },
+        "human_triage": {
+          "decision": "",
+          "decision_reason": "",
+          "reviewer_hash": ""
+        }
+      },
+      "output": {
+        "verdict": "pass",
+        "confidence": 93,
+        "risk": "none",
+        "bad_fields": [],
+        "short_reason": "The candidate is a reusable legal question about family ties and allocation rules; local place names are preserved as facts rather than overfitting the canonical question.",
+        "final_recommendation": "accept",
+        "selected_candidate_key": "qwen"
+      }
+    }
+  ]
+}

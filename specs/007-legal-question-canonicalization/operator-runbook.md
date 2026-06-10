@@ -5,6 +5,148 @@ This runbook covers the live operator-managed contour for producing
 canonicalization batch. It is not a default test path and does not create
 trusted legal answers.
 
+Future answer-planning issues discovered during review are tracked in
+`specs/007-legal-question-canonicalization/future-inference-questions.md`.
+That backlog is not part of the current 007 execution path, but it preserves
+patterns that will matter when retrieval and chatbot inference are designed.
+
+Prompt-level lessons from repeated manual corrections are tracked in
+`specs/007-legal-question-canonicalization/prompt-lessons.md`, and human review
+conventions are tracked in
+`specs/007-legal-question-canonicalization/manual-review-notes.md`.
+The cumulative prompt-regression registry is tracked in
+`specs/007-legal-question-canonicalization/prompt-regression-cases.json`.
+Legal-intent pair review labels are explained in
+`specs/007-legal-question-canonicalization/legal-intent-pair-review-guide.ru.md`
+and
+`specs/007-legal-question-canonicalization/legal-intent-pair-review-guide.en.md`.
+
+## Cumulative Prompt-Regression Gate
+
+A prompt correction is incomplete until it has been checked against every
+previously retained regression case for that prompt family. Testing only the
+record that motivated the latest correction can hide regressions in rules added
+earlier.
+
+The tracked registry stores only task ids, lesson ids, expected semantic focus,
+and durable automatic invariants. It does not store raw private Telegram text.
+The builder resolves task ids against local ignored batch artifacts and writes a
+generated regression batch and manifest under `data/evaluation/`. It also fails
+when a real task found in a local historical `*smoke*batch.jsonl` artifact has
+not been added to the cumulative registry.
+
+The accepted baseline is model-specific and remains an ignored generated
+artifact. It is a comparison aid, not trusted legal evidence. Never compare a
+different model or materially different reasoning mode to the same accepted
+baseline without an explicit new baseline.
+
+Prepare the complete canonicalizer regression batch without making live calls:
+
+```bash
+PREFIX=real_data_007_prompt_regression_v11_positive_qwen36 \
+PROMPT_VERSION=tg_question_canonicalizer_v11_positive \
+bash tmp/run_007_cumulative_prompt_regression.sh prepare
+```
+
+Run and compare a candidate prompt:
+
+```bash
+PREFIX=real_data_007_prompt_regression_v11_positive_qwen36 \
+PROMPT_VERSION=tg_question_canonicalizer_v11_positive \
+bash tmp/run_007_cumulative_prompt_regression.sh full
+```
+
+The generated review HTML shows the accepted baseline and current output side
+by side. Manual review is required for the first baseline, every automatic
+failure, every semantic warning, and only the bounded sample of other semantic
+changes defined by the cost and stopping policy below. Quality-flag expectations
+are warnings unless the flag itself is part of a stable contract; the same
+meaning may be preserved correctly in `hidden_issues`. After the cumulative set
+passes the promotion gate, promote it explicitly:
+
+```bash
+PREFIX=real_data_007_prompt_regression_v11_positive_qwen36 \
+CONFIRM_PROMOTE=1 \
+bash tmp/run_007_cumulative_prompt_regression.sh promote-baseline
+```
+
+When manual review discovers a new generalizable prompt failure:
+
+1. Add the task id and expected invariant to
+   `prompt-regression-cases.json`.
+2. Add or update the generalized lesson in `prompt-lessons.md`.
+3. Apply the cost and stopping policy below before changing the prompt.
+4. Rerun the complete accumulated set only for a candidate that passed its
+   bounded smoke tests.
+5. Promote a new baseline only after reviewing all automatic failures and the
+   bounded semantic-change sample required below.
+
+## Cost And Stopping Policy
+
+The canonicalized dataset is a supporting evaluation artifact, not the primary
+product. Optimize for a sufficiently clean, auditable subset under a bounded
+operator budget. Completeness and perfect phrasing are explicitly not goals.
+
+Classify defects before spending another prompt iteration:
+
+- **critical**: changes included/excluded routing, selects the wrong central
+  legal proposition, invents or drops a material legal object/status/route,
+  violates a stable quality flag used for routing, or fails schema validation;
+- **non-critical**: awkward wording, harmless mixed-language phrasing,
+  evidence ordering, optional authority wording, or a detail that does not
+  change routing, legal intent, or downstream filtering.
+
+Use these hard limits:
+
+1. A new prompt rule requires either the same critical defect in at least three
+   independent records, at least a 2% critical-error rate in a representative
+   sample of 100 or more records, or one deterministic defect with clear
+   high-impact downstream routing consequences.
+2. A single record may be added to the regression registry, but it does not by
+   itself justify changing the prompt. Route isolated defects to residual
+   review or exclude them from dataset promotion.
+3. Spend at most two candidate prompt revisions on one defect class. Each
+   candidate gets one targeted smoke of at most ten records. If both revisions
+   fail, stop prompt work and use residual routing, deterministic validation,
+   or exclusion.
+4. Run the full cumulative regression set at most once for a candidate that
+   passed targeted smoke. A critical cumulative failure permits one final
+   targeted correction cycle; otherwise keep the previous baseline.
+5. Review every automatic failure and semantic warning. For other changed
+   semantic fields, manually inspect at most 20 records or 2% of the production
+   batch, whichever is smaller. Do not manually review every changed record.
+6. Unresolved or disputed records do not block the clean dataset. Keep them in
+   a separate residual/manual artifact and omit them from promotion.
+7. Stop processing additional corpus batches when the current clean subset is
+   sufficient for the active retrieval or evaluation experiment. Resume only
+   when a measured coverage gap requires more data.
+8. New few-shot examples require the same evidence threshold as a new rule.
+   Prefer replacing or consolidating an existing example over unbounded prompt
+   growth.
+
+Promotion gate for a frozen prompt:
+
+- zero provider or schema-validation failures in the cumulative run;
+- zero critical automatic-regression failures;
+- no new systematic critical defect in the bounded manual sample;
+- non-critical defects are documented or routed to residual review rather than
+  repaired through another prompt iteration.
+
+Current freeze decision: `tg_question_canonicalizer_v22_positive` passed its
+49-record cumulative regression and bounded manual sample on 2026-06-10. It is
+the accepted Qwen3.6 baseline and is frozen for this optimization cycle. Do not
+revise it for isolated wording defects; route those records to residual review
+or omit them from dataset promotion.
+
+Verifier and adjudicator regressions require stable review-stage inputs, not
+only the original source task. Until each such real input is captured, the
+field-scope fixtures retained in the registry are exercised with:
+
+```bash
+PREFIX=real_data_007_field_scope_<model> JUDGE=<model> \
+bash tmp/run_007_field_scope_smoke.sh run-both
+```
+
 ## Providers And Budget Assumptions
 
 - OpenCode Go is used for Qwen3.6 Plus normalization and DeepSeek V4 Pro
@@ -120,6 +262,8 @@ MiniMax-M2.7 verification receives only:
 
 - redacted source question;
 - Qwen normalized JSON;
+- a final `field_scope_review` snapshot that repeats the candidate fields under
+  review separately from source text and review reasons;
 - compact validation flags from code;
 - the verifier rubric.
 
@@ -128,6 +272,8 @@ DeepSeek V4 Pro adjudication receives only manually selected records:
 - redacted source question;
 - Qwen normalized JSON;
 - MiniMax verdict and short reason;
+- a final `field_scope_review` snapshot for checking claims about candidate
+  field contents;
 - human triage reason for escalation;
 - the adjudication rubric.
 
@@ -305,6 +451,32 @@ The model acts as an adjudicator, not a rewriter. It returns:
 
 Human review resolves all DeepSeek `uncertain` records and all conflicts between
 MiniMax and DeepSeek.
+
+When human review selects `retry_generator`, the human decision controls the
+route. The retry task must still preserve every available completed judge
+result, verifier vote, the previous candidate, and the human reason as
+corrective context. An empty human reason is acceptable when the retained judge
+reasons already explain the retry.
+
+## Strict Verifier Consensus Queues
+
+After a retry candidate is verified by two or more models, split the completed
+records by exact verifier consensus:
+
+- `unanimous_pass`: every completed verifier returns `pass`; retain as accepted
+  review evidence;
+- `unanimous_nonpass`: every completed verifier returns `fail` or `uncertain`;
+  retry the generator with all verifier reasons;
+- `non_unanimous`: at least one verifier returns `pass` and at least one returns
+  `fail` or `uncertain`; send to adjudication;
+- `incomplete`: any candidate or verifier result is missing or failed; keep in
+  the operational backlog.
+
+Use `tmp/split_007_verifier_consensus_queues.py` with repeated
+`--verifier name=path` arguments. The generated unanimous-nonpass retry batch
+preserves the previous candidate and every verifier vote as corrective context.
+The splitter supports a variable verifier count and does not assume a specific
+model ensemble.
 
 ## Final Merge
 

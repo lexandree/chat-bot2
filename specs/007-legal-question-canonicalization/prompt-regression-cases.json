@@ -1,0 +1,1021 @@
+{
+  "artifact_type": "tg_question_canonicalization_prompt_regression_registry",
+  "case_defaults": {
+    "automatic_checks": {
+      "forbid_cjk": true,
+      "max_canonical_question_marks": 1,
+      "status": "completed"
+    },
+    "manual_review_required_on_change": true
+  },
+  "cases": [
+    {
+      "automatic_checks": {
+        "recommended_any_quality_flags": [
+          "potentially_unlawful_arrangement",
+          "nonexistent_entitlement",
+          "fictitious_registration_risk"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-001-fictitious-registration-and-housing",
+      "expected_focus": "Preserve the fictitious residence or registration premise and the non-existent automatic housing entitlement.",
+      "lesson_ids": [
+        "PL-001"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:9128be47d294c4c1f450"
+    },
+    {
+      "automatic_checks": {
+        "required_any_quality_flags": [
+          "missing_legal_basis",
+          "potentially_unlawful_arrangement"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-002-stay-first-work-later",
+      "expected_focus": "Frame the proposed stay/work sequence as a missing legal basis and legal-risk question.",
+      "lesson_ids": [
+        "PL-001"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:a763836dd3425c7b2c56"
+    },
+    {
+      "automatic_checks": {
+        "recommended_any_quality_flags": [
+          "third_party_refuses_legal_status_proof"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-003-employer-refuses-automatic-extension",
+      "expected_focus": "Preserve the employer refusal and frame the issue as acceptance of general legal extension proof.",
+      "lesson_ids": [
+        "PL-002"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:a4c7963852779cb306db"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-004-general-residence-extension-procedure",
+      "expected_focus": "Keep a general residence-permit extension procedure question included without inventing a third-party refusal.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:bb78bd7c608842ac8c21"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_quality_flags": [
+          "third_party_refuses_legal_status_proof"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-005-expired-eid-online-procedure",
+      "expected_focus": "Keep an expired eID/AusweisApp legal-procedure question included without inventing a third-party refusal.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:a0e72a464217a2d9f698"
+    },
+    {
+      "automatic_checks": {
+        "required_any_canonical_question_terms": [
+          "вид на жительство",
+          "ВНЖ"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-006-single-main-question-residence-registration",
+      "expected_focus": "Keep one main legal question and move secondary registration details out of canonical_question.",
+      "lesson_ids": [
+        "PL-003",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:07394709c97ecde3e681"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-007-single-main-question-domain-boundary",
+      "expected_focus": "Keep one central legal issue and select the law area from the legal object rather than weak topic hints.",
+      "lesson_ids": [
+        "PL-003",
+        "PL-005"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:28d8f24b80290c7adca7"
+    },
+    {
+      "automatic_checks": {
+        "required_all_evidence_terms": [
+          "§24",
+          "asyl"
+        ],
+        "required_all_quality_flags": [
+          "mixed_with_non_legal_query"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-008-single-main-question-asyl-section24",
+      "expected_focus": "Keep one main legal question while preserving unresolved Asyl versus section 24 ambiguity.",
+      "lesson_ids": [
+        "PL-003",
+        "PL-008",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:36605c7aff7841dd4cdd"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_canonical_question_terms": [
+          "язык",
+          "финанс",
+          "оплач",
+          "направлен",
+          "выбор",
+          "программ",
+          "услов"
+        ],
+        "required_any_canonical_question_terms": [
+          "поступ",
+          "доступ",
+          "право"
+        ],
+        "required_all_quality_flags": [
+          "multiple_legal_questions",
+          "mixed_with_non_legal_query"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-009-single-main-question-education-field-scope",
+      "expected_focus": "Keep one main legal education question; do not reintroduce source-only operational sub-questions.",
+      "lesson_ids": [
+        "PL-003",
+        "PL-009",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:6f74dbd8a3aa123c1b5d"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-010-material-hidden-fact-a",
+      "expected_focus": "Retain the material hidden fact that changes the legal issue.",
+      "lesson_ids": [
+        "PL-004"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:e3b770e687da904e55a6"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-011-material-hidden-fact-b",
+      "expected_focus": "Retain the material hidden fact that changes the legal issue.",
+      "lesson_ids": [
+        "PL-004"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:f9aac53d0a80c80538ad"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-012-material-hidden-fact-c",
+      "expected_focus": "Retain the material hidden fact that changes the legal issue.",
+      "lesson_ids": [
+        "PL-004"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:1edf40e7edd6028ad0ce"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-013-material-hidden-fact-d",
+      "expected_focus": "Retain the material hidden fact that changes the legal issue.",
+      "lesson_ids": [
+        "PL-004"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:46695c482b641b454c45"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-014-domain-specific-law-area-a",
+      "expected_focus": "Choose the law area from the concrete legal object or authority, not broad Telegram topic hints.",
+      "lesson_ids": [
+        "PL-005"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:7861225eb6f2e7969cd6"
+    },
+    {
+      "automatic_checks": {
+        "allowed_law_areas": [
+          "customs_and_tax"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-015-domain-specific-law-area-b",
+      "expected_focus": "Choose the law area from the concrete legal object or authority, not broad Telegram topic hints.",
+      "lesson_ids": [
+        "PL-005",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:727f89d2d2d9234449ef"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-016-domain-specific-law-area-c",
+      "expected_focus": "Choose the law area from the concrete legal object or authority, not broad Telegram topic hints.",
+      "lesson_ids": [
+        "PL-005"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:942850b7a6ba64066cad"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-017-domain-specific-law-area-d",
+      "expected_focus": "Choose the law area from the concrete legal object or authority, not broad Telegram topic hints.",
+      "lesson_ids": [
+        "PL-005"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:7d033f4c0406a5f11479"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-018-domain-specific-law-area-e",
+      "expected_focus": "Choose the law area from the concrete legal object or authority, not broad Telegram topic hints.",
+      "lesson_ids": [
+        "PL-005"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:9d28951753e98c5ed2e0"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-019-germany-default-jurisdiction",
+      "expected_focus": "Treat Germany as the target jurisdiction unless another jurisdiction is explicitly requested.",
+      "lesson_ids": [
+        "PL-006"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:8412b1ff5c37895e4709"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-020-future-legal-trigger",
+      "expected_focus": "Include the legal consequence of a hypothetical end of the underlying conflict for an already granted status.",
+      "lesson_ids": [
+        "PL-011"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:27bde86910c8c3e7bb23"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:non_legal_question"
+      },
+      "case_id": "pr-021-live-operational-state-b",
+      "expected_focus": "Exclude a pure current operational state or capacity question.",
+      "lesson_ids": [
+        "PL-007"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:00eb8d1093bff40bfe70"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:non_legal_question"
+      },
+      "case_id": "pr-022-live-operational-state-c",
+      "expected_focus": "Exclude a pure current operational state or capacity question.",
+      "lesson_ids": [
+        "PL-007",
+        "PL-012"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:04d6da65cce23a6fba15"
+    },
+    {
+      "automatic_checks": {
+        "required_all_evidence_terms": [
+          "§24",
+          "asyl"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-023-asyl-section24-ambiguity",
+      "expected_focus": "Preserve unresolved Asyl versus section 24 ambiguity instead of silently selecting one route.",
+      "lesson_ids": [
+        "PL-008",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:095e4b46476f1ae97e13"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_reason_claims": [
+          "canonical_question contains language of instruction",
+          "canonical_question contains study duration"
+        ],
+        "status": "completed"
+      },
+      "case_id": "pr-024-verifier-field-scope",
+      "expected_focus": "Judge candidate fields separately from source-only operational details.",
+      "fixture_profile": "src/evaluation/prompt_profiles/tg_question_canonicalization_verifier_v8_positive.json",
+      "fixture_task_id": "fixture:mixed-education-source-legal-core",
+      "lesson_ids": [
+        "PL-009"
+      ],
+      "prompt_families": [
+        "verifier"
+      ],
+      "source_kind": "prompt_profile_fixture"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_reason_claims": [
+          "canonical_question contains language of instruction",
+          "canonical_question contains study duration"
+        ],
+        "status": "completed"
+      },
+      "case_id": "pr-025-adjudicator-field-scope",
+      "expected_focus": "Resolve votes using candidate fields rather than copying a verifier claim about source-only details.",
+      "fixture_profile": "src/evaluation/prompt_profiles/tg_question_canonicalization_adjudicator_v8_positive.json",
+      "fixture_task_id": "fixture:mixed-education-adjudication",
+      "lesson_ids": [
+        "PL-009"
+      ],
+      "prompt_families": [
+        "adjudicator"
+      ],
+      "source_kind": "prompt_profile_fixture"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-026-control-consumer-contract-poor-service",
+      "expected_focus": "Keep a consumer-contract termination question included as legal.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:04230717c49f5f4b0794"
+    },
+    {
+      "automatic_checks": {
+        "allowed_law_areas": [
+          "banking_compliance",
+          "consumer_banking",
+          "financial_regulation"
+        ],
+        "forbidden_quality_flags": [
+          "third_party_refuses_legal_status_proof"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-027-control-banking-law-area",
+      "expected_focus": "Keep the banking/compliance issue included and avoid selecting law area only from refugee context.",
+      "lesson_ids": [
+        "PL-010",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:0855ba449f60c588eb02"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-028-control-nonexistent-benefit",
+      "expected_focus": "Keep a question about whether a claimed benefit exists included as a legal entitlement question.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:1f3696ce142780f7df9c"
+    },
+    {
+      "automatic_checks": {
+        "required_all_quality_flags": [
+          "mixed_with_non_legal_query"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-029-control-mixed-legal-logistics",
+      "expected_focus": "Extract the legal question and leave unrelated practical logistics out of canonical_question.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:24fb2e6f4ac91b40db98"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-030-control-required-appointment-procedure",
+      "expected_focus": "Keep a question about whether an appointment is legally or procedurally required included.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:3fa30be0933f606aacbd"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:non_legal_question"
+      },
+      "case_id": "pr-031-control-ordinary-wait-time",
+      "expected_focus": "Exclude an ordinary processing or response wait-time question without a legal deadline or remedy.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:4dcbbe17b2f7e597c1b8"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-032-control-long-source-single-question",
+      "expected_focus": "Keep one central legal question from a source containing many sub-issues.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:4e9f8d846a433c3a1cfe"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-033-control-consumer-contract-impossible-installation",
+      "expected_focus": "Keep a consumer-contract termination question included as legal.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:5002f277b5b6ae0baf5b"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:non_legal_question"
+      },
+      "case_id": "pr-034-control-live-intake-capacity",
+      "expected_focus": "Exclude a current open, closed, or accepting-capacity question.",
+      "lesson_ids": [
+        "PL-010",
+        "PL-012"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:50fccf445151cf7c028d"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:not_standalone_question"
+      },
+      "case_id": "pr-035-control-answer-like-legal-topic",
+      "expected_focus": "Exclude a legal-topic explanation or clarification that lacks the source author's standalone request.",
+      "lesson_ids": [
+        "PL-010",
+        "PL-012"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:69be47c15a3a38a42201"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-036-control-simple-employment",
+      "expected_focus": "Keep a straightforward employment-law question included.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:86c2e4ded3b0c5677fae"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-037-control-arrival-reporting-timing",
+      "expected_focus": "Keep a legal or procedural arrival/reporting-timing question included rather than treating it as logistics.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:8dd3c08a5614db5b4956"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:non_legal_question"
+      },
+      "case_id": "pr-038-control-false-topic-hint",
+      "expected_focus": "Exclude a non-legal question even when topic hints suggest a legal domain.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:8e4492eddcad162175e5"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-039-control-mailbox-and-remittance",
+      "expected_focus": "Ignore the unrelated mailbox question and canonicalize only the legal cross-border remittance issue.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:9b4faa877a974acbecd4"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_quality_flags": [
+          "requires_live_operational_data"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-040-control-status-linked-travel",
+      "expected_focus": "Keep a travel, exit, or re-entry question tied to legal status included.",
+      "lesson_ids": [
+        "PL-010",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:a538b7a31f9c073ddb61"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-041-control-fictitious-registration",
+      "expected_focus": "Preserve the problematic or fictitious registration premise.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:b93730e9b401180b7e1d"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-042-control-personal-date",
+      "expected_focus": "Treat a personal timeline date as a case fact rather than live operational data.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:c25ee8314aa6baeffb4b"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:non_legal_question"
+      },
+      "case_id": "pr-043-control-card-production-time",
+      "expected_focus": "Exclude an ordinary residence-card production-time question without a legal deadline or remedy.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:c5c7805c20ca608a6243"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_canonical_question_terms": [
+          "Finanzamt",
+          "налог",
+          "финанс"
+        ],
+        "required_all_quality_flags": [
+          "multiple_legal_questions"
+        ],
+        "required_any_canonical_question_terms": [
+          "пребыван",
+          "вид на жительство",
+          "ВНЖ",
+          "Ausländer"
+        ],
+        "routing": "included"
+      },
+      "case_id": "pr-044-control-issue-frame-anchor",
+      "expected_focus": "Use the issue frame to produce one generalized main legal question rather than merging secondary tax questions.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:cc701f70bf2385fd125c"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-045-control-simple-migration-status",
+      "expected_focus": "Keep a straightforward migration-status question included.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:cf23f6be6ca1b53f8433"
+    },
+    {
+      "automatic_checks": {
+        "routing": "excluded:non_legal_question"
+      },
+      "case_id": "pr-046-control-region-intake-status",
+      "expected_focus": "Exclude a current region intake-status question as live operational information.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:e279f6cac114c53a3174"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-047-control-generalized-local-place",
+      "expected_focus": "Abstract local city or region details when they do not change the legal rule.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:e63232d2e9100417355f"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-048-control-simple-social-benefit",
+      "expected_focus": "Keep a straightforward social-benefit entitlement question included.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:f3db842a29413447527d"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included"
+      },
+      "case_id": "pr-049-control-automatic-extension-refusal",
+      "expected_focus": "Preserve a third party's refusal to accept automatic extension or status proof.",
+      "lesson_ids": [
+        "PL-010"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:f84c01f87a432bc81f30"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-050-verifier-source-level-mixed-flag",
+      "expected_focus": "Judge mixed_with_non_legal_query from the source and canonicalization process, not from the cleaned canonical question alone.",
+      "lesson_ids": [
+        "PL-013"
+      ],
+      "prompt_families": [
+        "verifier"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:883e4b7d89874ec48ba5"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-051-verifier-central-question-selection",
+      "expected_focus": "Accept one central legal question selected from a source containing several distinct legal questions.",
+      "lesson_ids": [
+        "PL-013"
+      ],
+      "prompt_families": [
+        "verifier"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:ac144f6d03d44b2949f1"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-052-verifier-integrated-consequence",
+      "expected_focus": "Reject an obligation or legal consequence invented beyond a source that only asks about the purpose of an authority appointment.",
+      "lesson_ids": [
+        "PL-013"
+      ],
+      "prompt_families": [
+        "verifier"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:d1b3941f46c446d1da47"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-053-adjudicator-source-level-mixed-flag",
+      "expected_focus": "Judge mixed_with_non_legal_query from the source and canonicalization process after successful omission.",
+      "lesson_ids": [
+        "PL-014"
+      ],
+      "prompt_families": [
+        "adjudicator"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:5c1f820459067746d5e9"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-054-adjudicator-source-level-multiple-question-flag",
+      "expected_focus": "Preserve a source-level multiple-question flag after selecting one central legal question, while retrying an inaccurate mixed-query flag that affects downstream filtering.",
+      "lesson_ids": [
+        "PL-014",
+        "PL-015"
+      ],
+      "prompt_families": [
+        "adjudicator"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:bf9d449f72a9213d681e"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-055-adjudicator-document-appearance-exclusion",
+      "expected_focus": "Keep a visual document-identification question excluded when it asks no legal effect or right.",
+      "lesson_ids": [
+        "PL-014"
+      ],
+      "prompt_families": [
+        "adjudicator"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:d759b2ac5a746d4e10fe"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-056-adjudicator-live-intake-exclusion",
+      "expected_focus": "Keep current camp and region intake or distribution practice excluded as live operational information even when review evidence unanimously rewrites it as a legal rule.",
+      "lesson_ids": [
+        "PL-014",
+        "PL-015"
+      ],
+      "prompt_families": [
+        "adjudicator"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:fbdcf57f55b80f9b63fb"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-057-adjudicator-unanimous-card-timing-error",
+      "expected_focus": "Override unanimous review evidence that turns ordinary card issuance timing into a legal question.",
+      "lesson_ids": [
+        "PL-015"
+      ],
+      "prompt_families": [
+        "adjudicator"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:aca51e8e5d6edd7b10f1"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-058-canonicalizer-unverified-authority-option",
+      "expected_focus": "Ask how the competent benefits authority is determined without promoting a source-proposed authority as a valid option.",
+      "lesson_ids": [
+        "PL-016"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:af824a5eb347e19602f6"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_evidence_terms": [
+          "driving license"
+        ],
+        "forbidden_quality_flags": [
+          "mixed_with_non_legal_query"
+        ],
+        "required_all_evidence_terms": [
+          "Portugal",
+          "protection"
+        ],
+        "required_all_quality_flags": [
+          "multiple_legal_questions"
+        ],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-059-canonicalizer-central-legal-selection-flags",
+      "expected_focus": "Select one central legal question from two legal questions and describe the source with a multiple-question flag rather than a mixed legal/non-legal flag.",
+      "lesson_ids": [
+        "PL-013",
+        "PL-015",
+        "PL-017"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:e8db88759a2a7322b705"
+    }
+  ],
+  "registry_version": "007-prompt-regression-v1",
+  "trust_boundary": "task_ids_and_expected_invariants_only_no_raw_private_corpus"
+}

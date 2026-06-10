@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -33,6 +35,7 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_legal_intent_slot_comparator_decisions,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
+    build_langchain_canonicalization_chain,
     build_langchain_deepseek_adjudication_chain,
     build_langchain_adjudication_chain,
     build_langchain_legal_intent_pair_judge_chain,
@@ -43,6 +46,7 @@ from evaluation.tg_question_canonicalization import (
     emit_tg_qa_canonical_embedding_batch,
     emit_tg_qa_canonicalization_batch,
     export_tg_qa_canonicalization_review_cards,
+    export_tg_qa_legal_intent_pair_review_html,
     import_tg_qa_canonical_embedding_records,
     import_tg_qa_canonicalization_results,
     import_tg_qa_canonicalization_review_decisions,
@@ -179,6 +183,8 @@ def test_canonicalization_constants_slug_ids_and_privacy_guard_are_stable() -> N
     verifier_user_lines = "\n".join(CANONICALIZATION_VERIFIER_PROMPT_PROFILE["user_prompt_lines"])
     assert "empty canonical fields may be valid" in verifier_user_lines
     assert "valid json object" in verifier_user_lines
+    if CANONICALIZATION_VERIFIER_PROMPT_PROFILE["prompt_version"].endswith("_positive"):
+        assert "field_scope_review" in verifier_user_lines
     adjudicator_instruction = CANONICALIZATION_ADJUDICATOR_PROMPT_PROFILE["system_instruction"]
     assert "Routing semantics" in adjudicator_instruction
     assert "correctly excludes the source" in adjudicator_instruction
@@ -200,6 +206,9 @@ def test_canonicalization_constants_slug_ids_and_privacy_guard_are_stable() -> N
     assert "nonexistent_entitlement" in adjudicator_instruction
     assert "Do not return pass with reject, or fail with accept" in adjudicator_instruction
     assert "currently accepting refugees/new arrivals" in adjudicator_instruction
+    adjudicator_user_lines = "\n".join(CANONICALIZATION_ADJUDICATOR_PROMPT_PROFILE["user_prompt_lines"])
+    if CANONICALIZATION_ADJUDICATOR_PROMPT_PROFILE["prompt_version"].endswith("_positive"):
+        assert "field_scope_review" in adjudicator_user_lines
     legal_intent_pair_judge_instruction = LEGAL_INTENT_PAIR_JUDGE_PROMPT_PROFILE["system_instruction"]
     assert "Similarity scores" in legal_intent_pair_judge_instruction
     assert "recos scores" in legal_intent_pair_judge_instruction
@@ -362,6 +371,85 @@ def test_structured_models_and_compact_llm_payload_avoid_private_context(tmp_pat
     assert wrapped_verifier["confidence"] == 90
 
 
+def test_review_llm_payload_repeats_candidate_field_scope_without_source_details() -> None:
+    source_question = (
+        "По поводу учебы, можно ли беженцам пойти учиться в колледж или университет, "
+        "выбрать направление? На каком языке преподают? Сколько лет учиться? Кто оплачивает учебу?"
+    )
+    candidate = {
+        "candidate_key": "qwen",
+        "candidate_id": "tg-qa-candidate:education",
+        "model_id": "qwen3.6-plus",
+        "status": "completed",
+        "canonical_question": (
+            "Имеют ли лица со статусом беженца право на поступление в колледж или университет, "
+            "выбор направления обучения, и кто оплачивает учебу?"
+        ),
+        "canonical_question_language": "ru",
+        "legal_issue_frame": "Refugee access to higher education and financial support eligibility",
+        "legal_issue_frame_slug": "refugee_access_to_higher_education_and_financial_support",
+        "law_area": "education",
+        "facts": ["source also asks about language requirements and duration"],
+        "desired_outcome": "clarify eligibility for higher education and funding sources for refugees",
+        "authority_context": ["university", "college"],
+        "hidden_issues": ["language proficiency requirements for admission"],
+        "is_legal_answer_required": True,
+        "is_standalone_question": True,
+        "exclusion_reason": "none",
+        "confidence": "high",
+        "quality_flags": ["mixed_with_non_legal_query"],
+    }
+    evidence = {
+        "task_id": "tg-question-canonicalization-task:education",
+        "candidate_id": candidate["candidate_id"],
+        "source_question_text_redacted": source_question,
+        **candidate,
+    }
+
+    verifier_payload = canonicalization._compact_verifier_llm_payload(evidence)
+    verifier_scope = verifier_payload["field_scope_review"]["qwen"]
+    assert "language requirements" in verifier_payload["qwen"]["facts"][0]
+    assert "На каком языке" in verifier_payload["source_question_text_redacted"]
+    assert "На каком языке" not in verifier_scope["canonical_question_under_review"]
+    assert "Сколько лет" not in verifier_scope["canonical_question_under_review"]
+    assert verifier_scope["canonical_question_under_review"] == candidate["canonical_question"]
+    assert verifier_scope["legal_issue_frame_under_review"] == candidate["legal_issue_frame"]
+
+    adjudication_payload = canonicalization._compact_adjudication_payload(
+        {
+            "task_id": "tg-question-canonicalization-task:education",
+            "candidate_id": candidate["candidate_id"],
+            "source_question_text_redacted": source_question,
+            "candidates": [candidate],
+            "verifier_votes": [
+                {
+                    "candidate_key": "qwen",
+                    "verifier_key": "qwen37",
+                    "status": "completed",
+                    "verdict": "fail",
+                    "bad_fields": ["canonical_question"],
+                    "short_reason": "The source mentions language of instruction and study duration.",
+                    "suggested_action": "retry_qwen",
+                }
+            ],
+        }
+    )
+    adjudication_scope = adjudication_payload["field_scope_review"]["candidates"][0]
+    assert "source mentions language" in adjudication_payload["verifier_votes"][0]["short_reason"]
+    assert "На каком языке" in adjudication_payload["source_question_text_redacted"]
+    assert "На каком языке" not in adjudication_scope["canonical_question_under_review"]
+    assert "Сколько лет" not in adjudication_scope["canonical_question_under_review"]
+    assert adjudication_scope["canonical_question_under_review"] == candidate["canonical_question"]
+    rendered_adjudication = canonicalization._review_payload_for_prompt(adjudication_payload)
+    assert rendered_adjudication.count("FINAL FIELD-SCOPE REVIEW") == 1
+    assert rendered_adjudication.rfind("canonical_question_under_review") > rendered_adjudication.rfind(
+        "source mentions language"
+    )
+    assert rendered_adjudication.rfind(candidate["canonical_question"]) > rendered_adjudication.rfind(
+        source_question
+    )
+
+
 def test_live_runner_shapes_stream_results_with_fake_structured_chains(tmp_path: Path) -> None:
     candidates_path = tmp_path / "candidates.jsonl"
     batch_path = tmp_path / "batch.jsonl"
@@ -413,27 +501,468 @@ def test_live_runner_shapes_stream_results_with_fake_structured_chains(tmp_path:
     qwen_records = _read_jsonl(qwen_results_path)
     verifier_records = _read_jsonl(verifier_results_path)
     assert qwen_result["summary"]["completed_count"] == 1
+    assert qwen_result["summary"]["runtime_metadata_record_count"] == 1
+    assert qwen_result["summary"]["usage_metadata_record_count"] == 0
     assert qwen_records[0]["task_id"] == batch_item["task_id"]
     assert qwen_records[0]["backend"] == "opencode"
+    assert qwen_records[0]["runtime_metadata"]["attempts_used"] == 1
+    assert qwen_records[0]["runtime_metadata"]["llm_usage_available"] is False
+    assert qwen_records[0]["runtime_metadata"]["request_duration_seconds"] >= 0
     assert verifier_result["summary"]["completed_count"] == 1
+    assert verifier_result["summary"]["runtime_metadata_record_count"] == 1
     assert verifier_records[0]["verdict"] == "pass"
     assert verifier_records[0]["suggested_action"] == "accept"
+    assert verifier_records[0]["runtime_metadata"]["attempts_used"] == 1
 
 
 def test_langchain_review_prompt_builders_accept_literal_json_few_shots() -> None:
-    verifier_chain = build_langchain_verifier_chain(_StructuredOutputOnlyChatModel(), method="function_calling")
+    canonicalization_model = _StructuredOutputOnlyChatModel()
+    verifier_model = _StructuredOutputOnlyChatModel()
+    adjudication_model = _StructuredOutputOnlyChatModel()
+    pair_judge_model = _StructuredOutputOnlyChatModel()
+    canonicalization_chain = build_langchain_canonicalization_chain(canonicalization_model, method="json_mode")
+    verifier_chain = build_langchain_verifier_chain(verifier_model, method="function_calling")
     adjudication_chain = build_langchain_adjudication_chain(
-        _StructuredOutputOnlyChatModel(),
+        adjudication_model,
         method="json_mode",
     )
     pair_judge_chain = build_langchain_legal_intent_pair_judge_chain(
-        _StructuredOutputOnlyChatModel(),
+        pair_judge_model,
         method="json_mode",
     )
 
+    assert canonicalization_chain is not None
     assert verifier_chain is not None
     assert adjudication_chain is not None
     assert pair_judge_chain is not None
+    assert canonicalization_model.include_raw is True
+    assert verifier_model.include_raw is True
+    assert adjudication_model.include_raw is True
+    assert pair_judge_model.include_raw is True
+
+
+def test_operator_runtime_metadata_extracts_langchain_usage() -> None:
+    class _RawMessage:
+        usage_metadata = {
+            "input_tokens": 101,
+            "output_tokens": 33,
+            "total_tokens": 134,
+            "output_token_details": {"reasoning": 17},
+        }
+        response_metadata = {
+            "finish_reason": "stop",
+            "token_usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 34,
+                "total_tokens": 134,
+                "completion_tokens_details": {"reasoning_tokens": 16},
+            },
+        }
+
+    parsed = CanonicalizationResultPayload.model_validate(
+        {
+            "task_id": "tg-question-canonicalization-task:fixture",
+            "candidate_id": "tg-qa-candidate:fixture",
+            "canonical_question": "Нужно ли менять адрес на ВНЖ после переезда?",
+            "legal_issue_frame": "Residence permit address update after moving",
+            "legal_issue_frame_slug": "residence_permit_address_update_after_moving",
+            "law_area": "migration_status",
+            "is_legal_answer_required": True,
+            "is_standalone_question": True,
+            "exclusion_reason": "none",
+            "confidence": "high",
+        }
+    )
+    raw_result = {"raw": _RawMessage(), "parsed": parsed, "parsing_error": None}
+    metadata = canonicalization._operator_record_runtime_metadata(
+        raw_result,
+        request_duration_seconds=1.23456,
+        attempts_used=2,
+    )
+
+    assert metadata == {
+        "request_duration_seconds": 1.235,
+        "attempts_used": 2,
+        "input_tokens": 101,
+        "output_tokens": 33,
+        "total_tokens": 134,
+        "reasoning_tokens": 17,
+        "usage_source": "langchain_usage_metadata+response_metadata_token_usage",
+        "llm_usage_available": True,
+    }
+
+
+def test_structured_output_payload_falls_back_to_raw_text_json() -> None:
+    class _RawMessage:
+        content = [
+            {"type": "thinking", "thinking": "ignored hidden reasoning block"},
+            {
+                "type": "text",
+                "text": (
+                    "{"
+                    '"verdict":"fail",'
+                    '"confidence":90,'
+                    '"risk":"low",'
+                    '"bad_fields":["law_area"],'
+                    '"short_reason":"Law area should be corrected.",'
+                    '"final_recommendation":"retry_generator",'
+                    '"selected_candidate_key":"qwen"'
+                    "}"
+                ),
+            },
+        ]
+
+    payload = canonicalization._structured_output_payload(
+        {"raw": _RawMessage(), "parsed": None, "parsing_error": None}
+    )
+
+    assert AdjudicationPayload.model_validate(payload).final_recommendation == "retry_generator"
+    assert payload["bad_fields"] == ["law_area"]
+
+
+def test_prompt_profile_versions_can_be_overridden_by_env() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{repo_root / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    env.update(
+        {
+            "TG_QUESTION_CANONICALIZATION_PROMPT_VERSION": "tg_question_canonicalizer_v11_positive",
+            "TG_QA_CANDIDATE_PROMPT_VERSION": "tg_qa_candidate_classifier_v4_2_positive",
+            "TG_QA_CLUSTER_PROMPT_VERSION": "tg_qa_cluster_reviewer_v4_2_positive",
+            "TG_QA_CLUSTER_COMPACT_PROMPT_VERSION": "tg_qa_cluster_reviewer_compact_v4_2_positive",
+            "TG_QUESTION_CANONICALIZATION_VERIFIER_PROMPT_VERSION": (
+                "tg_question_canonicalization_verifier_v8_positive"
+            ),
+            "TG_QUESTION_CANONICALIZATION_ADJUDICATOR_PROMPT_VERSION": (
+                "tg_question_canonicalization_adjudicator_v8_positive"
+            ),
+            "TG_LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION": "tg_legal_intent_pair_judge_v2_positive",
+        }
+    )
+    code = """
+import json
+from evaluation import prompts
+
+print(json.dumps({
+    "canonicalization": prompts.CANONICALIZATION_PROMPT_VERSION,
+    "candidate": prompts.TG_QA_CANDIDATE_PROMPT_VERSION,
+    "cluster": prompts.TG_QA_CLUSTER_PROMPT_VERSION,
+    "cluster_compact": prompts.TG_QA_CLUSTER_COMPACT_PROMPT_VERSION,
+    "verifier": prompts.CANONICALIZATION_VERIFIER_PROMPT_VERSION,
+    "adjudicator": prompts.CANONICALIZATION_ADJUDICATOR_PROMPT_VERSION,
+    "pair_judge": prompts.LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION,
+}, sort_keys=True))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        capture_output=True,
+        cwd=repo_root,
+        env=env,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "adjudicator": "tg_question_canonicalization_adjudicator_v8_positive",
+        "candidate": "tg_qa_candidate_classifier_v4_2_positive",
+        "canonicalization": "tg_question_canonicalizer_v11_positive",
+        "cluster": "tg_qa_cluster_reviewer_v4_2_positive",
+        "cluster_compact": "tg_qa_cluster_reviewer_compact_v4_2_positive",
+        "pair_judge": "tg_legal_intent_pair_judge_v2_positive",
+        "verifier": "tg_question_canonicalization_verifier_v8_positive",
+    }
+
+
+def test_canonicalizer_v11_preserves_source_intent_strength() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v11_positive.json"
+    )
+    instruction = profile["system_instruction"]
+    examples = profile["few_shot_examples"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v11_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v5_positive"
+    assert len(examples) == 15
+    assert "IMPORTANT SOURCE-INTENT STRENGTH" in instruction
+    assert "whether temporary or one-night shelter is available" in instruction
+    assert "confirmation or clarification fragments" in instruction
+    assert "how that trigger affects an existing status" in instruction
+    assert examples[-2]["output"]["exclusion_reason"] == "non_legal_question"
+    assert examples[-2]["output"]["quality_flags"] == [
+        "operational_logistics_only",
+        "requires_live_operational_data",
+    ]
+    assert examples[-1]["output"]["exclusion_reason"] == "not_standalone_question"
+    assert examples[-1]["output"]["is_standalone_question"] is False
+
+
+def test_canonicalizer_v12_does_not_promote_unverified_authority_options() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v12_positive.json"
+    )
+    instruction = profile["system_instruction"]
+    example = profile["few_shot_examples"][-1]
+    output = example["output"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v12_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v6_positive"
+    assert len(profile["few_shot_examples"]) == 16
+    assert "IMPORTANT UNVERIFIED AUTHORITY OPTIONS" in instruction
+    assert "authority names proposed by the source as claims that may be mistaken" in instruction
+    assert "without presenting those names as valid alternatives" in instruction
+    assert "БАМФ" not in output["canonical_question"]
+    assert output["authority_context"] == ["competent_benefits_authority"]
+    assert output["quality_flags"] == []
+
+
+def test_canonicalizer_v13_distinguishes_multiple_legal_questions_from_mixed_queries() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v13_positive.json"
+    )
+    instruction = profile["system_instruction"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v13_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v6_positive"
+    assert len(profile["few_shot_examples"]) == 16
+    assert "IMPORTANT SOURCE-LEVEL QUERY COMPOSITION" in instruction
+    assert "independently from the single selected canonical_question" in instruction
+    assert "quality_flags=multiple_legal_questions" in instruction
+    assert "quality_flags=mixed_with_non_legal_query" in instruction
+    assert instruction.index("IMPORTANT SINGLE-QUESTION RULE") < instruction.index(
+        "IMPORTANT SOURCE-LEVEL QUERY COMPOSITION"
+    )
+    assert instruction.index("IMPORTANT SOURCE-LEVEL QUERY COMPOSITION") < instruction.index(
+        "For cross-border money transfers"
+    )
+
+
+def test_canonicalizer_v14_treats_conversational_framing_as_neutral() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v14_positive.json"
+    )
+    instruction = profile["system_instruction"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v14_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v6_positive"
+    assert len(profile["few_shot_examples"]) == 16
+    assert "classify the substantive requests in the full source" in instruction
+    assert "conversational framing without a separate request as neutral framing" in instruction
+    assert "all substantive requests are legal" in instruction
+    assert "as the composition flag" in instruction
+    assert "a separate substantive non-legal or operational request" in instruction
+
+
+def test_canonicalizer_v15_defines_composition_flags_in_schema_and_examples() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v15_positive.json"
+    )
+    instruction = profile["system_instruction"]
+    examples = profile["few_shot_examples"]
+    multiple_legal = examples[-2]["output"]
+    missing_basis = examples[-1]["output"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v15_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v7_positive"
+    assert len(examples) == 18
+    assert "facts, and omitted secondary legal issues as neutral" in instruction
+    assert "one substantive legal request uses neither composition flag" in instruction
+    assert "may use both composition flags" in instruction
+    assert "multiple_legal_questions=two or more substantive legal requests" in profile[
+        "expected_output_schema"
+    ]["quality_flags"]
+    assert multiple_legal["quality_flags"] == ["multiple_legal_questions"]
+    assert missing_basis["quality_flags"] == [
+        "missing_legal_basis",
+        "potentially_unlawful_arrangement",
+    ]
+
+
+def test_canonicalizer_v16_contrasts_mixed_legal_and_operational_requests() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v16_positive.json"
+    )
+    example = profile["few_shot_examples"][-1]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v16_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v8_positive"
+    assert len(profile["few_shot_examples"]) == 19
+    assert "current border-control practice" in example["output"]["facts"][-1]
+    assert example["output"]["quality_flags"] == ["mixed_with_non_legal_query"]
+    assert example["output"]["canonical_question"].count("?") == 1
+
+
+def test_canonicalizer_v17_moves_material_field_rules_into_schema_and_examples() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v17_positive.json"
+    )
+    schema = profile["expected_output_schema"]
+    examples = profile["few_shot_examples"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v17_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v9_positive"
+    assert len(examples) == 22
+    assert "IMPORTANT UNRESOLVED ROUTE AMBIGUITY" in profile["system_instruction"]
+    assert "exactly one central reusable legal question" in schema["canonical_question"]
+    assert "customs_and_tax for temporary admission/import of foreign vehicles" in schema["law_area"]
+    assert "unresolved route or status ambiguity" in schema["hidden_issues"]
+    assert "not merely current law or a dated rumor" in schema["quality_flags"]
+    assert examples[-3]["output"]["quality_flags"] == [
+        "multiple_legal_questions",
+        "mixed_with_non_legal_query",
+    ]
+    assert examples[-2]["output"]["law_area"] == "banking_compliance"
+    assert examples[-2]["output"]["quality_flags"] == []
+    assert "вид на жительство" in examples[-1]["output"]["canonical_question"]
+
+
+def test_canonicalizer_v18_distinguishes_legal_currentness_from_live_operations() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v18_positive.json"
+    )
+    examples = profile["few_shot_examples"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v18_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v10_positive"
+    assert len(examples) == 24
+    assert "IMPORTANT LEGAL CURRENTNESS VERSUS LIVE OPERATIONS" in profile["system_instruction"]
+    assert "currently applicable official legal rule" in profile["system_instruction"]
+    assert "how long, how difficult, or how quickly" in profile["system_instruction"]
+    assert "current official legal rule or dated legal restriction alone is not live" in profile[
+        "expected_output_schema"
+    ]["quality_flags"]
+    assert examples[-2]["output"]["quality_flags"] == ["mixed_with_non_legal_query"]
+    assert examples[-1]["output"]["quality_flags"] == []
+
+
+def test_canonicalizer_v19_resolves_tz_from_migration_context() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalizer_v19_positive.json"
+    )
+    multiple_example = profile["few_shot_examples"][16]
+
+    assert profile["prompt_version"] == "tg_question_canonicalizer_v19_positive"
+    assert profile["prompt_example_set_id"] == "tg_question_canonicalizer_examples_v11_positive"
+    assert len(profile["few_shot_examples"]) == 24
+    assert "IMPORTANT CONTEXTUAL ABBREVIATIONS" in profile["system_instruction"]
+    assert "'тз' referring to a country-issued status means temporary protection" in profile[
+        "system_instruction"
+    ]
+    assert "resolve contextual abbreviations" in profile["expected_output_schema"]["facts"]
+    assert "тз Португалии" in multiple_example["input"]["question_text_redacted"]
+    assert "temporary protection from Portugal" in multiple_example["output"]["facts"][0]
+    assert multiple_example["output"]["quality_flags"] == ["multiple_legal_questions"]
+
+
+def test_verifier_v9_preserves_field_ownership_and_central_selection() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalization_verifier_v9_positive.json"
+    )
+    instruction = profile["system_instruction"]
+    examples = profile["few_shot_examples"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalization_verifier_v9_positive"
+    assert len(examples) == 12
+    assert "IMPORTANT REVIEW FIELD OWNERSHIP" in instruction
+    assert "mixed_with_non_legal_query is valid when the source contains" in instruction
+    assert "IMPORTANT CENTRAL-SELECTION SEMANTICS" in instruction
+    assert "selecting one central legal question" in instruction
+    assert "inseparable parts of the same legal relationship" in instruction
+    assert examples[-3]["input"]["task_id"] == "fixture:central-question-selected"
+    assert examples[-3]["output"]["verdict"] == "pass"
+    assert examples[-2]["input"]["task_id"] == "fixture:mixed-source-flag-after-omission"
+    assert examples[-2]["output"]["verdict"] == "pass"
+    assert examples[-1]["input"]["task_id"] == "fixture:integrated-obligation-and-consequence"
+    assert examples[-1]["output"]["verdict"] == "pass"
+
+
+def test_adjudicator_v9_preserves_source_flags_and_operational_routing() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalization_adjudicator_v9_positive.json"
+    )
+    instruction = profile["system_instruction"]
+    examples = profile["few_shot_examples"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalization_adjudicator_v9_positive"
+    assert len(examples) == 8
+    assert "IMPORTANT REVIEW FIELD OWNERSHIP" in instruction
+    assert "not only against the cleaned canonical_question" in instruction
+    assert "IMPORTANT OPERATIONAL ROUTING STABILITY" in instruction
+    assert "current city, region, camp, or office intake capacity" in instruction
+    assert "only what a legal-status document looks like" in instruction
+    assert examples[-4]["input"]["task_id"] == "fixture:adjudicator-mixed-source-flag"
+    assert examples[-3]["input"]["task_id"] == "fixture:adjudicator-multiple-legal-source-flag"
+    assert examples[-2]["input"]["task_id"] == "fixture:adjudicator-live-region-intake"
+    assert examples[-1]["input"]["task_id"] == "fixture:adjudicator-document-appearance"
+    assert all(example["output"]["final_recommendation"] == "accept" for example in examples[-4:])
+
+
+def test_adjudicator_v10_overrides_unanimous_errors_and_retries_material_flags() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    profile = _read_json(
+        repo_root / "src/evaluation/prompt_profiles/tg_question_canonicalization_adjudicator_v10_positive.json"
+    )
+    instruction = profile["system_instruction"]
+    examples = profile["few_shot_examples"]
+
+    assert profile["prompt_version"] == "tg_question_canonicalization_adjudicator_v10_positive"
+    assert len(examples) == 11
+    assert "IMPORTANT EVIDENCE PRIORITY" in instruction
+    assert "even when every verifier repeats the same contrary interpretation" in instruction
+    assert "IMPORTANT INCLUDED-FLAG MATERIALITY" in instruction
+    assert "changes downstream filtering or review selection" in instruction
+    assert examples[-3]["input"]["task_id"] == "fixture:adjudicator-unanimous-live-intake-error"
+    assert examples[-3]["output"]["final_recommendation"] == "accept"
+    assert examples[-2]["input"]["task_id"] == "fixture:adjudicator-unanimous-card-timing-error"
+    assert examples[-2]["output"]["final_recommendation"] == "accept"
+    assert examples[-1]["input"]["task_id"] == "fixture:adjudicator-material-included-flags"
+    assert examples[-1]["output"]["bad_fields"] == ["quality_flags"]
+    assert examples[-1]["output"]["final_recommendation"] == "retry_generator"
+
+
+def test_prompt_regression_registry_covers_all_prompt_lessons_without_raw_corpus() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    registry = _read_json(repo_root / "specs/007-legal-question-canonicalization/prompt-regression-cases.json")
+    prompt_lessons = (repo_root / "specs/007-legal-question-canonicalization/prompt-lessons.md").read_text(
+        encoding="utf-8"
+    )
+    lesson_ids = {
+        line.split(":", 1)[0].removeprefix("## ").strip()
+        for line in prompt_lessons.splitlines()
+        if line.startswith("## PL-")
+    }
+    cases = registry["cases"]
+    covered_lessons = {lesson_id for case in cases for lesson_id in case["lesson_ids"]}
+    case_ids = [case["case_id"] for case in cases]
+    real_task_ids = [case["task_id"] for case in cases if case["source_kind"] == "real_task"]
+    lesson_task_ids = {
+        line.split("`", 2)[1]
+        for line in prompt_lessons.splitlines()
+        if line.startswith("- `tg-question-canonicalization-task:")
+    }
+
+    assert registry["trust_boundary"] == "task_ids_and_expected_invariants_only_no_raw_private_corpus"
+    assert len(case_ids) == len(set(case_ids))
+    assert len(real_task_ids) == len(set(real_task_ids))
+    assert set(real_task_ids) == lesson_task_ids
+    assert covered_lessons == lesson_ids
+    assert all(case["prompt_families"] for case in cases)
+    assert all(
+        "fixture_profile" in case and "fixture_task_id" in case
+        for case in cases
+        if case["source_kind"] == "prompt_profile_fixture"
+    )
+    assert "source_question_text_redacted" not in json.dumps(registry, ensure_ascii=False)
 
 
 def test_openai_verifier_chain_passes_extra_body(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -443,7 +972,8 @@ def test_openai_verifier_chain_passes_extra_body(monkeypatch: pytest.MonkeyPatch
         def __init__(self, **kwargs: object) -> None:
             captured.update(kwargs)
 
-        def with_structured_output(self, schema: object, method: str = "") -> object:
+        def with_structured_output(self, schema: object, method: str = "", include_raw: bool = False) -> object:
+            captured["include_raw"] = include_raw
             return lambda payload: payload
 
     fake_module = types.SimpleNamespace(ChatOpenAI=_FakeChatOpenAI)
@@ -462,6 +992,7 @@ def test_openai_verifier_chain_passes_extra_body(monkeypatch: pytest.MonkeyPatch
 
     assert chain is not None
     assert captured["extra_body"] == {"enable_thinking": False}
+    assert captured["include_raw"] is True
 
 
 def test_anthropic_verifier_chain_normalizes_messages_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -471,7 +1002,8 @@ def test_anthropic_verifier_chain_normalizes_messages_endpoint(monkeypatch: pyte
         def __init__(self, **kwargs: object) -> None:
             captured.update(kwargs)
 
-        def with_structured_output(self, schema: object, method: str = "") -> object:
+        def with_structured_output(self, schema: object, method: str = "", include_raw: bool = False) -> object:
+            captured["include_raw"] = include_raw
             return lambda payload: payload
 
     fake_module = types.SimpleNamespace(ChatAnthropic=_FakeChatAnthropic)
@@ -485,11 +1017,47 @@ def test_anthropic_verifier_chain_normalizes_messages_endpoint(monkeypatch: pyte
         max_tokens=256,
         structured_output_method="function_calling",
         api_key_env="",
-        extra_body=None,
+        extra_body={"thinking": {"type": "disabled"}},
     )
 
     assert chain is not None
     assert captured["base_url"] == "https://opencode.ai/zen/go"
+    assert captured["thinking"] == {"type": "disabled"}
+    assert captured["include_raw"] is True
+
+
+def test_anthropic_canonicalization_chain_normalizes_messages_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeChatAnthropic:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def with_structured_output(self, schema: object, method: str = "", include_raw: bool = False) -> object:
+            captured["structured_method"] = method
+            captured["include_raw"] = include_raw
+            return lambda payload: payload
+
+    fake_module = types.SimpleNamespace(ChatAnthropic=_FakeChatAnthropic)
+    monkeypatch.setitem(sys.modules, "langchain_anthropic", fake_module)
+
+    chain = canonicalization._build_canonicalization_chain(
+        provider="anthropic",
+        endpoint_url="https://opencode.ai/zen/go/v1/messages",
+        model_id="minimax-m3",
+        timeout_seconds=60,
+        max_tokens=1024,
+        structured_output_method="function_calling",
+        api_key_env="",
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+    assert chain is not None
+    assert captured["base_url"] == "https://opencode.ai/zen/go"
+    assert captured["model"] == "minimax-m3"
+    assert captured["thinking"] == {"type": "disabled"}
+    assert captured["structured_method"] == "function_calling"
+    assert captured["include_raw"] is True
 
 
 def test_deepseek_runner_shapes_stream_results_with_fake_structured_chain(tmp_path: Path) -> None:
@@ -1583,7 +2151,7 @@ def test_adjudication_batch_supports_variable_verifier_counts_and_non_unanimous_
             }
         ],
     )
-    blocked_retry_result = build_tg_qa_canonicalization_retry_batch_from_adjudication(
+    cautious_retry_result = build_tg_qa_canonicalization_retry_batch_from_adjudication(
         batch_path=batch_path,
         adjudication_batch_path=adjudication_batch_path,
         adjudication_results_paths=[
@@ -1593,10 +2161,11 @@ def test_adjudication_batch_supports_variable_verifier_counts_and_non_unanimous_
         output_path=blocked_retry_batch_path,
         summary_output_path=blocked_retry_summary_path,
     )
-    assert blocked_retry_result["summary"]["emitted_task_count"] == 0
-    assert blocked_retry_result["summary"]["skipped_reasons"][
-        "human_review_before_retry:retry_consensus_but_reason_disagreement"
-    ] == 1
+    cautious_retry_records = _read_jsonl(blocked_retry_batch_path)
+    assert cautious_retry_result["summary"]["emitted_task_count"] == 1
+    assert cautious_retry_records[0]["retry_context"]["retry_triage"]["route"] == "auto_retry"
+    assert cautious_retry_records[0]["retry_context"]["retry_triage"]["reason_code"] == "retry_consensus_with_cautions"
+    assert cautious_retry_records[0]["retry_context"]["retry_triage"]["blocking_bad_fields"] == ["law_area"]
 
     _write_jsonl(
         manual_retry_results_path,
@@ -1620,7 +2189,10 @@ def test_adjudication_batch_supports_variable_verifier_counts_and_non_unanimous_
     manual_retry_result = build_tg_qa_canonicalization_retry_batch_from_adjudication(
         batch_path=batch_path,
         adjudication_batch_path=adjudication_batch_path,
-        adjudication_results_paths=[f"manual={manual_retry_results_path}"],
+        adjudication_results_paths=[
+            f"judge1={adjudication_results_path}",
+            f"manual={manual_retry_results_path}",
+        ],
         output_path=manual_retry_batch_path,
         summary_output_path=manual_retry_summary_path,
     )
@@ -1628,6 +2200,9 @@ def test_adjudication_batch_supports_variable_verifier_counts_and_non_unanimous_
     assert manual_retry_result["summary"]["emitted_task_count"] == 1
     assert manual_retry_records[0]["retry_context"]["previous_candidate"]["candidate_key"] == "deepseek"
     assert manual_retry_records[0]["retry_context"]["retry_triage"]["reason_code"] == "manual_review_retry"
+    assert {
+        result["result_key"] for result in manual_retry_records[0]["retry_context"]["adjudication_results"]
+    } == {"judge1", "manual"}
 
 
 def test_canonical_embedding_import_and_issue_clustering_keep_query_semantics(tmp_path: Path) -> None:
@@ -1742,6 +2317,52 @@ def test_legal_intent_pair_benchmark_has_stable_order_independent_ids(tmp_path: 
     assert first["records"][0]["pair_id"] == canonicalization._legal_intent_pair_id("e1", "e2")
     assert first["records"][0]["pair_id"] == canonicalization._legal_intent_pair_id("e2", "e1")
     assert "preserved_variant_candidate" in first["summary"]["counts_by_pair_source_reason"]
+
+
+def test_legal_intent_pair_benchmark_accepts_dataset_record_ids_and_task_similarity_pairs(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "dataset_records.jsonl"
+    similarity_pairs_path = tmp_path / "similarity_pairs.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    left = _evidence(
+        "unused-left",
+        "tg-qa-candidate:left",
+        "Можно ли въехать обратно в Германию по Fiktionsbescheinigung после выезда?",
+    )
+    right = _evidence(
+        "unused-right",
+        "tg-qa-candidate:right",
+        "Можно ли вернуться в Германию с Fiktionsbescheinigung после поездки?",
+    )
+    left.pop("canonicalization_evidence_id")
+    right.pop("canonicalization_evidence_id")
+    left["dataset_record_id"] = "dataset:left"
+    right["dataset_record_id"] = "dataset:right"
+    _write_jsonl(evidence_path, [left, right])
+    _write_jsonl(
+        similarity_pairs_path,
+        [
+            {
+                "pair_type": "preserve_as_variant_candidate",
+                "canonical_question_score": 0.91,
+                "left": {"task_id": left["task_id"], "candidate_id": left["candidate_id"]},
+                "right": {"task_id": right["task_id"], "candidate_id": right["candidate_id"]},
+            }
+        ],
+    )
+
+    result = build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        similarity_pairs_path=similarity_pairs_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+    )
+
+    records = result["records"]
+    assert len(records) == 1
+    assert records[0]["left_canonicalization_evidence_id"] == "dataset:left"
+    assert records[0]["right_canonicalization_evidence_id"] == "dataset:right"
+    assert "high_canonical_question_similarity" in records[0]["pair_source_reasons"]
 
 
 def test_legal_intent_candidate_and_pair_decision_import_validate_contracts(tmp_path: Path) -> None:
@@ -1868,13 +2489,13 @@ def test_legal_intent_similarity_baseline_uses_cosine_and_recos(tmp_path: Path) 
         embedding_records_path,
         [
             {
-                "canonicalization_evidence_id": "e1",
+                "candidate_id": "tg-qa-candidate:1",
                 "text_role": "canonical_question",
                 "embedding_status": "completed",
                 "vector": [1.0, 0.0],
             },
             {
-                "canonicalization_evidence_id": "e2",
+                "candidate_id": "tg-qa-candidate:2",
                 "text_role": "canonical_question",
                 "embedding_status": "completed",
                 "vector": [0.9, 0.1],
@@ -1995,6 +2616,61 @@ def test_legal_intent_pair_judge_runner_streams_review_evidence(tmp_path: Path) 
     assert record["decision_source"] == "tg-legal-intent-pair-judge-run:fixture"
     assert record["pair_class"] == "same_legal_intent"
     assert record["runtime_metadata"]["model_id"] == "fixture-qwen"
+
+
+def test_legal_intent_pair_review_html_has_priority_filters(tmp_path: Path) -> None:
+    pairs_path = tmp_path / "pairs.jsonl"
+    decisions_path = tmp_path / "decisions.jsonl"
+    html_path = tmp_path / "review.html"
+    summary_path = tmp_path / "review_summary.json"
+    _write_jsonl(
+        pairs_path,
+        [
+            {
+                "pair_id": "pair:hard",
+                "pair_source_reasons": ["high_canonical_question_similarity"],
+                "similarity_evidence": {"canonical_question_score": 0.91},
+                "left": {"candidate_id": "left:1", "canonical_question": "A"},
+                "right": {"candidate_id": "right:1", "canonical_question": "B"},
+            },
+            {
+                "pair_id": "pair:random",
+                "pair_source_reasons": ["random_negative"],
+                "similarity_evidence": {"canonical_question_score": 0.12},
+                "left": {"candidate_id": "left:2", "canonical_question": "C"},
+                "right": {"candidate_id": "right:2", "canonical_question": "D"},
+            },
+        ],
+    )
+    _write_jsonl(
+        decisions_path,
+        [
+            {
+                "pair_id": "pair:hard",
+                "decision_source": "similarity_fixture",
+                "pair_class": "same_legal_intent",
+                "answer_equivalence": "safe_to_share_answer",
+                "canonical_question_equivalence": "safe_to_share_question",
+                "allowed_downstream_actions": ["allow_reference_answer_sharing"],
+                "short_reason": "Fixture.",
+            }
+        ],
+    )
+
+    result = export_tg_qa_legal_intent_pair_review_html(
+        pair_benchmark_path=pairs_path,
+        pair_decisions_path=decisions_path,
+        output_path=html_path,
+        summary_output_path=summary_path,
+    )
+
+    html = html_path.read_text(encoding="utf-8")
+    assert result["summary"]["card_count"] == 2
+    assert '<option value="source-hard">source hard pairs</option>' in html
+    assert '<option value="not-different">not different</option>' in html
+    assert '<option value="random-control">random control</option>' in html
+    assert "v.includes('negative')" not in html
+    assert "v !== 'random_negative'" in html
 
 
 def test_legal_intent_review_labels_and_evaluation_report_flag_hard_negatives(tmp_path: Path) -> None:
@@ -2328,9 +3004,10 @@ class _FakeLegalIntentPairJudgeChain:
 
 
 class _StructuredOutputOnlyChatModel:
-    def with_structured_output(self, schema: object, method: str = "") -> object:
+    def with_structured_output(self, schema: object, method: str = "", include_raw: bool = False) -> object:
         self.schema = schema
         self.method = method
+        self.include_raw = include_raw
         return lambda payload: payload
 
 
