@@ -188,6 +188,8 @@ policy, trusted duplicate removal, or answer-reuse approval.
 - [X] T071 Add cosine+recos legal-intent similarity baseline decision producer in `src/evaluation/tg_question_canonicalization.py`
 - [X] T072 Add deterministic legal-slot comparator decision producer over imported legal-intent candidates in `src/evaluation/tg_question_canonicalization.py`
 - [X] T073 Add structured-output LLM pair judge runner and prompt profile for legal-intent pair decisions in `src/evaluation/tg_question_canonicalization.py` and `src/evaluation/prompt_profiles/`
+- [X] T074 Add schema-guided legal-intent candidate extractor runner with pair-benchmark scoping, source-identity enforcement, and prompt profile in `src/evaluation/tg_question_canonicalization.py` and `src/evaluation/prompt_profiles/`
+- [X] T075 Add bounded operator script and offline tests for extractor -> candidate import -> slot comparator -> reviewed-label report in `tmp/run_007_legal_intent_bounded_23_extractor.sh` and `tests/unit/test_tg_question_canonicalization.py`
 
 ---
 

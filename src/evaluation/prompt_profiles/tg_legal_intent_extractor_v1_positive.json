@@ -1,0 +1,145 @@
+{
+  "prompt_version": "tg_legal_intent_extractor_v1_positive",
+  "system_instruction": "Extract one structured legal-intent candidate from one included canonical legal-question record. Return exactly one valid json object only. Produce diagnostic material slots rather than a legal answer or advice. This Telegram corpus concerns Ukrainian refugees in Germany and German law unless the record explicitly targets another jurisdiction. Treat canonical_question as the primary statement of the selected legal question. Use legal_issue_frame, facts, desired_outcome, authority_context, hidden_issues, and quality_flags only as supporting evidence for that same question. Preserve the distinction between related but legally different actions, objects, statuses, conditions, authorities, third parties, temporal conditions, and operational boundaries. Express normalized slot values as concise stable English snake_case concepts where practical. Fill a slot only when the supplied record supports it. Put unsupported but materially relevant slots in material_slots_unknown. Put conflicting or genuinely ambiguous interpretations in ambiguities. For a record containing more than one material legal intent, select the intent represented by canonical_question and add multiple_legal_intents to validation_flags. Use operational_boundary to distinguish legal rights or duties from live capacity, opening status, ordinary processing speed, or other operational facts. Add evidence_refs for material populated slots using source_field and a short support_text. Set confidence to high only when no unresolved material slot could change question or answer equivalence. Set review_status to candidate unless missing or conflicting context requires needs_more_context or uncertain.",
+  "user_prompt_lines": [
+    "Extract material legal-intent slots for the canonical question.",
+    "Return the structured candidate json.",
+    "Canonicalization evidence:"
+  ],
+  "few_shot_examples": [
+    {
+      "input": {
+        "canonicalization_evidence_id": "fixture:reentry-fiktionsbescheinigung",
+        "canonical_question": "Можно ли въехать обратно в Германию по Fiktionsbescheinigung после выезда?",
+        "legal_issue_frame": "Re-entry to Germany using Fiktionsbescheinigung after travel",
+        "law_area": "migration_status",
+        "facts": [
+          "traveler has Fiktionsbescheinigung",
+          "traveler has left Germany"
+        ],
+        "desired_outcome": "return to Germany"
+      },
+      "output": {
+        "legal_domain": "residence_and_reentry",
+        "actor": "foreign_national",
+        "subject": "self",
+        "current_status": "holds_fiktionsbescheinigung_after_departure",
+        "target_status": "lawful_reentry_to_germany",
+        "desired_action": "reenter_germany",
+        "legal_object": "reentry_with_fiktionsbescheinigung",
+        "authority_context": [
+          "border_authority"
+        ],
+        "third_party_context": [],
+        "location_scope": "germany",
+        "temporal_condition": "after_departure",
+        "operational_boundary": "legal_reentry_permission",
+        "material_slots_unknown": [
+          "fiktionsbescheinigung_legal_basis"
+        ],
+        "ambiguities": [],
+        "evidence_refs": [
+          {
+            "field": "desired_action",
+            "source_field": "canonical_question",
+            "support_text": "въехать обратно в Германию"
+          },
+          {
+            "field": "legal_object",
+            "source_field": "canonical_question",
+            "support_text": "по Fiktionsbescheinigung"
+          }
+        ],
+        "validation_flags": [],
+        "confidence": "medium",
+        "review_status": "candidate"
+      }
+    },
+    {
+      "input": {
+        "canonicalization_evidence_id": "fixture:exit-and-reentry-fiktionsbescheinigung",
+        "canonical_question": "Можно ли выехать из Германии и вернуться обратно, имея только Fiktionsbescheinigung?",
+        "legal_issue_frame": "Permission to leave and re-enter Germany with Fiktionsbescheinigung",
+        "law_area": "migration_status",
+        "facts": [
+          "traveler has only Fiktionsbescheinigung"
+        ],
+        "desired_outcome": "leave Germany and later return"
+      },
+      "output": {
+        "legal_domain": "residence_and_travel",
+        "actor": "foreign_national",
+        "subject": "self",
+        "current_status": "holds_only_fiktionsbescheinigung",
+        "target_status": "lawful_departure_and_reentry",
+        "desired_action": "leave_and_reenter_germany",
+        "legal_object": "departure_and_reentry_with_fiktionsbescheinigung",
+        "authority_context": [
+          "border_authority"
+        ],
+        "third_party_context": [],
+        "location_scope": "germany",
+        "temporal_condition": "before_departure_and_after_return",
+        "operational_boundary": "legal_departure_and_reentry_permission",
+        "material_slots_unknown": [
+          "fiktionsbescheinigung_legal_basis"
+        ],
+        "ambiguities": [],
+        "evidence_refs": [
+          {
+            "field": "desired_action",
+            "source_field": "canonical_question",
+            "support_text": "выехать из Германии и вернуться обратно"
+          }
+        ],
+        "validation_flags": [],
+        "confidence": "medium",
+        "review_status": "candidate"
+      }
+    },
+    {
+      "input": {
+        "canonicalization_evidence_id": "fixture:live-intake",
+        "canonical_question": "Обязан ли город зарегистрировать прибывшего беженца независимо от текущей заполненности мест?",
+        "legal_issue_frame": "Legal registration duty despite current local intake capacity",
+        "law_area": "migration_status",
+        "hidden_issues": [
+          "current intake capacity may differ from the legal registration duty"
+        ],
+        "quality_flags": [
+          "requires_live_operational_data"
+        ]
+      },
+      "output": {
+        "legal_domain": "refugee_intake",
+        "actor": "new_arrival",
+        "subject": "self",
+        "current_status": "arrived_refugee",
+        "target_status": "local_registration",
+        "desired_action": "determine_registration_entitlement",
+        "legal_object": "local_registration_duty",
+        "authority_context": [
+          "local_registration_authority"
+        ],
+        "third_party_context": [],
+        "location_scope": "unspecified_city",
+        "temporal_condition": "upon_arrival",
+        "operational_boundary": "legal_registration_duty_distinct_from_live_capacity",
+        "material_slots_unknown": [
+          "responsible_registration_authority"
+        ],
+        "ambiguities": [],
+        "evidence_refs": [
+          {
+            "field": "operational_boundary",
+            "source_field": "canonical_question",
+            "support_text": "независимо от текущей заполненности мест"
+          }
+        ],
+        "validation_flags": [],
+        "confidence": "medium",
+        "review_status": "candidate"
+      }
+    }
+  ]
+}

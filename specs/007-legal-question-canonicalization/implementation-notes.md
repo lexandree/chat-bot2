@@ -28,6 +28,20 @@
   similarity baseline, a deterministic legal-slot comparator over imported
   legal-intent candidates, and an operator-managed structured-output LLM pair
   judge runner using `tg_legal_intent_pair_judge_v1`.
+- Added a bounded schema-guided legal-intent candidate extractor using
+  `tg_legal_intent_extractor_v1_positive`. Pair-benchmark scoping limits live
+  extraction to unique evidence referenced by reviewed pairs, while source
+  identity fields remain controlled by canonicalization evidence.
+- Evaluated extracted slots on the reviewed 23-pair benchmark. The
+  deterministic slot comparator classified every pair as
+  `same_topic_different_issue`, proving that free-form normalized slot strings
+  are too sensitive to synonyms for a standalone positive-equivalence
+  decision. Passing the candidates to the Qwen 3.7 pair judge changed exactly
+  one verdict: it corrected the material distinction between `leave and
+  re-enter` and `re-enter only`. Question-reuse safety agreement improved from
+  21/23 to 22/23 and false-duplicate risks fell from 2 to 1, at 15.3% more
+  judge tokens. Use extracted slots as a confirmation gate for proposed
+  equivalence or answer sharing, not as a mass standalone comparator.
 
 ## Verification
 
@@ -35,6 +49,9 @@
   passed.
 - `python -m pytest tests/unit/test_tg_question_canonicalization.py tests/smoke/test_cli_offline.py`:
   44 passed.
+- After adding the bounded legal-intent extractor:
+  `python -m pytest`: 169 passed, 11 skipped; canonicalization boundary check
+  passed with no failed source checks or missing ignore patterns.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

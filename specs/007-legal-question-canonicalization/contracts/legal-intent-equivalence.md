@@ -255,18 +255,34 @@ write `PairEquivalenceDecision` JSONL and remain review evidence only.
    - always flags that similarity-only output is not safe for automatic
      trusted action.
 
-2. `tg-qa-legal-intent-slot-comparator`
+2. `tg-qa-legal-intent-candidate-extractor-run`
+   - extracts schema-guided material slots from included canonicalization
+     evidence;
+   - may be bounded to unique evidence referenced by a pair benchmark;
+   - treats model-generated ids and source fields as untrusted and replaces
+     them with values from canonicalization evidence;
+   - uses prompt profile `tg_legal_intent_extractor_v1_positive`;
+   - supports resume/retry/progress behavior like the existing 007 LLM
+     runners.
+
+3. `tg-qa-legal-intent-slot-comparator`
    - compares imported `LegalIntentCandidate` material slots;
    - treats explicit differences in `desired_action`, `legal_object`, status,
      authority, third-party context, temporal condition, location scope, or
      operational boundary as material;
    - routes missing or ambiguous slots to `uncertain` rather than guessing.
+   - is diagnostic and may identify candidate material differences, but
+     free-form slot values cannot establish positive equivalence by exact
+     string equality.
 
-3. `tg-qa-legal-intent-pair-judge-run`
+4. `tg-qa-legal-intent-pair-judge-run`
    - runs an operator-managed structured-output LLM judge over benchmark pairs;
    - may consume legal-intent candidates when available;
    - uses prompt profile `tg_legal_intent_pair_judge_v1`;
    - supports resume/retry/progress behavior like the existing 007 LLM runners.
+   - should consume extracted candidates as a second confirmation gate before
+     allowing duplicate removal, canonical-question sharing, or reference-answer
+     sharing for pairs that a cheaper method proposes as equivalent.
 
 ## Pair Review Label Shape
 

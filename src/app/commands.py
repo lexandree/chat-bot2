@@ -61,6 +61,7 @@ from evaluation.tg_question_canonicalization import (
     import_tg_qa_legal_intent_candidates,
     import_tg_qa_legal_intent_pair_decisions,
     import_tg_qa_legal_intent_pair_review_labels,
+    run_tg_qa_legal_intent_candidate_extractor_batch,
     run_tg_qa_legal_intent_pair_judge_batch,
     run_tg_qa_canonicalization_adjudication_batch,
     run_tg_qa_canonicalization_llm_batch,
@@ -568,6 +569,37 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_legal_pair_benchmark_parser.add_argument("--max-random-negatives", type=int, default=0)
     tg_qa_legal_pair_benchmark_parser.add_argument("--output", required=True)
     tg_qa_legal_pair_benchmark_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_intent_extractor_parser = evaluation_subparsers.add_parser(
+        "tg-qa-legal-intent-candidate-extractor-run"
+    )
+    tg_qa_legal_intent_extractor_parser.add_argument("--canonicalization-evidence", required=True)
+    tg_qa_legal_intent_extractor_parser.add_argument("--pair-benchmark", default="")
+    tg_qa_legal_intent_extractor_parser.add_argument("--output", required=True)
+    tg_qa_legal_intent_extractor_parser.add_argument("--summary-output", required=True)
+    tg_qa_legal_intent_extractor_parser.add_argument("--endpoint-url", required=True)
+    tg_qa_legal_intent_extractor_parser.add_argument("--model-id", required=True)
+    tg_qa_legal_intent_extractor_parser.add_argument("--extractor-run-id", required=True)
+    tg_qa_legal_intent_extractor_parser.add_argument("--provider", choices=["anthropic", "openai"], default="openai")
+    tg_qa_legal_intent_extractor_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_legal_intent_extractor_parser.add_argument("--timeout-seconds", type=int, default=180)
+    tg_qa_legal_intent_extractor_parser.add_argument("--max-tokens", type=int, default=1536)
+    tg_qa_legal_intent_extractor_parser.add_argument(
+        "--structured-output-method",
+        choices=["function_calling", "json_mode", "json_schema"],
+        default="json_mode",
+    )
+    tg_qa_legal_intent_extractor_parser.add_argument("--extra-body-json", default="")
+    tg_qa_legal_intent_extractor_parser.add_argument("--stop-on-failure", action="store_true")
+    tg_qa_legal_intent_extractor_parser.add_argument(
+        "--runtime-contour",
+        default="operator_managed_legal_intent_extractor",
+    )
+    tg_qa_legal_intent_extractor_parser.add_argument("--backend", default="opencode")
+    tg_qa_legal_intent_extractor_parser.add_argument("--api-key-env", default="")
+    tg_qa_legal_intent_extractor_parser.add_argument("--provider-max-attempts", type=int, default=3)
+    tg_qa_legal_intent_extractor_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_legal_intent_extractor_parser.add_argument("--no-resume", action="store_true")
+    tg_qa_legal_intent_extractor_parser.add_argument("--no-progress", action="store_true")
     tg_qa_legal_intent_import_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-candidates-import")
     tg_qa_legal_intent_import_parser.add_argument("--canonicalization-evidence", required=True)
     tg_qa_legal_intent_import_parser.add_argument("--candidates", required=True)
@@ -1472,6 +1504,33 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
         )
         payload = dict(result["summary"])
         payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-legal-intent-candidate-extractor-run":
+        result = run_tg_qa_legal_intent_candidate_extractor_batch(
+            canonicalization_evidence_path=args.canonicalization_evidence,
+            pair_benchmark_path=args.pair_benchmark or None,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            extractor_run_id=args.extractor_run_id,
+            provider=args.provider,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            max_tokens=args.max_tokens,
+            structured_output_method=args.structured_output_method,
+            api_key_env=args.api_key_env,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            stop_on_failure=args.stop_on_failure,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            resume=not args.no_resume,
+            provider_max_attempts=args.provider_max_attempts,
+            provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            progress=not args.no_progress,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
         return 0, payload
     if args.action == "tg-qa-legal-intent-candidates-import":
         result = import_tg_qa_legal_intent_candidates(

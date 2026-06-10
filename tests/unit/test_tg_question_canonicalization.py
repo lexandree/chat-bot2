@@ -12,6 +12,7 @@ import pytest
 from evaluation.prompts import (
     CANONICALIZATION_ADJUDICATOR_PROMPT_PROFILE,
     CANONICALIZATION_VERIFIER_PROMPT_PROFILE,
+    LEGAL_INTENT_EXTRACTOR_PROMPT_PROFILE,
     LEGAL_INTENT_PAIR_JUDGE_PROMPT_PROFILE,
 )
 from evaluation.tg_question_canonicalization import (
@@ -38,6 +39,7 @@ from evaluation.tg_question_canonicalization import (
     build_langchain_canonicalization_chain,
     build_langchain_deepseek_adjudication_chain,
     build_langchain_adjudication_chain,
+    build_langchain_legal_intent_extractor_chain,
     build_langchain_legal_intent_pair_judge_chain,
     build_langchain_verifier_chain,
     canonicalization_prompt_profile,
@@ -54,6 +56,7 @@ from evaluation.tg_question_canonicalization import (
     import_tg_qa_legal_intent_candidates,
     import_tg_qa_legal_intent_pair_decisions,
     import_tg_qa_legal_intent_pair_review_labels,
+    run_tg_qa_legal_intent_candidate_extractor_batch,
     run_tg_qa_legal_intent_pair_judge_batch,
     run_tg_qa_canonicalization_adjudication_batch,
     run_tg_qa_canonicalization_deepseek_batch,
@@ -214,6 +217,10 @@ def test_canonicalization_constants_slug_ids_and_privacy_guard_are_stable() -> N
     assert "recos scores" in legal_intent_pair_judge_instruction
     assert "material legal slots" in legal_intent_pair_judge_instruction
     assert "same_topic_different_issue" in legal_intent_pair_judge_instruction
+    legal_intent_extractor_instruction = LEGAL_INTENT_EXTRACTOR_PROMPT_PROFILE["system_instruction"]
+    assert "material legal intent" in legal_intent_extractor_instruction
+    assert "material_slots_unknown" in legal_intent_extractor_instruction
+    assert "operational_boundary" in legal_intent_extractor_instruction
     assert "none" in EXCLUSION_REASONS
     assert CONFIDENCE_VALUES == ("low", "medium", "high")
     assert canonicalization._slugify("Residence Document Address Update") == "residence_document_address_update"
@@ -520,6 +527,7 @@ def test_langchain_review_prompt_builders_accept_literal_json_few_shots() -> Non
     verifier_model = _StructuredOutputOnlyChatModel()
     adjudication_model = _StructuredOutputOnlyChatModel()
     pair_judge_model = _StructuredOutputOnlyChatModel()
+    legal_intent_extractor_model = _StructuredOutputOnlyChatModel()
     canonicalization_chain = build_langchain_canonicalization_chain(canonicalization_model, method="json_mode")
     verifier_chain = build_langchain_verifier_chain(verifier_model, method="function_calling")
     adjudication_chain = build_langchain_adjudication_chain(
@@ -530,15 +538,21 @@ def test_langchain_review_prompt_builders_accept_literal_json_few_shots() -> Non
         pair_judge_model,
         method="json_mode",
     )
+    legal_intent_extractor_chain = build_langchain_legal_intent_extractor_chain(
+        legal_intent_extractor_model,
+        method="json_mode",
+    )
 
     assert canonicalization_chain is not None
     assert verifier_chain is not None
     assert adjudication_chain is not None
     assert pair_judge_chain is not None
+    assert legal_intent_extractor_chain is not None
     assert canonicalization_model.include_raw is True
     assert verifier_model.include_raw is True
     assert adjudication_model.include_raw is True
     assert pair_judge_model.include_raw is True
+    assert legal_intent_extractor_model.include_raw is True
 
 
 def test_operator_runtime_metadata_extracts_langchain_usage() -> None:
@@ -2583,6 +2597,66 @@ def test_legal_intent_slot_comparator_flags_material_slot_differences(tmp_path: 
     assert decision["material_differences"][0]["field"] == "desired_action"
 
 
+def test_legal_intent_candidate_extractor_scopes_to_pair_benchmark_and_forces_source_identity(
+    tmp_path: Path,
+) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    results_path = tmp_path / "extractor_results.jsonl"
+    summary_path = tmp_path / "extractor_summary.json"
+    imported_path = tmp_path / "extractor_imported.jsonl"
+    imported_summary_path = tmp_path / "extractor_imported_summary.json"
+    evidence = [
+        _evidence("e1", "tg-qa-candidate:1", "Можно ли подать заявление на ВНЖ?"),
+        _evidence("e2", "tg-qa-candidate:2", "Можно ли подать заявление на ВНЖ без регистрации?"),
+        _evidence("e3", "tg-qa-candidate:3", "Можно ли сменить работодателя?"),
+    ]
+    for item in evidence:
+        item.pop("canonicalization_evidence_id")
+    _write_jsonl(evidence_path, evidence)
+    build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+    )
+    scoped_pair = _read_jsonl(pairs_path)[0]
+    _write_jsonl(pairs_path, [scoped_pair])
+    expected_ids = {
+        scoped_pair["left_canonicalization_evidence_id"],
+        scoped_pair["right_canonicalization_evidence_id"],
+    }
+
+    result = run_tg_qa_legal_intent_candidate_extractor_batch(
+        canonicalization_evidence_path=evidence_path,
+        pair_benchmark_path=pairs_path,
+        output_path=results_path,
+        summary_output_path=summary_path,
+        endpoint_url="https://redacted.test/v1/chat/completions",
+        model_id="fixture-qwen",
+        extractor_run_id="tg-legal-intent-extractor-run:fixture",
+        chain=_FakeLegalIntentExtractorChain(),
+    )
+
+    records = _read_jsonl(results_path)
+    by_id = {item["canonicalization_evidence_id"]: item for item in records}
+    assert result["summary"]["completed_count"] == 2
+    assert result["summary"]["scoped_evidence_count"] == 2
+    assert set(by_id) == expected_ids
+    assert all(item["task_id"] == item["canonicalization_evidence_id"] for item in records)
+    assert all(item["law_area"] == "migration_status" for item in records)
+    assert all(item["source_canonical_question"] != "hallucinated question" for item in records)
+    assert all(item["runtime_metadata"]["prompt_version"] for item in records)
+    imported = import_tg_qa_legal_intent_candidates(
+        canonicalization_evidence_path=evidence_path,
+        candidates_path=results_path,
+        output_path=imported_path,
+        summary_output_path=imported_summary_path,
+    )
+    assert imported["summary"]["completed_count"] == 2
+    assert imported["summary"]["failed_count"] == 0
+
+
 def test_legal_intent_pair_judge_runner_streams_review_evidence(tmp_path: Path) -> None:
     evidence_path = tmp_path / "evidence.jsonl"
     pairs_path = tmp_path / "pairs.jsonl"
@@ -2761,6 +2835,12 @@ def test_legal_intent_review_labels_and_evaluation_report_flag_hard_negatives(tm
 
     assert report["summary"]["hard_negative_count"] == 1
     assert report["summary"]["false_duplicate_risk_count"] == 1
+    assert report["summary"]["available_reviewed_label_count"] == 1
+    assert report["summary"]["reviewed_label_count"] == 1
+    assert report["summary"]["counts_by_question_equivalence_match_status"] == {"mismatch": 1}
+    assert report["summary"]["counts_by_answer_equivalence_match_status"] == {"mismatch": 1}
+    assert report["summary"]["counts_by_question_reuse_safety_match_status"] == {"mismatch": 1}
+    assert report["summary"]["counts_by_answer_reuse_safety_match_status"] == {"mismatch": 1}
     assert report["summary"]["method_suitability"] == "insufficient_reviewed_labels"
     assert "reviewed_pair_label_count_below_100" in report["summary"]["insufficient_label_warnings"]
 
@@ -3000,6 +3080,32 @@ class _FakeLegalIntentPairJudgeChain:
             short_reason="Fixture pair judge accepts same legal intent.",
             confidence="high",
             risk="low",
+        )
+
+
+class _FakeLegalIntentExtractorChain:
+    def invoke(self, payload: dict) -> canonicalization.LegalIntentCandidatePayload:
+        candidate_payload = json.loads(payload["candidate_payload"])
+        assert "source_message_ids" not in payload["candidate_payload"]
+        return canonicalization.LegalIntentCandidatePayload(
+            candidate_id="hallucinated-candidate",
+            canonicalization_evidence_id="hallucinated-evidence",
+            source_canonical_question="hallucinated question",
+            law_area="hallucinated-law-area",
+            legal_domain="residence_status",
+            actor="foreign_national",
+            subject="self",
+            desired_action="apply_for_residence_permit",
+            legal_object="residence_permit",
+            authority_context=candidate_payload["authority_context"],
+            evidence_refs=[
+                {
+                    "field": "desired_action",
+                    "source_field": "canonical_question",
+                    "support_text": "подать заявление на ВНЖ",
+                }
+            ],
+            confidence="medium",
         )
 
 

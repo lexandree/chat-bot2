@@ -24,6 +24,8 @@ from evaluation.prompts import (
     CANONICALIZATION_SYSTEM_INSTRUCTION,
     CANONICALIZATION_VERIFIER_PROMPT_PROFILE,
     EXPECTED_CANONICALIZATION_SCHEMA,
+    LEGAL_INTENT_EXTRACTOR_PROMPT_PROFILE,
+    LEGAL_INTENT_EXTRACTOR_PROMPT_VERSION,
     LEGAL_INTENT_PAIR_JUDGE_PROMPT_PROFILE,
     LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION,
 )
@@ -46,6 +48,7 @@ LEGAL_INTENT_REVIEW_POLICY_VERSION = "tg_legal_intent_pair_review_v1"
 LEGAL_INTENT_EVALUATION_POLICY_VERSION = "tg_legal_intent_equivalence_evaluation_v1"
 LEGAL_INTENT_SIMILARITY_BASELINE_POLICY_VERSION = "tg_legal_intent_similarity_baseline_v1"
 LEGAL_INTENT_SLOT_COMPARATOR_POLICY_VERSION = "tg_legal_intent_slot_comparator_v1"
+LEGAL_INTENT_EXTRACTOR_RUN_POLICY_VERSION = "tg_legal_intent_extractor_run_v1"
 LEGAL_INTENT_PAIR_JUDGE_RUN_POLICY_VERSION = "tg_legal_intent_pair_judge_run_v1"
 
 CANONICALIZATION_STATUSES = ("completed", "failed", "skipped")
@@ -2220,6 +2223,35 @@ def build_langchain_legal_intent_pair_judge_chain(chat_model: Any, *, method: st
     return prompt | chat_model.with_structured_output(LegalIntentPairDecisionPayload, include_raw=True)
 
 
+def build_langchain_legal_intent_extractor_chain(chat_model: Any, *, method: str = "") -> Any:
+    """Build an optional LangChain structured-output chain for legal-intent extraction."""
+
+    try:
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        from langchain_core.prompts import ChatPromptTemplate
+    except ImportError as exc:  # pragma: no cover - optional operator dependency
+        raise RuntimeError("Install the operator-llm optional dependencies to use LangChain runners.") from exc
+
+    user_lines = [str(line) for line in LEGAL_INTENT_EXTRACTOR_PROMPT_PROFILE.get("user_prompt_lines", [])]
+    messages: list[Any] = [
+        SystemMessage(content=str(LEGAL_INTENT_EXTRACTOR_PROMPT_PROFILE["system_instruction"]))
+    ]
+    for example in LEGAL_INTENT_EXTRACTOR_PROMPT_PROFILE.get("few_shot_examples", []):
+        if not isinstance(example, Mapping):
+            continue
+        example_input = example.get("input", {})
+        example_output = example.get("output", {})
+        if not isinstance(example_input, Mapping) or not isinstance(example_output, Mapping):
+            continue
+        messages.append(HumanMessage(content="\n".join([*user_lines, _json_for_prompt(example_input)])))
+        messages.append(AIMessage(content=_json_for_prompt(example_output)))
+    messages.append(("human", "\n".join([*user_lines, "{candidate_payload}"])))
+    prompt = ChatPromptTemplate.from_messages(messages)
+    if method:
+        return prompt | chat_model.with_structured_output(LegalIntentCandidatePayload, method=method, include_raw=True)
+    return prompt | chat_model.with_structured_output(LegalIntentCandidatePayload, include_raw=True)
+
+
 def build_langchain_deepseek_adjudication_chain(chat_model: Any, *, method: str = "") -> Any:
     """Backward-compatible alias for the generic adjudication chain."""
 
@@ -3017,6 +3049,248 @@ def build_tg_qa_legal_intent_pair_benchmark(
     return {"records": records, "summary": summary}
 
 
+def run_tg_qa_legal_intent_candidate_extractor_batch(
+    *,
+    canonicalization_evidence_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+    endpoint_url: str,
+    model_id: str,
+    extractor_run_id: str,
+    pair_benchmark_path: str | Path | None = None,
+    provider: str = "openai",
+    max_items: int = 0,
+    timeout_seconds: int = 180,
+    max_tokens: int = 1536,
+    structured_output_method: str = "json_mode",
+    api_key_env: str = "",
+    extra_body: Mapping[str, Any] | None = None,
+    stop_on_failure: bool = False,
+    runtime_contour: str = "operator_managed_legal_intent_extractor",
+    backend: str = "opencode",
+    resume: bool = True,
+    provider_max_attempts: int = 3,
+    provider_retry_delay_seconds: float = 2.0,
+    progress: bool = False,
+    chain: Any | None = None,
+) -> dict[str, Any]:
+    """Extract structured material slots from included canonicalization evidence."""
+
+    if provider not in {"anthropic", "openai"}:
+        raise ValueError("provider must be anthropic or openai")
+    if structured_output_method not in {"function_calling", "json_mode", "json_schema"}:
+        raise ValueError("structured_output_method must be function_calling, json_mode, or json_schema")
+    if provider_max_attempts < 0:
+        raise ValueError("provider_max_attempts must be non-negative")
+    if provider_retry_delay_seconds < 0:
+        raise ValueError("provider_retry_delay_seconds must be non-negative")
+
+    all_evidence = [
+        _legal_intent_source_evidence_record(item)
+        for item in _read_jsonl(canonicalization_evidence_path)
+        if _included_canonical_evidence(item)
+    ]
+    scoped_evidence_ids = _legal_intent_evidence_ids_from_pair_benchmark(pair_benchmark_path)
+    available_evidence_ids = {
+        str(item.get("canonicalization_evidence_id", "")) for item in all_evidence
+    }
+    if scoped_evidence_ids is not None:
+        if not scoped_evidence_ids:
+            raise ValueError("pair benchmark contains no canonicalization evidence ids")
+        missing_evidence_ids = scoped_evidence_ids - available_evidence_ids
+        if missing_evidence_ids:
+            raise ValueError(
+                f"pair benchmark references {len(missing_evidence_ids)} canonicalization evidence ids "
+                "missing from the source evidence artifact"
+            )
+    evidence = [
+        item
+        for item in all_evidence
+        if scoped_evidence_ids is None
+        or str(item.get("canonicalization_evidence_id", "")) in scoped_evidence_ids
+    ]
+    run_items = [_legal_intent_candidate_operator_item(item) for item in evidence]
+    resume_state = _load_existing_operator_results(output_path, run_items) if resume else _empty_operator_resume_state()
+    remaining_evidence = [
+        item
+        for item in evidence
+        if str(item.get("canonicalization_evidence_id", "")) not in resume_state["processed_task_ids"]
+    ]
+    selected_evidence = remaining_evidence[:max_items] if max_items > 0 else remaining_evidence
+    started_at = _utc_timestamp()
+    started = perf_counter()
+    runner = chain or _build_legal_intent_extractor_chain(
+        provider=provider,
+        endpoint_url=endpoint_url,
+        model_id=model_id,
+        timeout_seconds=timeout_seconds,
+        max_tokens=max_tokens,
+        structured_output_method=structured_output_method,
+        api_key_env=api_key_env,
+        extra_body=extra_body,
+    )
+    counts = Counter()
+    records: list[dict[str, Any]] = []
+    progress_line = _OperatorProgress(
+        enabled=progress,
+        label="tg-qa-legal-intent-candidate-extractor-run",
+        total=len(selected_evidence),
+    )
+    output_handle = _open_jsonl_stream(output_path, append=resume and bool(resume_state["processed_task_ids"]))
+    try:
+        for item_index, source_evidence in enumerate(selected_evidence, start=1):
+            operator_item = _legal_intent_candidate_operator_item(source_evidence)
+            progress_line.update(
+                item_index - 1,
+                completed=counts.get("completed", 0),
+                failed=counts.get("failed", 0),
+                skipped=counts.get("skipped", 0),
+                last_status="request",
+                detail=_operator_progress_detail("request", item_index, len(selected_evidence), operator_item),
+            )
+            counts["processed"] += 1
+            compact_payload = _compact_legal_intent_extractor_payload(source_evidence)
+            attempts_used = 0
+            item_started = perf_counter()
+            last_raw_result: Any = None
+            while True:
+                attempts_used += 1
+                try:
+                    raw_result = runner.invoke({"candidate_payload": _json_for_prompt(compact_payload)})
+                    last_raw_result = raw_result
+                    record = _legal_intent_candidate_record_from_structured_output(
+                        raw_result,
+                        source_evidence,
+                        extractor_run_id=extractor_run_id,
+                        runtime_contour=runtime_contour,
+                        backend=backend,
+                        model_id=model_id,
+                    )
+                    break
+                except Exception as exc:  # pragma: no cover - live endpoint failures vary
+                    failure_reason = _operator_error_reason(exc)
+                    retry_limit = _operator_retry_limit_for_exception(exc, provider_max_attempts)
+                    if _operator_should_retry_exception(exc) and _operator_retry_allowed(attempts_used, retry_limit):
+                        counts["provider_retry"] += 1
+                        progress_line.update(
+                            item_index - 1,
+                            completed=counts.get("completed", 0),
+                            failed=counts.get("failed", 0),
+                            skipped=counts.get("skipped", 0),
+                            last_status="retry",
+                            detail=_operator_progress_detail(
+                                f"retry {attempts_used + 1}/{_operator_retry_limit_label(retry_limit)}",
+                                item_index,
+                                len(selected_evidence),
+                                operator_item,
+                                failure_reason=failure_reason,
+                            ),
+                        )
+                        if provider_retry_delay_seconds > 0:
+                            sleep(provider_retry_delay_seconds)
+                        continue
+                    if _operator_should_retry_exception(exc):
+                        counts["provider_retry_exhausted"] += 1
+                    record = _failed_legal_intent_extractor_record(
+                        source_evidence,
+                        extractor_run_id=extractor_run_id,
+                        failure_reason=_operator_failure_reason_with_attempts(failure_reason, attempts_used),
+                        runtime_contour=runtime_contour,
+                        backend=backend,
+                        model_id=model_id,
+                    )
+                    break
+            record = _attach_runtime_metadata(
+                record,
+                _operator_record_runtime_metadata(
+                    last_raw_result,
+                    request_duration_seconds=perf_counter() - item_started,
+                    attempts_used=attempts_used,
+                ),
+            )
+            counts[str(record.get("status", "failed"))] += 1
+            records.append(record)
+            _write_jsonl_stream_record(output_handle, record)
+            progress_line.update(
+                item_index,
+                completed=counts.get("completed", 0),
+                failed=counts.get("failed", 0),
+                skipped=counts.get("skipped", 0),
+                last_status=str(record.get("status", "done")),
+                detail=_operator_progress_detail(
+                    str(record.get("status", "done")),
+                    item_index,
+                    len(selected_evidence),
+                    operator_item,
+                    failure_reason=str(record.get("failure_reason", "")),
+                ),
+            )
+            if stop_on_failure and str(record.get("status", "")) == "failed":
+                break
+    finally:
+        output_handle.close()
+        progress_line.finish(
+            counts.get("processed", 0),
+            completed=counts.get("completed", 0),
+            failed=counts.get("failed", 0),
+            skipped=counts.get("skipped", 0),
+        )
+
+    completed_at = _utc_timestamp()
+    duration = perf_counter() - started
+    summary = {
+        "artifact_type": "tg_qa_legal_intent_candidate_extractor_run_summary",
+        "generated_at": completed_at,
+        "canonicalization_evidence_path": str(canonicalization_evidence_path),
+        "pair_benchmark_path": str(pair_benchmark_path or ""),
+        "output_path": str(output_path),
+        "summary_output_path": str(summary_output_path),
+        "extractor_run_id": extractor_run_id,
+        "endpoint_shape": _redacted_endpoint_shape(endpoint_url),
+        "provider": provider,
+        "runtime_contour": runtime_contour,
+        "backend": backend,
+        "model_id": model_id,
+        "api_key_env": api_key_env,
+        "auth_mode": "bearer_env" if api_key_env else "none",
+        "structured_output_method": structured_output_method,
+        "extra_body_keys": sorted(extra_body.keys()) if isinstance(extra_body, Mapping) else [],
+        "stop_on_failure": stop_on_failure,
+        "resume": resume,
+        "progress": progress,
+        "provider_max_attempts": provider_max_attempts,
+        "provider_retry_forever": provider_max_attempts == 0,
+        "provider_retry_delay_seconds": provider_retry_delay_seconds,
+        "max_items": max_items,
+        "max_tokens": max_tokens,
+        "timeout_seconds": timeout_seconds,
+        "requested_item_count": len(selected_evidence),
+        "remaining_evidence_count_before_run": len(remaining_evidence),
+        "available_included_evidence_count": len(all_evidence),
+        "scoped_evidence_count": len(evidence),
+        "pair_benchmark_requested_evidence_count": len(scoped_evidence_ids or set()),
+        "pair_benchmark_missing_evidence_count": len((scoped_evidence_ids or set()) - available_evidence_ids),
+        "processed_count": counts.get("processed", 0),
+        "completed_count": counts.get("completed", 0),
+        "failed_count": counts.get("failed", 0),
+        "skipped_count": counts.get("skipped", 0),
+        "provider_retry_count": counts.get("provider_retry", 0),
+        "provider_retry_exhausted_count": counts.get("provider_retry_exhausted", 0),
+        "resumed_existing_count": len(resume_state["processed_task_ids"]),
+        "existing_status_counts": dict(sorted(resume_state["status_counts"].items())),
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "duration_seconds": round(duration, 3),
+        "items_per_second": round(len(selected_evidence) / duration, 3) if duration > 0 else 0,
+        "policy_version": LEGAL_INTENT_EXTRACTOR_RUN_POLICY_VERSION,
+        "prompt_version": LEGAL_INTENT_EXTRACTOR_PROMPT_VERSION,
+        "trust_boundary": "llm_legal_intent_candidates_are_review_evidence_only",
+    }
+    summary.update(_operator_runtime_summary(records))
+    _write_json(summary_output_path, summary)
+    return {"results": records, "summary": summary}
+
+
 def import_tg_qa_legal_intent_candidates(
     *,
     canonicalization_evidence_path: str | Path,
@@ -3027,7 +3301,9 @@ def import_tg_qa_legal_intent_candidates(
     """Import structured legal-intent candidates for canonical questions."""
 
     evidence_records = [
-        item for item in _read_jsonl(canonicalization_evidence_path) if _included_canonical_evidence(item)
+        _legal_intent_source_evidence_record(item)
+        for item in _read_jsonl(canonicalization_evidence_path)
+        if _included_canonical_evidence(item)
     ]
     by_evidence_id = {str(item.get("canonicalization_evidence_id", "")): item for item in evidence_records}
     by_candidate_id = {str(item.get("candidate_id", "")): item for item in evidence_records}
@@ -3560,6 +3836,10 @@ def build_tg_qa_legal_intent_equivalence_report(
     decisions = [item for item in _read_jsonl(pair_decisions_path) if str(item.get("status", "")) != "failed"]
     labels = [item for item in _read_jsonl(review_labels_path) if str(item.get("status", "")) == "completed"]
     labels_by_pair = {str(item.get("pair_id", "")): item for item in labels}
+    decision_pair_ids = {str(item.get("pair_id", "")) for item in decisions}
+    evaluated_labels_by_pair = {
+        pair_id: label for pair_id, label in labels_by_pair.items() if pair_id in decision_pair_ids
+    }
     comparison_records = [
         _legal_intent_evaluation_record(decision, labels_by_pair.get(str(decision.get("pair_id", ""))), benchmark)
         for decision in decisions
@@ -3576,10 +3856,12 @@ def build_tg_qa_legal_intent_equivalence_report(
     ][:25]
     hard_negatives = [
         _hard_negative_summary(pair_id, benchmark[pair_id], labels_by_pair[pair_id])
-        for pair_id in sorted(labels_by_pair)
-        if pair_id in benchmark and _legal_intent_hard_negative(benchmark[pair_id], labels_by_pair[pair_id])
+        for pair_id in sorted(evaluated_labels_by_pair)
+        if pair_id in benchmark
+        and _legal_intent_hard_negative(benchmark[pair_id], evaluated_labels_by_pair[pair_id])
     ][:25]
-    method_suitability = _legal_intent_method_suitability(comparison_records, label_count)
+    evaluated_label_count = len(evaluated_labels_by_pair)
+    method_suitability = _legal_intent_method_suitability(comparison_records, evaluated_label_count)
     summary = {
         "artifact_type": "tg_qa_legal_intent_equivalence_evaluation_summary",
         "generated_at": _utc_timestamp(),
@@ -3591,19 +3873,36 @@ def build_tg_qa_legal_intent_equivalence_report(
         "evaluation_policy_version": LEGAL_INTENT_EVALUATION_POLICY_VERSION,
         "pair_count": len(benchmark),
         "decision_count": len(decisions),
-        "reviewed_label_count": label_count,
+        "available_reviewed_label_count": label_count,
+        "reviewed_label_count": evaluated_label_count,
         "comparison_count": len(comparison_records),
-        "counts_by_label_pair_class": _counts(str(item.get("pair_class", "")) for item in labels),
+        "counts_by_label_pair_class": _counts(
+            str(item.get("pair_class", "")) for item in evaluated_labels_by_pair.values()
+        ),
         "counts_by_decision_pair_class": _counts(str(item.get("pair_class", "")) for item in decisions),
         "counts_by_decision_source": _counts(str(item.get("decision_source", "")) for item in decisions),
         "counts_by_match_status": _counts(str(item.get("match_status", "")) for item in comparison_records),
+        "counts_by_question_equivalence_match_status": _counts(
+            str(item.get("question_equivalence_match_status", "")) for item in comparison_records
+        ),
+        "counts_by_answer_equivalence_match_status": _counts(
+            str(item.get("answer_equivalence_match_status", "")) for item in comparison_records
+        ),
+        "counts_by_question_reuse_safety_match_status": _counts(
+            str(item.get("question_reuse_safety_match_status", "")) for item in comparison_records
+        ),
+        "counts_by_answer_reuse_safety_match_status": _counts(
+            str(item.get("answer_reuse_safety_match_status", "")) for item in comparison_records
+        ),
         "hard_negative_count": len(hard_negatives),
         "false_duplicate_risk_count": len(false_duplicate_risks),
         "false_separation_risk_count": len(false_separation_risks),
         "high_similarity_hard_negatives": hard_negatives,
         "false_duplicate_risk_examples": false_duplicate_risks,
         "false_separation_risk_examples": false_separation_risks,
-        "insufficient_label_warnings": _legal_intent_insufficient_label_warnings(labels),
+        "insufficient_label_warnings": _legal_intent_insufficient_label_warnings(
+            list(evaluated_labels_by_pair.values())
+        ),
         "method_suitability": method_suitability,
         "trust_boundary": "equivalence_evaluation_does_not_approve_automatic_answer_reuse",
     }
@@ -3963,6 +4262,143 @@ def _similarity_shared_facts(
     for reason in _as_string_list(pair.get("pair_source_reasons", [])):
         facts.append(f"pair_source:{reason}")
     return facts
+
+
+def _legal_intent_evidence_ids_from_pair_benchmark(
+    pair_benchmark_path: str | Path | None,
+) -> set[str] | None:
+    if not pair_benchmark_path:
+        return None
+    evidence_ids: set[str] = set()
+    for pair in _read_jsonl(pair_benchmark_path):
+        for field_name in (
+            "left_canonicalization_evidence_id",
+            "right_canonicalization_evidence_id",
+        ):
+            evidence_id = str(pair.get(field_name, ""))
+            if evidence_id:
+                evidence_ids.add(evidence_id)
+    return evidence_ids
+
+
+def _legal_intent_candidate_operator_item(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    evidence_id = str(evidence.get("canonicalization_evidence_id", ""))
+    return {
+        "task_id": evidence_id,
+        "canonicalization_evidence_id": evidence_id,
+        "candidate_id": str(evidence.get("candidate_id", "")),
+    }
+
+
+def _compact_legal_intent_extractor_payload(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    payload = {
+        "canonicalization_evidence_id": str(evidence.get("canonicalization_evidence_id", "")),
+        "candidate_id": str(evidence.get("candidate_id", "")),
+        "canonical_question": _redact_private_text(str(evidence.get("canonical_question", ""))),
+        "legal_issue_frame": str(evidence.get("legal_issue_frame", "")),
+        "law_area": str(evidence.get("law_area", "")),
+        "facts": _as_string_list(evidence.get("facts", [])),
+        "desired_outcome": str(evidence.get("desired_outcome", "")),
+        "authority_context": _as_string_list(evidence.get("authority_context", [])),
+        "hidden_issues": _as_string_list(evidence.get("hidden_issues", [])),
+        "quality_flags": _as_string_list(evidence.get("quality_flags", [])),
+        "expected_output_schema": {
+            "legal_domain": "string",
+            "actor": "string",
+            "subject": "string",
+            "current_status": "string",
+            "target_status": "string",
+            "desired_action": "string",
+            "legal_object": "string",
+            "authority_context": "array[string]",
+            "third_party_context": "array[string]",
+            "location_scope": "string",
+            "temporal_condition": "string",
+            "operational_boundary": "string",
+            "material_slots_unknown": "array[string]",
+            "ambiguities": "array[string]",
+            "evidence_refs": "array[{field,source_field,support_text}]",
+            "validation_flags": "array[string]",
+            "confidence": "low|medium|high",
+            "review_status": "candidate|needs_more_context|uncertain",
+        },
+    }
+    _ensure_public_payload(payload)
+    return payload
+
+
+def _legal_intent_candidate_record_from_structured_output(
+    raw_result: Any,
+    source_evidence: Mapping[str, Any],
+    *,
+    extractor_run_id: str,
+    runtime_contour: str,
+    backend: str,
+    model_id: str,
+) -> dict[str, Any]:
+    payload = _extract_result_payload(_structured_output_payload(raw_result))
+    evidence_id = str(source_evidence.get("canonicalization_evidence_id", ""))
+    payload.update(
+        {
+            "legal_intent_candidate_id": _stable_id(
+                "tg-legal-intent-candidate",
+                evidence_id,
+                LEGAL_INTENT_CANDIDATE_POLICY_VERSION,
+            ),
+            "candidate_id": str(source_evidence.get("candidate_id", "")),
+            "canonicalization_evidence_id": evidence_id,
+            "source_canonical_question": str(source_evidence.get("canonical_question", "")),
+            "source_legal_issue_frame": str(source_evidence.get("legal_issue_frame", "")),
+            "law_area": str(source_evidence.get("law_area", "")),
+            "policy_version": LEGAL_INTENT_CANDIDATE_POLICY_VERSION,
+        }
+    )
+    record = _legal_intent_candidate_record(
+        payload,
+        evidence_by_id={evidence_id: source_evidence},
+        evidence_by_candidate_id={str(source_evidence.get("candidate_id", "")): source_evidence},
+    )
+    record["task_id"] = evidence_id
+    record["extractor_run_id"] = extractor_run_id
+    record["runtime_metadata"] = {
+        "extractor_run_id": extractor_run_id,
+        "runtime_contour": runtime_contour,
+        "backend": backend,
+        "model_id": model_id,
+        "prompt_version": LEGAL_INTENT_EXTRACTOR_PROMPT_VERSION,
+        "policy_version": LEGAL_INTENT_EXTRACTOR_RUN_POLICY_VERSION,
+    }
+    return record
+
+
+def _failed_legal_intent_extractor_record(
+    source_evidence: Mapping[str, Any],
+    *,
+    extractor_run_id: str,
+    failure_reason: str,
+    runtime_contour: str,
+    backend: str,
+    model_id: str,
+) -> dict[str, Any]:
+    evidence_id = str(source_evidence.get("canonicalization_evidence_id", ""))
+    record = _failed_legal_intent_candidate(
+        {
+            "canonicalization_evidence_id": evidence_id,
+            "candidate_id": str(source_evidence.get("candidate_id", "")),
+        },
+        failure_reason,
+    )
+    record["task_id"] = evidence_id
+    record["extractor_run_id"] = extractor_run_id
+    record["runtime_metadata"] = {
+        "extractor_run_id": extractor_run_id,
+        "runtime_contour": runtime_contour,
+        "backend": backend,
+        "model_id": model_id,
+        "prompt_version": LEGAL_INTENT_EXTRACTOR_PROMPT_VERSION,
+        "policy_version": LEGAL_INTENT_EXTRACTOR_RUN_POLICY_VERSION,
+    }
+    return record
 
 
 def _legal_intent_candidates_by_evidence_id(
@@ -4796,16 +5232,41 @@ def _legal_intent_evaluation_record(
     pair_id = str(decision.get("pair_id", ""))
     label_pair_class = str((label or {}).get("pair_class", ""))
     label_answer_equivalence = str((label or {}).get("answer_equivalence", ""))
+    label_question_equivalence = str((label or {}).get("canonical_question_equivalence", ""))
     decision_pair_class = str(decision.get("pair_class", ""))
+    decision_answer_equivalence = str(decision.get("answer_equivalence", ""))
+    decision_question_equivalence = str(decision.get("canonical_question_equivalence", ""))
     match_status = "unreviewed"
+    question_equivalence_match_status = "unreviewed"
+    answer_equivalence_match_status = "unreviewed"
+    question_reuse_safety_match_status = "unreviewed"
+    answer_reuse_safety_match_status = "unreviewed"
     if label:
         match_status = "match" if decision_pair_class == label_pair_class else "mismatch"
+        question_equivalence_match_status = (
+            "match" if decision_question_equivalence == label_question_equivalence else "mismatch"
+        )
+        answer_equivalence_match_status = (
+            "match" if decision_answer_equivalence == label_answer_equivalence else "mismatch"
+        )
+        question_reuse_safety_match_status = (
+            "match"
+            if (decision_question_equivalence == "safe_to_share_question")
+            == (label_question_equivalence == "safe_to_share_question")
+            else "mismatch"
+        )
+        answer_reuse_safety_match_status = (
+            "match"
+            if (decision_answer_equivalence == "safe_to_share_answer")
+            == (label_answer_equivalence == "safe_to_share_answer")
+            else "mismatch"
+        )
     false_duplicate_risk = bool(
         label
         and label_pair_class in {"same_topic_different_issue", "related_context", "different"}
         and (
             decision_pair_class in {"exact_duplicate", "same_legal_intent"}
-            or str(decision.get("answer_equivalence", "")) == "safe_to_share_answer"
+            or decision_answer_equivalence == "safe_to_share_answer"
             or "allow_duplicate_removal" in _as_string_list(decision.get("allowed_downstream_actions", []))
         )
     )
@@ -4820,9 +5281,15 @@ def _legal_intent_evaluation_record(
         "decision_source": str(decision.get("decision_source", "")),
         "decision_pair_class": decision_pair_class,
         "label_pair_class": label_pair_class,
-        "decision_answer_equivalence": str(decision.get("answer_equivalence", "")),
+        "decision_answer_equivalence": decision_answer_equivalence,
         "label_answer_equivalence": label_answer_equivalence,
+        "decision_question_equivalence": decision_question_equivalence,
+        "label_question_equivalence": label_question_equivalence,
         "match_status": match_status,
+        "question_equivalence_match_status": question_equivalence_match_status,
+        "answer_equivalence_match_status": answer_equivalence_match_status,
+        "question_reuse_safety_match_status": question_reuse_safety_match_status,
+        "answer_reuse_safety_match_status": answer_reuse_safety_match_status,
         "false_duplicate_risk": false_duplicate_risk,
         "false_separation_risk": false_separation_risk,
         "canonical_question_score": _float_value(
@@ -7053,6 +7520,56 @@ def _build_adjudication_chain(
         api_key_env=api_key_env,
         extra_body=extra_body,
     )
+
+
+def _build_legal_intent_extractor_chain(
+    *,
+    provider: str,
+    endpoint_url: str,
+    model_id: str,
+    timeout_seconds: int,
+    max_tokens: int,
+    structured_output_method: str,
+    api_key_env: str,
+    extra_body: Mapping[str, Any] | None,
+) -> Any:
+    api_key = _api_key_from_env(api_key_env) or "not-needed"
+    if provider == "anthropic":
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError as exc:  # pragma: no cover - optional operator dependency
+            raise RuntimeError("Install the operator-llm optional dependencies to run live legal-intent extraction.") from exc
+        normalized_base_url = endpoint_url.rstrip("/")
+        if normalized_base_url.endswith("/v1/messages"):
+            normalized_base_url = normalized_base_url[: -len("/v1/messages")]
+        elif normalized_base_url.endswith("/messages"):
+            normalized_base_url = normalized_base_url[: -len("/messages")]
+        model_kwargs: dict[str, Any] = {}
+        if isinstance(extra_body, Mapping) and isinstance(extra_body.get("thinking"), Mapping):
+            model_kwargs["thinking"] = dict(extra_body["thinking"])
+        model = ChatAnthropic(
+            model=model_id,
+            base_url=normalized_base_url,
+            api_key=api_key,
+            timeout=timeout_seconds,
+            max_tokens=max_tokens,
+            **model_kwargs,
+        )
+        return build_langchain_legal_intent_extractor_chain(model, method=structured_output_method)
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError as exc:  # pragma: no cover - optional operator dependency
+        raise RuntimeError("Install the operator-llm optional dependencies to run live legal-intent extraction.") from exc
+    model = ChatOpenAI(
+        model=model_id,
+        base_url=_openai_base_url_from_endpoint(endpoint_url),
+        api_key=api_key,
+        timeout=timeout_seconds,
+        max_tokens=max_tokens,
+        temperature=0,
+        extra_body=extra_body,
+    )
+    return build_langchain_legal_intent_extractor_chain(model, method=structured_output_method)
 
 
 def _build_legal_intent_pair_judge_chain(
