@@ -37,6 +37,10 @@ from evaluation.tg_qa_dataset import (
     vectorize_tg_qa_embedding_batch,
     verify_tg_qa_boundaries,
 )
+from evaluation.tg_qa_retrieval_benchmark import (
+    build_private_artifact_snapshot_manifest,
+    build_tg_qa_corpus_bounded_reference_benchmark,
+)
 from evaluation.tg_question_canonicalization import (
     build_tg_qa_canonicalization_adjudication_batch,
     build_tg_qa_canonicalization_retry_batch_from_adjudication,
@@ -667,6 +671,19 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_legal_eval_parser.add_argument("--review-labels", required=True)
     tg_qa_legal_eval_parser.add_argument("--output", required=True)
     tg_qa_legal_eval_parser.add_argument("--summary-output", required=True)
+    tg_qa_private_snapshot_parser = evaluation_subparsers.add_parser("tg-qa-private-snapshot-manifest")
+    tg_qa_private_snapshot_parser.add_argument("--snapshot-name", required=True)
+    tg_qa_private_snapshot_parser.add_argument("--artifact", action="append", required=True, dest="artifacts")
+    tg_qa_private_snapshot_parser.add_argument("--output", required=True)
+    tg_qa_reference_benchmark_parser = evaluation_subparsers.add_parser(
+        "tg-qa-corpus-bounded-reference-benchmark"
+    )
+    tg_qa_reference_benchmark_parser.add_argument("--dataset", required=True)
+    tg_qa_reference_benchmark_parser.add_argument("--legal-preview", required=True)
+    tg_qa_reference_benchmark_parser.add_argument("--dataset-snapshot-manifest", default="")
+    tg_qa_reference_benchmark_parser.add_argument("--law-code", action="append", dest="law_codes")
+    tg_qa_reference_benchmark_parser.add_argument("--output", required=True)
+    tg_qa_reference_benchmark_parser.add_argument("--summary-output", required=True)
     evaluation_subparsers.add_parser("tg-qa-canonical-boundary-check")
 
     embeddings_parser = subparsers.add_parser("embeddings")
@@ -1629,6 +1646,26 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             pair_benchmark_path=args.pair_benchmark,
             pair_decisions_path=args.pair_decisions,
             review_labels_path=args.review_labels,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-private-snapshot-manifest":
+        payload = build_private_artifact_snapshot_manifest(
+            snapshot_name=args.snapshot_name,
+            artifact_paths=args.artifacts,
+            output_path=args.output,
+        )
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-corpus-bounded-reference-benchmark":
+        result = build_tg_qa_corpus_bounded_reference_benchmark(
+            dataset_path=args.dataset,
+            legal_preview_path=args.legal_preview,
+            dataset_snapshot_manifest_path=args.dataset_snapshot_manifest or None,
+            law_codes=args.law_codes,
             output_path=args.output,
             summary_output_path=args.summary_output,
         )

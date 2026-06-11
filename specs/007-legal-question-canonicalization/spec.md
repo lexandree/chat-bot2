@@ -135,6 +135,13 @@ policy, and does not approve automatic answer reuse.
 - **FR-025**: Phase 8 MUST report legal-intent equivalence method quality against reviewed pair labels and must state insufficient-label limitations when labels are too few or imbalanced.
 - **FR-026**: Phase 8 MUST provide review-evidence decision producers for method comparison, including a cosine+recos similarity baseline, a deterministic legal-slot comparator over imported legal-intent candidates, and an operator-managed structured-output LLM pair judge.
 
+### Private Snapshot And Retrieval Baseline Extension Requirements
+
+- **FR-027**: The system MUST treat all generated files under `data/evaluation/` as private regardless of file extension unless an explicit sanitization and publication step approves a specific artifact.
+- **FR-028**: The system MUST support a content-free private snapshot manifest with stable artifact hashes, counts, privacy classification, and no copied dataset rows.
+- **FR-029**: The first corpus-bounded retrieval benchmark MUST use only explicit law-code references as expected targets and MUST report its selected legal corpus boundary.
+- **FR-030**: The explicit-reference benchmark MUST state that it does not measure semantic retrieval, reranking, answer quality, or GraphRAG inference.
+
 ### Key Entities *(include if feature involves data)*
 
 - **CanonicalQuestionCandidate**: A redacted Telegram question candidate from 006 plus canonicalization status, provenance, and exclusion state.
@@ -151,6 +158,8 @@ policy, and does not approve automatic answer reuse.
 - **PairEquivalenceDecision**: Reviewable candidate judgment for a pair, including pair class, answer-equivalence status, canonical-question-equivalence status, material differences, allowed downstream actions, confidence, risk, and validation flags.
 - **PairReviewLabel**: Human label for one benchmark pair, used to evaluate automatic equivalence methods and hard negatives.
 - **EquivalenceEvaluationReport**: Diagnostic summary comparing candidate methods against reviewed pair labels and recording risks, limitations, and method suitability.
+- **PrivateArtifactSnapshotManifest**: Content-free identity manifest for a fixed private dataset artifact bundle.
+- **CorpusBoundedExplicitReferenceCase**: Private retrieval-evaluation case derived from an explicit law-code reference in a canonical question.
 
 ## Success Criteria *(mandatory)*
 
@@ -167,6 +176,8 @@ policy, and does not approve automatic answer reuse.
 - **SC-009**: After Phase 8 implementation, no pair receives trusted duplicate-removal or answer-reuse status solely from embedding, lexical, reranker, clustering, or LLM-confidence scores.
 - **SC-010**: After Phase 8 implementation, equivalence reports state the limitation instead of recommending an automatic threshold when reviewed pair labels are insufficient.
 - **SC-011**: After Phase 8 implementation, offline tests exercise all three legal-intent decision producer contours without live LLMs, live embedding services, paid APIs, Neo4j, or network dependencies.
+- **SC-012**: A private snapshot manifest changes identity when an input artifact changes and never contains private record text.
+- **SC-013**: The corpus-bounded explicit-reference benchmark runs offline against a legal preview and reports exact-reference Recall@1 without claiming semantic retrieval quality.
 
 ## Assumptions
 

@@ -170,6 +170,7 @@ data/
     ├── tg_qa_issue_clusters/
     ├── tg_qa_question_bank/
     ├── tg_qa_canonical_coverage/
+    ├── tg_qa_retrieval_benchmark/
     └── tg_qa_legal_intent_equivalence/
 ```
 
@@ -194,6 +195,7 @@ Design outputs:
 - [contracts/canonicalization.md](contracts/canonicalization.md)
 - [contracts/cluster-coverage.md](contracts/cluster-coverage.md)
 - [contracts/legal-intent-equivalence.md](contracts/legal-intent-equivalence.md)
+- [contracts/private-snapshot-reference-benchmark.md](contracts/private-snapshot-reference-benchmark.md)
 - [contracts/review-promotion.md](contracts/review-promotion.md)
 
 ## Operator LLM Run Contour

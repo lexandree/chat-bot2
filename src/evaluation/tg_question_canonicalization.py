@@ -3949,6 +3949,7 @@ def verify_tg_question_canonicalization_boundaries(
     ]
     required_ignore_patterns = [
         "data/tg/",
+        "data/evaluation/",
         "data/evaluation/tg_qa_canonicalization/*.json",
         "data/evaluation/tg_qa_canonicalization/*.jsonl",
         "data/evaluation/tg_qa_canonical_embeddings/*.json",

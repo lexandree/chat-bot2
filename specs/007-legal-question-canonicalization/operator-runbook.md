@@ -20,6 +20,9 @@ Legal-intent pair review labels are explained in
 `specs/007-legal-question-canonicalization/legal-intent-pair-review-guide.ru.md`
 and
 `specs/007-legal-question-canonicalization/legal-intent-pair-review-guide.en.md`.
+Private dataset snapshot and first corpus-bounded exact-reference retrieval
+commands are defined in
+`specs/007-legal-question-canonicalization/contracts/private-snapshot-reference-benchmark.md`.
 
 ## Cumulative Prompt-Regression Gate
 

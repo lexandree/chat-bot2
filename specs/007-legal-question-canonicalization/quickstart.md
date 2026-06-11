@@ -184,3 +184,19 @@ Expected result:
 - reviewed final cases include only eligible promoted cases with reviewed
   reference answer material;
 - Telegram answers remain evaluation material, not legal truth.
+
+## Private Snapshot And Exact-Reference Retrieval Baseline
+
+Use the commands in
+[contracts/private-snapshot-reference-benchmark.md](contracts/private-snapshot-reference-benchmark.md)
+to freeze a content-free private snapshot identity and run the first
+corpus-bounded exact-reference benchmark.
+
+Expected result:
+
+- all dataset rows and benchmark cases remain under ignored `data/evaluation/`;
+- the snapshot manifest contains hashes and counts but no record content;
+- the benchmark evaluates only explicit law-code references against the
+  selected legal preview;
+- the summary does not claim legal-reference correctness, semantic retrieval,
+  reranking, or answer quality.

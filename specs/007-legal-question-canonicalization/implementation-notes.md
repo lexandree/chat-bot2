@@ -42,6 +42,22 @@
   21/23 to 22/23 and false-duplicate risks fell from 2 to 1, at 15.3% more
   judge tokens. Use extracted slots as a confirmation gate for proposed
   equivalence or answer sharing, not as a mass standalone comparator.
+- Added a private artifact snapshot manifest that records stable hashes, byte
+  counts, line counts, and privacy classification without copying dataset rows.
+- Added a corpus-bounded explicit-reference benchmark over canonical questions.
+  It reuses the existing legal-reference parser, structural preview builder,
+  and exact-reference resolver. It measures mechanical resolution only and
+  explicitly leaves legal-reference correctness unreviewed.
+- Strengthened `.gitignore` with a complete `data/evaluation/` boundary so new
+  private formats cannot bypass extension-specific rules.
+- Frozen private `last_2000_v1` snapshot:
+  `private-artifact-snapshot:67170d3d81914e18ea6c`, containing four core
+  artifacts and 985 dataset rows.
+- Ran the three-law explicit-reference benchmark against preview
+  `preview:060fb3c068c3e78b`: 99 query-explicit cases, 98 `AufenthG`, one
+  `AsylG`, zero `BeschV`, and 99 mechanically resolved targets. The single
+  `AsylG` case demonstrates why mechanical resolution must not be interpreted
+  as legal-reference correctness.
 
 ## Verification
 
@@ -52,6 +68,9 @@
 - After adding the bounded legal-intent extractor:
   `python -m pytest`: 169 passed, 11 skipped; canonicalization boundary check
   passed with no failed source checks or missing ignore patterns.
+- After adding private snapshots and the corpus-bounded explicit-reference
+  benchmark: `python -m pytest -q`: 172 passed, 11 skipped; compileall,
+  canonicalization boundary check, and `git diff --check` passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

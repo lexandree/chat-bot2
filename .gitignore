@@ -27,6 +27,9 @@ data/comparisons/*.json
 data/relationship_quality/*.json
 data/corpus_readiness/*.json
 data/structural_workflows/*.json
+# Evaluation inputs, outputs, vectors, review files, and dataset snapshots are
+# private generated artifacts regardless of file extension.
+data/evaluation/
 data/evaluation/tg_qa_candidates/*.jsonl
 data/evaluation/tg_qa_dataset/*.json
 data/evaluation/tg_qa_dataset/*.jsonl

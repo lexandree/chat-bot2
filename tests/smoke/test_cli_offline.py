@@ -121,6 +121,96 @@ def test_cli_graph_compare_writes_comparison_artifact_without_live_services(tmp_
     assert artifact["missing"]["counts"]["SourceFragment"] == 1
 
 
+def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline(tmp_path: Path) -> None:
+    dataset = tmp_path / "private_dataset.jsonl"
+    preview = tmp_path / "preview.json"
+    snapshot = tmp_path / "snapshot.json"
+    cases = tmp_path / "reference_cases.jsonl"
+    summary = tmp_path / "reference_summary.json"
+    _write_jsonl(
+        dataset,
+        [
+            {
+                "artifact_type": "tg_qa_canonical_question_dataset_record",
+                "dataset_record_id": "dataset:1",
+                "task_id": "task:1",
+                "canonical_question": "Что регулирует § 1 AufenthG?",
+            }
+        ],
+    )
+    preview.write_text(
+        json.dumps(
+            {
+                "preview_id": "preview:smoke",
+                "source_documents": [
+                    {
+                        "source_document_id": "source-document:DE:de:AufenthG",
+                        "law_code": "AufenthG",
+                        "title": "AufenthG",
+                        "source_family": "law",
+                        "jurisdiction": "DE",
+                        "language": "de",
+                    }
+                ],
+                "source_fragments": [
+                    {
+                        "source_document_id": "source-document:DE:de:AufenthG",
+                        "source_fragment_id": "source-fragment:AufenthG:1",
+                        "law_code": "AufenthG",
+                        "section_reference": "§ 1",
+                        "normalized_reference": "§ 1",
+                        "title": "Scope",
+                        "body_text": "Test.",
+                        "checksum": "sha256:test",
+                        "order_index": 1,
+                    }
+                ],
+                "missing_inputs": [],
+                "source_scope": {"law_codes": ["AufenthG"]},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-private-snapshot-manifest",
+            "--snapshot-name",
+            "private-smoke",
+            "--artifact",
+            str(dataset),
+            "--output",
+            str(snapshot),
+        ]
+    )
+    benchmark_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-corpus-bounded-reference-benchmark",
+            "--dataset",
+            str(dataset),
+            "--legal-preview",
+            str(preview),
+            "--dataset-snapshot-manifest",
+            str(snapshot),
+            "--law-code",
+            "AufenthG",
+            "--output",
+            str(cases),
+            "--summary-output",
+            str(summary),
+        ]
+    )
+
+    assert snapshot_result.returncode == 0, snapshot_result.stderr
+    assert benchmark_result.returncode == 0, benchmark_result.stderr
+    assert json.loads(snapshot_result.stdout)["contains_record_content"] is False
+    assert json.loads(benchmark_result.stdout)["exact_reference_recall_at_1"] == 1.0
+    assert len(cases.read_text(encoding="utf-8").splitlines()) == 1
+
+
 def test_cli_relationships_quality_writes_artifact_with_injected_repository(tmp_path: Path) -> None:
     output_path = tmp_path / "relationship_quality.json"
 

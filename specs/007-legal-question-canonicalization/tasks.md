@@ -193,6 +193,23 @@ policy, trusted duplicate removal, or answer-reuse approval.
 
 ---
 
+## Phase 9: Private Snapshot And Corpus-Bounded Exact Retrieval Baseline
+
+**Purpose**: Freeze a reproducible private canonical dataset identity and use
+the dataset for the first query-explicit retrieval baseline without claiming
+legal-reference correctness, semantic retrieval quality, or publishing private
+records.
+
+- [X] T076 Strengthen `.gitignore` so every artifact under `data/evaluation/` remains private regardless of file extension
+- [X] T077 Add the private snapshot and explicit-reference benchmark contract in `specs/007-legal-question-canonicalization/contracts/`
+- [X] T078 Add deterministic private snapshot manifest generation without copied record content
+- [X] T079 Add corpus-bounded explicit-reference benchmark generation against a selected legal preview
+- [X] T080 Add CLI commands for private snapshot and explicit-reference benchmark workflows
+- [X] T081 Add offline unit and CLI smoke tests without Neo4j, embeddings, paid APIs, or network access
+- [X] T082 Run the private `last_2000_v1` snapshot and current three-law explicit-reference benchmark
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -205,6 +222,7 @@ policy, trusted duplicate removal, or answer-reuse approval.
 - **User Story 4 (Phase 6)**: Depends on issue clusters from US2 or equivalent fixtures and may consume US3 coverage or equivalent fixtures; delivers question bank, promotion candidates, and reviewed evaluation dataset artifacts
 - **Polish (Phase 7)**: Depends on desired user stories being complete
 - **Legal Intent Equivalence Diagnostics (Phase 8)**: Optional diagnostic extension activated by separate implementation command; depends on accepted canonicalization artifacts
+- **Private Snapshot And Corpus-Bounded Exact Retrieval Baseline (Phase 9)**: Depends on an accepted private canonical dataset artifact and an available structural legal preview; remains an offline evaluation contour
 
 ### User Story Dependencies
 
