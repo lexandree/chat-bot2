@@ -577,6 +577,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
     source_diagnostic_counts: Counter[str] = Counter()
     for case in selected_cases:
         expected_section_id = str(case.get("expected_legal_section_id", ""))
+        canonical_question = str(case.get("canonical_question", ""))
         dataset_record = dataset_by_record_id.get(str(case.get("dataset_record_id", "")), {})
         source_question = str(dataset_record.get("source_question_text_redacted", ""))
         source_reference_diagnostics = _source_reference_diagnostics(
@@ -592,6 +593,10 @@ def build_tg_qa_retrieval_relevance_review_batch(
         ]
         if expected_section_id and expected_section_id not in candidate_section_ids:
             candidate_section_ids.append(expected_section_id)
+        same_question_reference_ids = _same_question_reference_section_ids(canonical_question)
+        for section_id in same_question_reference_ids:
+            if section_id not in candidate_section_ids:
+                candidate_section_ids.append(section_id)
         rank_by_section_id = {
             str(item.get("legal_section_id", "")): index
             for index, item in enumerate(ranked_candidates, start=1)
@@ -608,6 +613,15 @@ def build_tg_qa_retrieval_relevance_review_batch(
             if not document:
                 missing_document_counts["candidate_missing_document_embedding_item"] += 1
                 continue
+            if section_id in rank_by_section_id:
+                candidate_rank = rank_by_section_id[section_id]
+                candidate_score = score_by_section_id.get(section_id, 0.0)
+            elif section_id == expected_section_id:
+                candidate_rank = int(case.get("expected_rank", 0) or 0)
+                candidate_score = float(case.get("expected_score", 0.0) or 0.0)
+            else:
+                candidate_rank = 0
+                candidate_score = 0.0
             candidates.append(
                 {
                     "legal_section_id": section_id,
@@ -618,12 +632,15 @@ def build_tg_qa_retrieval_relevance_review_batch(
                         str(document.get("embedding_input_text", "")),
                         DOCUMENT_PREFIX,
                     ),
-                    "rank": rank_by_section_id.get(section_id, int(case.get("expected_rank", 0) or 0)),
-                    "score": round(score_by_section_id.get(section_id, float(case.get("expected_score", 0.0) or 0.0)), 8),
+                    "rank": candidate_rank,
+                    "score": round(candidate_score, 8),
                     "is_explicit_reference_target": section_id == expected_section_id,
+                    "is_same_question_reference": section_id in same_question_reference_ids,
                     "candidate_source": (
                         "top_semantic_candidate"
                         if section_id in rank_by_section_id
+                        else "same_question_inferred_law_reference"
+                        if section_id in same_question_reference_ids and section_id != expected_section_id
                         else "explicit_reference_target_added_for_review"
                     ),
                 }
@@ -633,7 +650,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
                 "artifact_type": "tg_qa_retrieval_relevance_review_card",
                 "benchmark_case_id": str(case.get("benchmark_case_id", "")),
                 "dataset_record_id": str(case.get("dataset_record_id", "")),
-                "canonical_question": str(case.get("canonical_question", "")),
+                "canonical_question": canonical_question,
                 "source_question_text_redacted": source_question,
                 "source_reference_diagnostics": source_reference_diagnostics,
                 "expected_legal_section_id": expected_section_id,
@@ -963,6 +980,27 @@ def _source_reference_diagnostics(
     return diagnostics
 
 
+def _same_question_reference_section_ids(canonical_question: str) -> list[str]:
+    references = parse_explicit_legal_references(canonical_question)
+    explicit_law_codes = {
+        str(item.target_law_code)
+        for item in references
+        if item.target_law_code_explicit and item.target_law_code
+    }
+    if len(explicit_law_codes) != 1:
+        return []
+    inherited_law_code = next(iter(explicit_law_codes))
+    section_ids = {
+        legal_section_id(
+            str(item.target_law_code) if item.target_law_code_explicit else inherited_law_code,
+            str(item.target_section_reference),
+        )
+        for item in references
+        if item.target_section_reference
+    }
+    return sorted(section_ids)
+
+
 def _retrieval_relevance_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
     data = json.dumps(list(cards), ensure_ascii=False, sort_keys=True).replace("</", "<\\/")
     return f"""<!doctype html>
@@ -1044,7 +1082,7 @@ function render() {{
   document.getElementById('counter').textContent = `${{index + 1}}/${{list.length}}`;
   const candidates = (card.candidates || []).map(c => `<label class="candidate ${{c.is_explicit_reference_target ? 'target' : ''}}">
     <input type="checkbox" data-section="${{esc(c.legal_section_id)}}" ${{(saved.relevant_legal_section_ids || []).includes(c.legal_section_id) ? 'checked' : ''}}>
-    <div><strong>${{esc(c.legal_section_id)}}</strong> · rank=${{esc(c.rank)}} · score=${{esc(c.score)}}${{c.is_explicit_reference_target ? ' · explicit target' : ''}}
+    <div><strong>${{esc(c.legal_section_id)}}</strong> · rank=${{esc(c.rank)}} · score=${{esc(c.score)}}${{c.is_explicit_reference_target ? ' · explicit target' : ''}}${{c.is_same_question_reference && !c.is_explicit_reference_target ? ' · same-question reference' : ''}}
     <div class="meta">${{esc(c.title)}} · ${{esc(c.candidate_source)}}</div><div class="body">${{esc(c.body_text)}}</div></div>
   </label>`).join('');
   document.getElementById('app').innerHTML = `<article class="card">

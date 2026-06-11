@@ -97,7 +97,14 @@ across expected sections and presents:
 - the redacted source question when the private dataset is supplied;
 - the semantic top candidates with legal source text;
 - the query-explicit target, added separately when absent from the top
-  candidates.
+  candidates;
+- other section references in the same canonical question when their omitted
+  law code can be inherited unambiguously from exactly one explicitly named law
+  in that question.
+
+Same-question inherited references are review candidates, not automatic silver
+targets. The global graph reference parser remains unchanged because implicit
+law-code inheritance is too risky for graph relationship creation.
 
 When source text is available, the review card flags a query-explicit target
 law code that was introduced during canonicalization rather than named in the

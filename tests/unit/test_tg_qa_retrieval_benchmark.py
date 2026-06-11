@@ -354,6 +354,48 @@ def test_retrieval_relevance_review_import_rejects_conflicting_reviewed_label(tm
     )
 
 
+def test_retrieval_relevance_review_adds_unqualified_same_question_reference(tmp_path: Path) -> None:
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    embedding_batch = tmp_path / "embedding_batch.jsonl"
+    review_batch = tmp_path / "review_batch.jsonl"
+    summary = tmp_path / "summary.json"
+    semantic_case = _semantic_case(
+        "case:multi-reference",
+        "legal-section:AufenthG:32:current",
+        ["legal-section:AufenthG:8:current"],
+    )
+    semantic_case["canonical_question"] = "Почему в письме указан §32 AufenthG, а в паспорте §24?"
+    _write_jsonl(semantic_cases, [semantic_case])
+    _write_jsonl(
+        embedding_batch,
+        [
+            _document_embedding_item("legal-section:AufenthG:8:current", "Document: Extension."),
+            _document_embedding_item("legal-section:AufenthG:24:current", "Document: Temporary protection."),
+            _document_embedding_item("legal-section:AufenthG:32:current", "Document: Child residence."),
+        ],
+    )
+
+    result = build_tg_qa_retrieval_relevance_review_batch(
+        semantic_cases_path=semantic_cases,
+        embedding_batch_path=embedding_batch,
+        max_cases=1,
+        top_k=1,
+        output_path=review_batch,
+        summary_output_path=summary,
+    )
+
+    candidates = {
+        item["legal_section_id"]: item for item in result["cards"][0]["candidates"]
+    }
+    assert candidates["legal-section:AufenthG:24:current"]["candidate_source"] == (
+        "same_question_inferred_law_reference"
+    )
+    assert candidates["legal-section:AufenthG:24:current"]["is_same_question_reference"] is True
+    assert candidates["legal-section:AufenthG:24:current"]["rank"] == 0
+    assert candidates["legal-section:AufenthG:24:current"]["score"] == 0.0
+    assert candidates["legal-section:AufenthG:32:current"]["is_explicit_reference_target"] is True
+
+
 def _dataset_record(record_id: str, question: str) -> dict:
     return {
         "artifact_type": "tg_qa_canonical_question_dataset_record",
