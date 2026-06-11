@@ -566,6 +566,15 @@ def build_tg_qa_retrieval_relevance_review_batch(
         for item in embedding_items
         if item.get("text_role") == "legal_section_document" and item.get("legal_section_id")
     }
+    legal_section_catalog = [
+        {
+            "legal_section_id": section_id,
+            "law_code": str(item.get("law_code", "")),
+            "section_reference": str(item.get("section_reference", "")),
+            "title": str(item.get("title", "")),
+        }
+        for section_id, item in sorted(documents_by_section_id.items())
+    ]
     dataset_by_record_id = {
         str(item.get("dataset_record_id", "")): item
         for item in (_read_jsonl(dataset_path) if dataset_path else [])
@@ -656,11 +665,13 @@ def build_tg_qa_retrieval_relevance_review_batch(
                 "expected_legal_section_id": expected_section_id,
                 "expected_rank": int(case.get("expected_rank", 0) or 0),
                 "candidates": candidates,
+                "legal_section_catalog": legal_section_catalog,
                 "review_contract": {
                     "review_statuses": sorted(RELEVANCE_REVIEW_STATUSES),
                     "explicit_reference_roles": sorted(EXPLICIT_REFERENCE_ROLES),
                     "multiple_relevant_sections_allowed": True,
                     "no_relevant_candidate_shown_allowed": True,
+                    "additional_relevant_sections_allowed": True,
                 },
                 "policy_version": RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION,
                 "trust_boundary": "private_human_relevance_review_card_not_legal_authority",
@@ -680,6 +691,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
         "max_cases": max_cases,
         "top_k": top_k,
         "card_count": len(cards),
+        "legal_section_catalog_count": len(legal_section_catalog),
         "counts_by_expected_legal_section_id": _counts(
             str(item.get("expected_legal_section_id", "")) for item in cards
         ),
@@ -741,11 +753,26 @@ def import_tg_qa_retrieval_relevance_review_labels(
         card = cards.get(case_id)
         review_status = str(raw.get("review_status", ""))
         explicit_reference_role = str(raw.get("explicit_reference_role", "uncertain") or "uncertain")
-        relevant_ids = sorted(set(str(item) for item in raw.get("relevant_legal_section_ids", []) if str(item)))
+        shown_relevant_ids = sorted(
+            set(str(item) for item in raw.get("relevant_legal_section_ids", []) if str(item))
+        )
+        additional_relevant_ids = sorted(
+            set(
+                str(item)
+                for item in raw.get("additional_relevant_legal_section_ids", [])
+                if str(item)
+            )
+        )
+        relevant_ids = sorted(set(shown_relevant_ids + additional_relevant_ids))
         no_relevant_shown = bool(raw.get("no_relevant_candidate_shown", False))
         candidate_ids = {
             str(item.get("legal_section_id", ""))
             for item in (card or {}).get("candidates", [])
+            if isinstance(item, Mapping) and item.get("legal_section_id")
+        }
+        catalog_ids = {
+            str(item.get("legal_section_id", ""))
+            for item in (card or {}).get("legal_section_catalog", [])
             if isinstance(item, Mapping) and item.get("legal_section_id")
         }
         failure_reason = ""
@@ -757,10 +784,14 @@ def import_tg_qa_retrieval_relevance_review_labels(
             failure_reason = f"invalid_review_status:{review_status}"
         elif explicit_reference_role not in EXPLICIT_REFERENCE_ROLES:
             failure_reason = f"invalid_explicit_reference_role:{explicit_reference_role}"
-        elif set(relevant_ids).difference(candidate_ids):
-            failure_reason = "relevant_section_not_in_review_candidates"
-        elif review_status == "reviewed" and bool(relevant_ids) == no_relevant_shown:
-            failure_reason = "reviewed_label_requires_relevant_sections_xor_no_relevant_candidate_shown"
+        elif set(shown_relevant_ids).difference(candidate_ids):
+            failure_reason = "shown_relevant_section_not_in_review_candidates"
+        elif set(additional_relevant_ids).difference(catalog_ids):
+            failure_reason = "additional_relevant_section_not_in_selected_corpus"
+        elif set(shown_relevant_ids).intersection(additional_relevant_ids):
+            failure_reason = "relevant_section_present_in_shown_and_additional_sets"
+        elif review_status == "reviewed" and bool(shown_relevant_ids) == no_relevant_shown:
+            failure_reason = "reviewed_label_requires_shown_relevant_sections_xor_no_relevant_candidate_shown"
         if not failure_reason:
             seen_case_ids.add(case_id)
             counts[review_status] += 1
@@ -775,6 +806,8 @@ def import_tg_qa_retrieval_relevance_review_labels(
                     {
                         "benchmark_case_id": case_id,
                         "relevant_legal_section_ids": relevant_ids,
+                        "shown_relevant_legal_section_ids": shown_relevant_ids,
+                        "additional_relevant_legal_section_ids": additional_relevant_ids,
                         "no_relevant_candidate_shown": no_relevant_shown,
                         "review_status": review_status,
                         "explicit_reference_role": explicit_reference_role,
@@ -782,6 +815,8 @@ def import_tg_qa_retrieval_relevance_review_labels(
                 ),
                 "benchmark_case_id": case_id,
                 "relevant_legal_section_ids": relevant_ids,
+                "shown_relevant_legal_section_ids": shown_relevant_ids,
+                "additional_relevant_legal_section_ids": additional_relevant_ids,
                 "no_relevant_candidate_shown": no_relevant_shown,
                 "review_status": review_status,
                 "explicit_reference_role": explicit_reference_role,
@@ -846,6 +881,8 @@ def build_tg_qa_reviewed_relevance_report(
         case_id = str(label.get("benchmark_case_id", ""))
         case = semantic_cases.get(case_id)
         relevant_ids = set(str(item) for item in label.get("relevant_legal_section_ids", []) if str(item))
+        if label.get("no_relevant_candidate_shown"):
+            counts["reviewed_no_relevant_candidate_shown"] += 1
         if not case:
             counts["missing_semantic_case"] += 1
             continue
@@ -862,13 +899,20 @@ def build_tg_qa_reviewed_relevance_report(
         if expected_id and expected_rank:
             rank_by_id.setdefault(expected_id, expected_rank)
         relevant_ranks = sorted(rank_by_id[item] for item in relevant_ids if item in rank_by_id)
+        unranked_relevant_ids = sorted(relevant_ids.difference(rank_by_id))
+        if unranked_relevant_ids:
+            counts["positive_label_with_unranked_relevant_sections"] += 1
         records.append(
             {
                 "artifact_type": "tg_qa_reviewed_relevance_evaluation_case",
                 "benchmark_case_id": case_id,
                 "relevant_legal_section_ids": sorted(relevant_ids),
                 "relevant_ranks": relevant_ranks,
+                "unranked_relevant_legal_section_ids": unranked_relevant_ids,
                 "first_relevant_rank": relevant_ranks[0] if relevant_ranks else 0,
+                "additional_relevant_legal_section_ids": list(
+                    label.get("additional_relevant_legal_section_ids", [])
+                ),
                 "explicit_reference_role": str(label.get("explicit_reference_role", "")),
                 "policy_version": RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION,
                 "trust_boundary": "reviewed_relevance_evaluation_not_trusted_answer_support",
@@ -890,7 +934,7 @@ def build_tg_qa_reviewed_relevance_report(
             round(len(records) / len(labels), 6) if labels else 0.0
         ),
         "bounded_candidate_failure_rate": (
-            round(counts.get("reviewed_without_positive_relevance_label", 0) / len(labels), 6)
+            round(counts.get("reviewed_no_relevant_candidate_shown", 0) / len(labels), 6)
             if labels
             else 0.0
         ),
@@ -902,7 +946,8 @@ def build_tg_qa_reviewed_relevance_report(
         "known_limitations": [
             "metrics cover only human-reviewed cards with at least one positive relevance label",
             "review candidates are bounded to semantic top candidates plus the explicit-reference target",
-            "unseen legal sections may also be relevant",
+            "reviewer-added relevant sections outside the recorded ranking count as retrieval misses",
+            "the report cannot recover the exact rank of reviewer-added sections outside recorded candidates",
         ],
         "trust_boundary": "reviewed_relevance_metrics_do_not_create_trusted_answer_support",
     }
@@ -1030,6 +1075,8 @@ def _retrieval_relevance_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
     .decision-grid {{ display:grid; grid-template-columns:220px 240px 220px minmax(0,1fr); gap:8px; align-items:start; }}
     .field {{ display:grid; gap:4px; }}
     .field > span {{ color:var(--muted); font-size:12px; }}
+    .additional {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }}
+    .additional button {{ padding:4px 7px; }}
     @media (max-width:900px) {{ .decision-grid {{ grid-template-columns:1fr; }} main {{ padding:10px; }} }}
   </style>
 </head>
@@ -1049,6 +1096,7 @@ const storageKey = 'tg_007_retrieval_relevance_review_v1';
 const decisions = new Map(JSON.parse(localStorage.getItem(storageKey) || '[]'));
 let index = 0;
 let filter = 'all';
+let additionalSections = [];
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
 function filtered() {{
   return cards.filter(card => {{
@@ -1064,6 +1112,7 @@ function save(card) {{
   const record = {{
     benchmark_case_id: card.benchmark_case_id,
     relevant_legal_section_ids: relevant,
+    additional_relevant_legal_section_ids: additionalSections,
     no_relevant_candidate_shown: document.getElementById('noneShown').checked,
     review_status: document.getElementById('reviewStatus').value,
     explicit_reference_role: document.getElementById('referenceRole').value,
@@ -1079,7 +1128,11 @@ function render() {{
   index = Math.max(0, Math.min(index, list.length - 1));
   const card = list[index];
   const saved = decisions.get(card.benchmark_case_id) || {{}};
+  additionalSections = [...(saved.additional_relevant_legal_section_ids || [])];
   document.getElementById('counter').textContent = `${{index + 1}}/${{list.length}}`;
+  const candidateIds = new Set((card.candidates || []).map(c => c.legal_section_id));
+  const catalog = (card.legal_section_catalog || []).filter(c => !candidateIds.has(c.legal_section_id));
+  const catalogOptions = catalog.map(c => `<option value="${{esc(c.legal_section_id)}}">${{esc(c.section_reference)}} ${{esc(c.law_code)}} · ${{esc(c.title)}}</option>`).join('');
   const candidates = (card.candidates || []).map(c => `<label class="candidate ${{c.is_explicit_reference_target ? 'target' : ''}}">
     <input type="checkbox" data-section="${{esc(c.legal_section_id)}}" ${{(saved.relevant_legal_section_ids || []).includes(c.legal_section_id) ? 'checked' : ''}}>
     <div><strong>${{esc(c.legal_section_id)}}</strong> · rank=${{esc(c.rank)}} · score=${{esc(c.score)}}${{c.is_explicit_reference_target ? ' · explicit target' : ''}}${{c.is_same_question_reference && !c.is_explicit_reference_target ? ' · same-question reference' : ''}}
@@ -1097,8 +1150,36 @@ function render() {{
       <label class="field"><span>explicit-reference role</span><select id="referenceRole">${{['uncertain','answer_support','status_context','incorrect'].map(v => `<option value="${{v}}" ${{saved.explicit_reference_role===v?'selected':''}}>${{v}}</option>`).join('')}}</select></label>
       <label class="field"><span>bounded candidate result</span><span><input id="noneShown" type="checkbox" ${{saved.no_relevant_candidate_shown?'checked':''}}> no relevant candidate shown</span></label>
       <label class="field"><span>decision reason</span><textarea id="reason" placeholder="optional">${{esc(saved.decision_reason || '')}}</textarea></label>
+    </div>
+    <div class="field"><span>additional relevant section outside shown candidates</span>
+      <span><input id="additionalSectionInput" list="sectionCatalog" placeholder="Choose a legal section"><button id="addSection" type="button">Add section</button></span>
+      <datalist id="sectionCatalog">${{catalogOptions}}</datalist>
+      <div id="additionalSections" class="additional"></div>
     </div></section>
   </article>`;
+  function renderAdditional() {{
+    document.getElementById('additionalSections').innerHTML = additionalSections.map(sectionId =>
+      `<button type="button" data-remove-section="${{esc(sectionId)}}">${{esc(sectionId)}} ×</button>`
+    ).join('');
+    document.querySelectorAll('[data-remove-section]').forEach(node => node.onclick = () => {{
+      additionalSections = additionalSections.filter(sectionId => sectionId !== node.dataset.removeSection);
+      renderAdditional();
+      save(card);
+    }});
+  }}
+  renderAdditional();
+  document.getElementById('addSection').onclick = () => {{
+    const input = document.getElementById('additionalSectionInput');
+    const sectionId = input.value.trim();
+    const catalogIds = new Set(catalog.map(item => item.legal_section_id));
+    if (catalogIds.has(sectionId) && !additionalSections.includes(sectionId)) {{
+      additionalSections.push(sectionId);
+      additionalSections.sort();
+      input.value = '';
+      renderAdditional();
+      save(card);
+    }}
+  }};
   document.querySelectorAll('input[data-section]').forEach(node => node.onchange = () => {{
     if (node.checked) document.getElementById('noneShown').checked = false;
     save(card);

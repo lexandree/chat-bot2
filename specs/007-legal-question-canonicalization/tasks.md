@@ -233,7 +233,18 @@ support.
 - [X] T092 Add validated relevance-label import and reviewed positive-label retrieval metrics
 - [X] T093 Add CLI commands for review-batch, HTML export, label import, and reviewed relevance report
 - [X] T094 Add offline unit and CLI smoke tests without Neo4j, live embeddings, paid APIs, or network access
-- [ ] T095 Generate the private `last_2000_v1` relevance-review sample and complete human review
+- [ ] T095 Generate the private `last_2000_v1` real-record stress/backlog relevance-review sample and complete human review
+
+## Phase 12: Clean Curated Retrieval Baseline
+
+**Purpose**: Isolate basic retrieval quality before applying the real-record
+stress/backlog diagnostic or changing general retrieval methods.
+
+- [ ] T096 Define a synthetic/curated clean-question contract with independently checked relevant legal sections
+- [ ] T097 Create a small diverse initial set of coherent, moderate, single-issue questions without known factual or legal contradictions
+- [ ] T098 Run the current retrieval methods on the clean set and record baseline metrics without tuning against individual cases
+- [ ] T099 Group later real-record failures by recurring mechanism before adding exact-reference features, legal-keyword expansion, reranking, typed traversal, or quality gates
+- [ ] T100 Require cumulative clean and stress benchmark evidence before retaining a general method change
 
 ---
 

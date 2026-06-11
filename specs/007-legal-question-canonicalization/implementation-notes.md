@@ -89,6 +89,14 @@
   dataset is supplied and warn when the query-explicit target law code was not
   named in the source. The warning requires review and is not an automatic
   rejection because inferred law codes may be correct.
+- Relevance review now permits the reviewer to add a known relevant section
+  from the selected corpus when it was absent from shown candidates. Such
+  reviewer-added sections remain auditable and count as retrieval misses
+  without an invented rank.
+- Separated initial retrieval evaluation from canonicalization debugging.
+  The query-explicit private relevance review is now explicitly treated as a
+  later stress/backlog diagnostic. A separate curated initial benchmark must
+  use coherent, moderate, independently checked single-issue questions.
 
 ## Verification
 
@@ -108,6 +116,11 @@
   ignore checks passed.
 - After adding the bounded human retrieval-relevance diagnostic:
   `python -m pytest -q`: 176 passed, 11 skipped; both 006 and 007 boundary
+  checks, compileall, `git diff --check`, and private artifact ignore checks
+  passed.
+- After separating the clean initial benchmark from real-record stress/backlog
+  review and allowing reviewer-added omitted sections:
+  `python -m pytest -q`: 178 passed, 11 skipped; both 006 and 007 boundary
   checks, compileall, `git diff --check`, and private artifact ignore checks
   passed.
 - `python -m pytest`:

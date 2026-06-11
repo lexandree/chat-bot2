@@ -146,8 +146,9 @@ policy, and does not approve automatic answer reuse.
 - **FR-033**: Query-explicit silver targets MUST remain separate from independently reviewed accepted reference targets.
 - **FR-034**: Semantic retrieval metrics MUST NOT create trusted legal-reference, answer, or graph-support decisions.
 - **FR-035**: The system MUST support a bounded human relevance-review batch containing the canonical question, semantic top candidates, and the query-explicit target when it is absent from the semantic top candidates.
-- **FR-036**: Human relevance review MUST support multiple relevant legal sections, an explicit no-relevant-candidate-shown decision, and a separate classification of the query-explicit reference role.
+- **FR-036**: Human relevance review MUST support multiple relevant legal sections, an explicit no-relevant-candidate-shown decision, reviewer-added relevant sections from the selected corpus when retrieval omitted them, and a separate classification of the query-explicit reference role.
 - **FR-037**: Reviewed relevance metrics MUST use only completed positive human relevance labels and MUST preserve the distinction between relevance evidence and trusted legal answer support.
+- **FR-038**: The initial retrieval benchmark MUST use a separately curated set of coherent, moderate, independently checked single-issue questions with known relevant sections; ambiguous, contradictory, inferred-reference, multi-question, multi-reference, and flagged real canonicalization records MUST remain in later stress/backlog diagnostics.
 
 ### Key Entities *(include if feature involves data)*
 

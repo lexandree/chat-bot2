@@ -90,8 +90,34 @@ that answers the question.
 ## Human-Reviewed Retrieval Relevance Diagnostic
 
 Query-explicit citation recovery is not a reliable proxy for legal relevance.
-The bounded relevance-review contour samples semantic cases deterministically
-across expected sections and presents:
+This bounded relevance-review contour is a later stress/backlog diagnostic over
+real canonicalization output. It is not the clean initial retrieval benchmark:
+real records may contain ambiguous premises, contradictions, inferred
+references, multiple issues, or canonicalization defects. Findings from this
+contour should improve general retrieval, reference-resolution, reranking, and
+quality-gating methods. They must not trigger one-off canonicalizer prompt rules
+for each difficult record.
+
+The clean initial retrieval benchmark is a separate curated artifact. Its
+questions must be coherent, single-issue, free of known factual or legal
+contradictions, and of moderate difficulty. Its expected relevant sections must
+be independently checked before metrics are calculated.
+
+Retrieval evaluation proceeds in three distinct stages:
+
+1. The clean curated benchmark isolates basic retrieval behavior. Failures at
+   this stage justify changes to general retrieval methods, not prompt examples
+   for individual questions.
+2. The real-record stress/backlog diagnostic groups failures by recurring
+   mechanism, such as reference-role confusion, missing legal terminology,
+   mixed issues, or absent corpus coverage.
+3. Later improvements may add general exact-reference features, legal-keyword
+   expansion, reranking, typed traversal, and quality gates. A change is kept
+   only when it improves a cumulative benchmark rather than one isolated
+   record.
+
+The bounded relevance-review contour samples eligible semantic cases
+deterministically across expected sections and presents:
 
 - the canonical question;
 - the redacted source question when the private dataset is supplied;
@@ -112,16 +138,21 @@ source. This is a review warning, not an automatic error: inferred law codes may
 be correct, but they require scrutiny before citation-based evaluation.
 
 The reviewer may mark multiple shown sections as relevant, mark that no
-relevant candidate is shown, and classify the query-explicit reference as
-`answer_support`, `status_context`, `incorrect`, or `uncertain`. Completed
-review labels require either at least one relevant shown section or
-`no_relevant_candidate_shown`, but not both.
+relevant candidate is shown, add known relevant sections from the selected
+corpus that were absent from the shown candidates, and classify the
+query-explicit reference as `answer_support`, `status_context`, `incorrect`, or
+`uncertain`. Completed review labels require either at least one relevant shown
+section or `no_relevant_candidate_shown`, but not both. Reviewer-added relevant
+sections may coexist with `no_relevant_candidate_shown`; they record the
+sections that retrieval failed to show.
 
 The reviewed relevance report evaluates only completed labels with at least one
 positive relevance section. This intentionally excludes no-relevant-shown
 labels from positive-label ranking metrics while reporting their separate
 bounded-candidate failure rate. Review labels and metrics remain private
 evaluation artifacts and do not create trusted legal answer support.
+Reviewer-added sections outside the recorded ranking count as retrieval misses;
+the report does not invent their unknown rank.
 
 ## Operator Commands
 
@@ -197,7 +228,7 @@ PYTHONPATH=src python -m app evaluation tg-qa-corpus-bounded-semantic-benchmark 
   --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_summary.json
 ```
 
-Build and open a bounded relevance-review sample:
+Build and open a bounded real-record stress/backlog relevance-review sample:
 
 ```bash
 PYTHONPATH=src python -m app evaluation tg-qa-retrieval-relevance-review-batch \
@@ -206,13 +237,13 @@ PYTHONPATH=src python -m app evaluation tg-qa-retrieval-relevance-review-batch \
   --dataset data/evaluation/tg_qa_canonicalization/real_data_007_canonical_question_dataset_last_2000_v1.jsonl \
   --max-cases 30 \
   --top-k 10 \
-  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30.jsonl \
-  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30_summary.json
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30_summary.json
 
 PYTHONPATH=src python -m app evaluation tg-qa-retrieval-relevance-review-html \
-  --review-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30.jsonl \
-  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30.html \
-  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30_html_summary.json
+  --review-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30.jsonl \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30.html \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30_html_summary.json
 ```
 
 After exporting labels from the HTML, validate them and build reviewed
@@ -220,14 +251,14 @@ relevance metrics:
 
 ```bash
 PYTHONPATH=src python -m app evaluation tg-qa-retrieval-relevance-review-labels-import \
-  --review-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30.jsonl \
+  --review-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30.jsonl \
   --labels data/evaluation/tg_qa_retrieval_benchmark/tg_qa_retrieval_relevance_review_decisions.jsonl \
-  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30_labels.jsonl \
-  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30_labels_summary.json
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30_labels.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30_labels_summary.json
 
 PYTHONPATH=src python -m app evaluation tg-qa-reviewed-relevance-report \
   --semantic-cases data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_cases.jsonl \
-  --review-labels data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30_labels.jsonl \
+  --review-labels data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30_labels.jsonl \
   --k 1 \
   --k 5 \
   --k 10 \

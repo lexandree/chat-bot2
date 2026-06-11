@@ -350,8 +350,86 @@ def test_retrieval_relevance_review_import_rejects_conflicting_reviewed_label(tm
 
     assert result["summary"]["failed_count"] == 1
     assert result["labels"][0]["failure_reason"] == (
-        "reviewed_label_requires_relevant_sections_xor_no_relevant_candidate_shown"
+        "reviewed_label_requires_shown_relevant_sections_xor_no_relevant_candidate_shown"
     )
+
+
+def test_retrieval_relevance_review_accepts_corpus_section_outside_shown_candidates(
+    tmp_path: Path,
+) -> None:
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    embedding_batch = tmp_path / "embedding_batch.jsonl"
+    review_batch = tmp_path / "review_batch.jsonl"
+    review_summary = tmp_path / "review_summary.json"
+    raw_labels = tmp_path / "raw_labels.jsonl"
+    labels = tmp_path / "labels.jsonl"
+    labels_summary = tmp_path / "labels_summary.json"
+    report = tmp_path / "report.jsonl"
+    report_summary = tmp_path / "report_summary.json"
+    _write_jsonl(
+        semantic_cases,
+        [
+            _semantic_case(
+                "case:outside",
+                "legal-section:AufenthG:1:current",
+                ["legal-section:AufenthG:2:current"],
+            )
+        ],
+    )
+    _write_jsonl(
+        embedding_batch,
+        [
+            _document_embedding_item("legal-section:AufenthG:1:current", "Document: First."),
+            _document_embedding_item("legal-section:AufenthG:2:current", "Document: Second."),
+            _document_embedding_item("legal-section:AufenthG:4:current", "Document: Fourth."),
+        ],
+    )
+    build_tg_qa_retrieval_relevance_review_batch(
+        semantic_cases_path=semantic_cases,
+        embedding_batch_path=embedding_batch,
+        max_cases=1,
+        top_k=1,
+        output_path=review_batch,
+        summary_output_path=review_summary,
+    )
+    _write_jsonl(
+        raw_labels,
+        [
+            {
+                "benchmark_case_id": "case:outside",
+                "relevant_legal_section_ids": [],
+                "additional_relevant_legal_section_ids": ["legal-section:AufenthG:4:current"],
+                "no_relevant_candidate_shown": True,
+                "review_status": "reviewed",
+                "explicit_reference_role": "incorrect",
+            }
+        ],
+    )
+
+    imported = import_tg_qa_retrieval_relevance_review_labels(
+        review_batch_path=review_batch,
+        labels_path=raw_labels,
+        output_path=labels,
+        summary_output_path=labels_summary,
+    )
+    evaluated = build_tg_qa_reviewed_relevance_report(
+        semantic_cases_path=semantic_cases,
+        review_labels_path=labels,
+        top_ks=(1, 10),
+        output_path=report,
+        summary_output_path=report_summary,
+    )
+
+    assert imported["summary"]["completed_count"] == 1
+    assert imported["labels"][0]["relevant_legal_section_ids"] == [
+        "legal-section:AufenthG:4:current"
+    ]
+    assert evaluated["summary"]["metrics"]["recall_at_10"] == 0.0
+    assert evaluated["summary"]["excluded_counts"] == {
+        "positive_label_with_unranked_relevant_sections": 1,
+        "reviewed_no_relevant_candidate_shown": 1,
+    }
+    assert evaluated["summary"]["bounded_candidate_failure_rate"] == 1.0
 
 
 def test_retrieval_relevance_review_adds_unqualified_same_question_reference(tmp_path: Path) -> None:
