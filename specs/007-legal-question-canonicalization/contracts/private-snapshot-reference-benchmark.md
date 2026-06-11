@@ -60,7 +60,8 @@ reference is legally correct for the question.
 ## Corpus-Bounded Semantic Retrieval Benchmark
 
 The semantic benchmark reuses mechanically resolved explicit-reference cases
-as query-explicit silver labels. It has three explicit steps:
+as query-explicit silver labels and also accepts separately curated checked
+targets. It has three explicit steps:
 
 1. `tg-qa-corpus-bounded-semantic-embedding-batch` emits each canonical
    question with `Query: ` semantics and each selected legal source fragment
@@ -74,11 +75,21 @@ graph-write embedding contract. The benchmark does not improve scores by
 injecting section numbers or titles that are absent from graph-written source
 fragment vectors.
 
-All mechanically resolved cases remain in the `silver_all_query_explicit_targets`
-metric scope. An optional private JSONL review file may provide
+Metrics are separated by target evidence:
+
+- `all_expected_targets` covers every supplied expected target;
+- `query_explicit_silver_targets` covers references copied from canonical
+  questions and therefore remains a weak silver diagnostic;
+- `silver_all_query_explicit_targets` remains as a deprecated compatibility
+  alias for `query_explicit_silver_targets`;
+- `curated_checked_targets` covers independently selected primary relevant
+  sections for coherent clean questions;
+- `reviewed_accepted_targets` covers targets accepted through a separate review
+  file.
+
+An optional private JSONL review file may provide
 `benchmark_case_id`, `reference_correctness_decision` (`accept`, `exclude`, or
-`uncertain`), and `decision_reason`. Only `accept` records enter the separate
-`reviewed_accepted_targets` metric scope.
+`uncertain`), and `decision_reason`.
 
 Missing query or document vectors remain visible and count as retrieval
 failures. Semantic metrics do not establish legal-reference correctness,
@@ -153,6 +164,35 @@ bounded-candidate failure rate. Review labels and metrics remain private
 evaluation artifacts and do not create trusted legal answer support.
 Reviewer-added sections outside the recorded ranking count as retrieval misses;
 the report does not invent their unknown rank.
+
+## Clean Curated Retrieval Baseline
+
+The tracked, publication-safe clean baseline input is:
+
+```text
+specs/007-legal-question-canonicalization/clean-retrieval-reference-cases.jsonl
+```
+
+Version `v1` contains 24 synthetic/curated Russian questions: eight each for
+`AufenthG`, `AsylG`, and `BeschV`. Every question:
+
+- contains one legal question and no explicit section number;
+- is coherent and free of a known contradictory premise;
+- has one independently checked primary relevant section;
+- is derived from the selected legal preview, not from private Telegram text;
+- uses `target_evidence_type=curated_checked`.
+
+The initial local Jina retrieval result was:
+
+- Recall@1: `0.666667`;
+- Recall@5: `0.875`;
+- Recall@10: `0.916667`;
+- MRR: `0.745068`.
+
+These metrics establish a clean retrieval baseline. They do not prove answer
+correctness or that the selected primary section is the only relevant section.
+Changes should be retained only when they improve cumulative clean and
+stress/backlog evidence rather than one question.
 
 ## Operator Commands
 
@@ -245,6 +285,17 @@ PYTHONPATH=src python -m app evaluation tg-qa-retrieval-relevance-review-html \
   --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30.html \
   --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_stress_backlog_30_html_summary.json
 ```
+
+Build the clean curated review with the local helper:
+
+```bash
+bash scripts/evaluation/run_007_clean_curated_retrieval.sh full
+```
+
+The helper reuses existing document vectors only when their run completed
+without failures, used the requested embedding model, and contains every
+document item required by the current legal-preview batch. It always generates
+fresh query vectors for the clean questions.
 
 After exporting labels from the HTML, validate them and build reviewed
 relevance metrics:

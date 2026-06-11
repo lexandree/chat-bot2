@@ -131,10 +131,12 @@ def test_semantic_benchmark_reports_silver_and_reviewed_metrics(tmp_path: Path) 
     reviews = tmp_path / "reviews.jsonl"
     cases = tmp_path / "cases.jsonl"
     summary = tmp_path / "summary.json"
+    curated_case = _reference_case("case:1", "Section one?", "legal-section:AufenthG:1:current")
+    curated_case["target_evidence_type"] = "curated_checked"
     _write_jsonl(
         reference_cases,
         [
-            _reference_case("case:1", "§ 1?", "legal-section:AufenthG:1:current"),
+            curated_case,
             _reference_case("case:2", "§ 2?", "legal-section:AufenthG:2:current"),
         ],
     )
@@ -188,12 +190,21 @@ def test_semantic_benchmark_reports_silver_and_reviewed_metrics(tmp_path: Path) 
         summary_output_path=summary,
     )
 
-    silver = result["summary"]["metric_scopes"]["silver_all_query_explicit_targets"]
+    all_expected = result["summary"]["metric_scopes"]["all_expected_targets"]
+    silver = result["summary"]["metric_scopes"]["query_explicit_silver_targets"]
+    curated = result["summary"]["metric_scopes"]["curated_checked_targets"]
     reviewed = result["summary"]["metric_scopes"]["reviewed_accepted_targets"]
-    assert silver["recall_at_1"] == 0.5
+    assert result["summary"]["counts_by_target_evidence_type"] == {
+        "curated_checked": 1,
+        "query_explicit_silver": 1,
+    }
+    assert all_expected["recall_at_1"] == 0.5
+    assert all_expected["recall_at_2"] == 1.0
+    assert all_expected["mean_reciprocal_rank"] == 0.75
+    assert all_expected["ndcg_at_2"] == 0.815465
+    assert curated["recall_at_1"] == 1.0
+    assert silver["recall_at_1"] == 0.0
     assert silver["recall_at_2"] == 1.0
-    assert silver["mean_reciprocal_rank"] == 0.75
-    assert silver["ndcg_at_2"] == 0.815465
     assert reviewed["case_count"] == 1
     assert reviewed["recall_at_1"] == 1.0
 
@@ -472,6 +483,72 @@ def test_retrieval_relevance_review_adds_unqualified_same_question_reference(tmp
     assert candidates["legal-section:AufenthG:24:current"]["rank"] == 0
     assert candidates["legal-section:AufenthG:24:current"]["score"] == 0.0
     assert candidates["legal-section:AufenthG:32:current"]["is_explicit_reference_target"] is True
+
+
+def test_retrieval_relevance_review_distinguishes_curated_target_from_explicit_reference(
+    tmp_path: Path,
+) -> None:
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    embedding_batch = tmp_path / "embedding_batch.jsonl"
+    review_batch = tmp_path / "review_batch.jsonl"
+    summary = tmp_path / "summary.json"
+    semantic_case = _semantic_case(
+        "case:curated",
+        "legal-section:AufenthG:4:current",
+        ["legal-section:AufenthG:1:current"],
+    )
+    semantic_case["target_evidence_type"] = "curated_checked"
+    _write_jsonl(semantic_cases, [semantic_case])
+    _write_jsonl(
+        embedding_batch,
+        [
+            _document_embedding_item("legal-section:AufenthG:1:current", "Document: Scope."),
+            _document_embedding_item("legal-section:AufenthG:4:current", "Document: Title required."),
+        ],
+    )
+
+    result = build_tg_qa_retrieval_relevance_review_batch(
+        semantic_cases_path=semantic_cases,
+        embedding_batch_path=embedding_batch,
+        max_cases=1,
+        top_k=1,
+        output_path=review_batch,
+        summary_output_path=summary,
+    )
+
+    card = result["cards"][0]
+    candidates = {item["legal_section_id"]: item for item in card["candidates"]}
+    assert card["target_evidence_type"] == "curated_checked"
+    assert candidates["legal-section:AufenthG:4:current"]["is_expected_target"] is True
+    assert candidates["legal-section:AufenthG:4:current"]["is_explicit_reference_target"] is False
+    assert candidates["legal-section:AufenthG:4:current"]["candidate_source"] == (
+        "curated_expected_target_added_for_review"
+    )
+
+
+def test_clean_curated_retrieval_fixture_has_balanced_unambiguous_questions() -> None:
+    fixture_path = (
+        Path(__file__).parents[2]
+        / "specs"
+        / "007-legal-question-canonicalization"
+        / "clean-retrieval-reference-cases.jsonl"
+    )
+    cases = [
+        json.loads(line)
+        for line in fixture_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert len(cases) == 24
+    assert len({item["benchmark_case_id"] for item in cases}) == 24
+    assert {
+        law_code: sum(item["target_law_code"] == law_code for item in cases)
+        for law_code in ("AufenthG", "AsylG", "BeschV")
+    } == {"AufenthG": 8, "AsylG": 8, "BeschV": 8}
+    assert all(item["target_evidence_type"] == "curated_checked" for item in cases)
+    assert all(item["canonical_question"].count("?") == 1 for item in cases)
+    assert all("§" not in item["canonical_question"] for item in cases)
+    assert all(item["curation_reason"] for item in cases)
 
 
 def _dataset_record(record_id: str, question: str) -> dict:

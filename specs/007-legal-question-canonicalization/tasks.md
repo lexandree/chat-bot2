@@ -240,9 +240,9 @@ support.
 **Purpose**: Isolate basic retrieval quality before applying the real-record
 stress/backlog diagnostic or changing general retrieval methods.
 
-- [ ] T096 Define a synthetic/curated clean-question contract with independently checked relevant legal sections
-- [ ] T097 Create a small diverse initial set of coherent, moderate, single-issue questions without known factual or legal contradictions
-- [ ] T098 Run the current retrieval methods on the clean set and record baseline metrics without tuning against individual cases
+- [X] T096 Define a synthetic/curated clean-question contract with independently checked relevant legal sections
+- [X] T097 Create a small diverse initial set of coherent, moderate, single-issue questions without known factual or legal contradictions
+- [X] T098 Run the current retrieval methods on the clean set and record baseline metrics without tuning against individual cases
 - [ ] T099 Group later real-record failures by recurring mechanism before adding exact-reference features, legal-keyword expansion, reranking, typed traversal, or quality gates
 - [ ] T100 Require cumulative clean and stress benchmark evidence before retaining a general method change
 

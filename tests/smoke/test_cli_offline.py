@@ -347,7 +347,7 @@ def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline
     assert json.loads(snapshot_result.stdout)["contains_record_content"] is False
     assert json.loads(benchmark_result.stdout)["exact_reference_recall_at_1"] == 1.0
     assert json.loads(semantic_benchmark_result.stdout)["metric_scopes"][
-        "silver_all_query_explicit_targets"
+        "query_explicit_silver_targets"
     ]["recall_at_1"] == 1.0
     assert json.loads(reviewed_relevance_result.stdout)["metrics"]["recall_at_1"] == 1.0
     assert "localStorage" in relevance_review_html.read_text(encoding="utf-8")

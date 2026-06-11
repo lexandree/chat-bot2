@@ -97,6 +97,16 @@
   The query-explicit private relevance review is now explicitly treated as a
   later stress/backlog diagnostic. A separate curated initial benchmark must
   use coherent, moderate, independently checked single-issue questions.
+- Added the publication-safe clean curated retrieval baseline with 24
+  single-issue questions, balanced across `AufenthG`, `AsylG`, and `BeschV`.
+  Questions contain no explicit section numbers and use independently checked
+  `curated_checked` primary targets.
+- Initial clean Jina result: Recall@1 `0.666667`, Recall@5 `0.875`, Recall@10
+  `0.916667`, and MRR `0.745068`. The clean review HTML is generated under the
+  ignored `data/evaluation/tg_qa_retrieval_benchmark/clean_curated_v1_*`
+  artifact family.
+- Generalized semantic benchmark metrics and review-card labels so curated
+  checked targets are not misreported as query-explicit silver references.
 
 ## Verification
 
@@ -123,6 +133,10 @@
   `python -m pytest -q`: 178 passed, 11 skipped; both 006 and 007 boundary
   checks, compileall, `git diff --check`, and private artifact ignore checks
   passed.
+- After adding the clean curated retrieval baseline and target-evidence metric
+  scopes: `python -m pytest -q`: 180 passed, 11 skipped; both 006 and 007
+  boundary checks, generated review JavaScript syntax check, compileall, and
+  `git diff --check` passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

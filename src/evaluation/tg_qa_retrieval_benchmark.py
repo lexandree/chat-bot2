@@ -458,6 +458,9 @@ def build_tg_qa_corpus_bounded_semantic_benchmark(
                 "dataset_record_id": str(case.get("dataset_record_id", "")),
                 "canonical_question": str(case.get("canonical_question", "")),
                 "expected_legal_section_id": expected_section_id,
+                "target_evidence_type": str(
+                    case.get("target_evidence_type", "query_explicit_silver")
+                ),
                 "target_law_code": str(case.get("target_law_code", "")),
                 "target_section_reference": str(case.get("target_section_reference", "")),
                 "reference_correctness_decision": reference_review["reference_correctness_decision"],
@@ -481,7 +484,13 @@ def build_tg_qa_corpus_bounded_semantic_benchmark(
             }
         )
 
-    silver_metrics = _ranking_metrics(results, ks)
+    all_expected_metrics = _ranking_metrics(results, ks)
+    query_explicit_results = [
+        item for item in results if item["target_evidence_type"] == "query_explicit_silver"
+    ]
+    curated_checked_results = [
+        item for item in results if item["target_evidence_type"] == "curated_checked"
+    ]
     reviewed_accepted_results = [
         item for item in results if item["reference_correctness_decision"] == "accept"
     ]
@@ -513,25 +522,32 @@ def build_tg_qa_corpus_bounded_semantic_benchmark(
         "counts_by_reference_correctness_decision": _counts(
             str(item["reference_correctness_decision"]) for item in results
         ),
+        "counts_by_target_evidence_type": _counts(
+            str(item["target_evidence_type"]) for item in results
+        ),
         "counts_by_expected_legal_section_id": _counts(
             str(item["expected_legal_section_id"]) for item in results
         ),
         "excluded_counts": dict(sorted(excluded_counts.items())),
         "metric_scopes": {
-            "silver_all_query_explicit_targets": silver_metrics,
+            "all_expected_targets": all_expected_metrics,
+            "query_explicit_silver_targets": _ranking_metrics(query_explicit_results, ks),
+            "silver_all_query_explicit_targets": _ranking_metrics(query_explicit_results, ks),
+            "curated_checked_targets": _ranking_metrics(curated_checked_results, ks),
             "reviewed_accepted_targets": _ranking_metrics(reviewed_accepted_results, ks),
         },
-        "metric_interpretation": "query_explicit_citation_recovery_silver_not_legal_relevance",
+        "metric_interpretation": "expected_target_recovery_by_evidence_type_not_legal_answer_quality",
         "metric_scope_note": (
-            "silver targets are explicit references in canonical questions and may be legally incorrect; "
-            "an explicit reference may describe status context rather than the section that answers the question; "
+            "query-explicit silver targets may be legally incorrect or describe status context; "
+            "curated checked targets are independently selected primary relevant sections; "
             "reviewed_accepted metrics are authoritative only for decisions made under the separate review file"
         ),
         "output_path": str(output_path),
         "privacy_classification": "private_project_artifact",
         "known_limitations": [
             "semantic retrieval metrics do not measure answer correctness or completeness",
-            "unreviewed query-explicit references are silver labels and may penalize legally better retrieval",
+            "a single expected target does not prove that no other legal section is relevant",
+            "unreviewed query-explicit silver references may penalize legally better retrieval",
             "an explicit law reference may identify the user's status or premise rather than relevant answer support",
             "document vectors use source fragment body text only to match the current graph-write embedding contract",
             "the benchmark evaluates a bounded three-law preview rather than the full German legal corpus",
@@ -586,6 +602,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
     source_diagnostic_counts: Counter[str] = Counter()
     for case in selected_cases:
         expected_section_id = str(case.get("expected_legal_section_id", ""))
+        target_evidence_type = str(case.get("target_evidence_type", "query_explicit_silver"))
         canonical_question = str(case.get("canonical_question", ""))
         dataset_record = dataset_by_record_id.get(str(case.get("dataset_record_id", "")), {})
         source_question = str(dataset_record.get("source_question_text_redacted", ""))
@@ -643,13 +660,19 @@ def build_tg_qa_retrieval_relevance_review_batch(
                     ),
                     "rank": candidate_rank,
                     "score": round(candidate_score, 8),
-                    "is_explicit_reference_target": section_id == expected_section_id,
+                    "is_expected_target": section_id == expected_section_id,
+                    "is_explicit_reference_target": (
+                        section_id == expected_section_id
+                        and target_evidence_type == "query_explicit_silver"
+                    ),
                     "is_same_question_reference": section_id in same_question_reference_ids,
                     "candidate_source": (
                         "top_semantic_candidate"
                         if section_id in rank_by_section_id
                         else "same_question_inferred_law_reference"
                         if section_id in same_question_reference_ids and section_id != expected_section_id
+                        else "curated_expected_target_added_for_review"
+                        if target_evidence_type == "curated_checked"
                         else "explicit_reference_target_added_for_review"
                     ),
                 }
@@ -663,6 +686,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
                 "source_question_text_redacted": source_question,
                 "source_reference_diagnostics": source_reference_diagnostics,
                 "expected_legal_section_id": expected_section_id,
+                "target_evidence_type": target_evidence_type,
                 "expected_rank": int(case.get("expected_rank", 0) or 0),
                 "candidates": candidates,
                 "legal_section_catalog": legal_section_catalog,
@@ -1133,21 +1157,21 @@ function render() {{
   const candidateIds = new Set((card.candidates || []).map(c => c.legal_section_id));
   const catalog = (card.legal_section_catalog || []).filter(c => !candidateIds.has(c.legal_section_id));
   const catalogOptions = catalog.map(c => `<option value="${{esc(c.legal_section_id)}}">${{esc(c.section_reference)}} ${{esc(c.law_code)}} · ${{esc(c.title)}}</option>`).join('');
-  const candidates = (card.candidates || []).map(c => `<label class="candidate ${{c.is_explicit_reference_target ? 'target' : ''}}">
+  const candidates = (card.candidates || []).map(c => `<label class="candidate ${{c.is_expected_target ? 'target' : ''}}">
     <input type="checkbox" data-section="${{esc(c.legal_section_id)}}" ${{(saved.relevant_legal_section_ids || []).includes(c.legal_section_id) ? 'checked' : ''}}>
-    <div><strong>${{esc(c.legal_section_id)}}</strong> · rank=${{esc(c.rank)}} · score=${{esc(c.score)}}${{c.is_explicit_reference_target ? ' · explicit target' : ''}}${{c.is_same_question_reference && !c.is_explicit_reference_target ? ' · same-question reference' : ''}}
+    <div><strong>${{esc(c.legal_section_id)}}</strong> · rank=${{esc(c.rank)}} · score=${{esc(c.score)}}${{c.is_expected_target ? ' · ' + esc(card.target_evidence_type || 'expected target') : ''}}${{c.is_same_question_reference && !c.is_expected_target ? ' · same-question reference' : ''}}
     <div class="meta">${{esc(c.title)}} · ${{esc(c.candidate_source)}}</div><div class="body">${{esc(c.body_text)}}</div></div>
   </label>`).join('');
   document.getElementById('app').innerHTML = `<article class="card">
     <section class="question"><strong>${{esc(card.benchmark_case_id)}}</strong><h2>${{esc(card.canonical_question)}}</h2>
       <div class="meta">source question</div><div>${{esc(card.source_question_text_redacted || 'not supplied')}}</div>
-      <div class="meta">explicit target: ${{esc(card.expected_legal_section_id)}} · rank=${{esc(card.expected_rank)}}</div>
+      <div class="meta">${{esc(card.target_evidence_type || 'expected target')}}: ${{esc(card.expected_legal_section_id)}} · rank=${{esc(card.expected_rank)}}</div>
       <div class="warning">${{esc((card.source_reference_diagnostics || []).join('; '))}}</div>
     </section>
     ${{candidates}}
     <section class="decision"><div class="decision-grid">
       <label class="field"><span>review status</span><select id="reviewStatus">${{['','reviewed','uncertain','skip'].map(v => `<option value="${{v}}" ${{saved.review_status===v?'selected':''}}>${{v || 'select'}}</option>`).join('')}}</select></label>
-      <label class="field"><span>explicit-reference role</span><select id="referenceRole">${{['uncertain','answer_support','status_context','incorrect'].map(v => `<option value="${{v}}" ${{saved.explicit_reference_role===v?'selected':''}}>${{v}}</option>`).join('')}}</select></label>
+      <label class="field"><span>expected-target role</span><select id="referenceRole">${{['uncertain','answer_support','status_context','incorrect'].map(v => `<option value="${{v}}" ${{saved.explicit_reference_role===v?'selected':''}}>${{v}}</option>`).join('')}}</select></label>
       <label class="field"><span>bounded candidate result</span><span><input id="noneShown" type="checkbox" ${{saved.no_relevant_candidate_shown?'checked':''}}> no relevant candidate shown</span></label>
       <label class="field"><span>decision reason</span><textarea id="reason" placeholder="optional">${{esc(saved.decision_reason || '')}}</textarea></label>
     </div>
