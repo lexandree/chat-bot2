@@ -208,6 +208,19 @@ records.
 - [X] T081 Add offline unit and CLI smoke tests without Neo4j, embeddings, paid APIs, or network access
 - [X] T082 Run the private `last_2000_v1` snapshot and current three-law explicit-reference benchmark
 
+## Phase 10: Corpus-Bounded Semantic Retrieval Diagnostic
+
+**Purpose**: Measure the current source-fragment embedding contract against
+query-explicit silver targets without changing graph state, production
+retrieval policy, or trusted support.
+
+- [X] T083 Document the semantic retrieval diagnostic, silver-label boundary, optional reference-review decisions, and asymmetric embedding contract
+- [X] T084 Add deterministic semantic query/document embedding-batch emission against a selected legal preview
+- [X] T085 Add offline semantic ranking evaluation with Recall@k, MRR, nDCG@k, vector coverage, and separate silver/reviewed metric scopes
+- [X] T086 Add CLI commands for semantic embedding-batch emission and offline semantic benchmark evaluation
+- [X] T087 Add offline unit and CLI smoke tests without Neo4j, live embeddings, paid APIs, or network access
+- [X] T088 Run the private `last_2000_v1` three-law semantic retrieval diagnostic and record aggregate findings
+
 ---
 
 ## Dependencies & Execution Order
@@ -223,6 +236,7 @@ records.
 - **Polish (Phase 7)**: Depends on desired user stories being complete
 - **Legal Intent Equivalence Diagnostics (Phase 8)**: Optional diagnostic extension activated by separate implementation command; depends on accepted canonicalization artifacts
 - **Private Snapshot And Corpus-Bounded Exact Retrieval Baseline (Phase 9)**: Depends on an accepted private canonical dataset artifact and an available structural legal preview; remains an offline evaluation contour
+- **Corpus-Bounded Semantic Retrieval Diagnostic (Phase 10)**: Depends on Phase 9 query-explicit cases and an explicit operator-managed vectorization step; evaluation remains offline and file-based
 
 ### User Story Dependencies
 

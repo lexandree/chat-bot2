@@ -58,6 +58,19 @@
   `AsylG`, zero `BeschV`, and 99 mechanically resolved targets. The single
   `AsylG` case demonstrates why mechanical resolution must not be interpreted
   as legal-reference correctness.
+- Added the file-based corpus-bounded semantic retrieval diagnostic using the
+  existing `Query: ` / `Document: ` contract and source-fragment body text.
+  The GTX 1060 run completed all 455 vectors with HTTP batch size 16; batch
+  size 88 caused 264 client timeouts even though the server could process the
+  individual records.
+- Ran the semantic diagnostic over 99 query-explicit silver cases and 356
+  sections: Recall@1 `0.010101`, Recall@5 `0.040404`, Recall@10 `0.060606`,
+  MRR `0.031257`, and nDCG@10 `0.029340`. These values must not be interpreted
+  as general semantic-retrieval quality: 92 of 99 silver targets cite
+  `§24 AufenthG`, often as status context rather than the section that answers
+  the question. The result establishes that exact reference resolution must
+  precede semantic retrieval and that query-explicit references are unsuitable
+  as unreviewed gold relevance labels.
 
 ## Verification
 
@@ -71,6 +84,10 @@
 - After adding private snapshots and the corpus-bounded explicit-reference
   benchmark: `python -m pytest -q`: 172 passed, 11 skipped; compileall,
   canonicalization boundary check, and `git diff --check` passed.
+- After adding the corpus-bounded semantic retrieval diagnostic:
+  `python -m pytest -q`: 174 passed, 11 skipped; compileall,
+  canonicalization boundary check, `git diff --check`, and private artifact
+  ignore checks passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

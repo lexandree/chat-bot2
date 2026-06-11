@@ -141,6 +141,10 @@ policy, and does not approve automatic answer reuse.
 - **FR-028**: The system MUST support a content-free private snapshot manifest with stable artifact hashes, counts, privacy classification, and no copied dataset rows.
 - **FR-029**: The first corpus-bounded retrieval benchmark MUST use only explicit law-code references as expected targets and MUST report its selected legal corpus boundary.
 - **FR-030**: The explicit-reference benchmark MUST state that it does not measure semantic retrieval, reranking, answer quality, or GraphRAG inference.
+- **FR-031**: The corpus-bounded semantic retrieval benchmark MUST preserve asymmetric `Query: ` and `Document: ` embedding semantics and MUST use the current graph-write source-fragment text contract.
+- **FR-032**: Semantic retrieval evaluation MUST report Recall@k, MRR, and nDCG@k while keeping missing vectors visible as failures.
+- **FR-033**: Query-explicit silver targets MUST remain separate from independently reviewed accepted reference targets.
+- **FR-034**: Semantic retrieval metrics MUST NOT create trusted legal-reference, answer, or graph-support decisions.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -160,6 +164,8 @@ policy, and does not approve automatic answer reuse.
 - **EquivalenceEvaluationReport**: Diagnostic summary comparing candidate methods against reviewed pair labels and recording risks, limitations, and method suitability.
 - **PrivateArtifactSnapshotManifest**: Content-free identity manifest for a fixed private dataset artifact bundle.
 - **CorpusBoundedExplicitReferenceCase**: Private retrieval-evaluation case derived from an explicit law-code reference in a canonical question.
+- **CorpusBoundedSemanticEmbeddingItem**: Private query or legal-section document embedding input preserving the active asymmetric embedding contract.
+- **CorpusBoundedSemanticRetrievalCase**: Private ranked retrieval result for one query-explicit target with silver-label and optional reference-review status.
 
 ## Success Criteria *(mandatory)*
 
@@ -178,6 +184,7 @@ policy, and does not approve automatic answer reuse.
 - **SC-011**: After Phase 8 implementation, offline tests exercise all three legal-intent decision producer contours without live LLMs, live embedding services, paid APIs, Neo4j, or network dependencies.
 - **SC-012**: A private snapshot manifest changes identity when an input artifact changes and never contains private record text.
 - **SC-013**: The corpus-bounded explicit-reference benchmark runs offline against a legal preview and reports exact-reference Recall@1 without claiming semantic retrieval quality.
+- **SC-014**: Offline fixture tests exercise semantic embedding-batch emission and Recall@k, MRR, and nDCG@k evaluation without a live embedding service or Neo4j.
 
 ## Assumptions
 

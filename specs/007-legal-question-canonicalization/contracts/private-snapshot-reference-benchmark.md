@@ -1,4 +1,4 @@
-# Contract: Private Dataset Snapshot And Explicit-Reference Benchmark
+# Contract: Private Dataset Snapshot And Corpus-Bounded Retrieval Benchmarks
 
 ## Publication Boundary
 
@@ -57,6 +57,36 @@ expected legal source references.
 identify a section in the selected preview. It is not a judgment that the
 reference is legally correct for the question.
 
+## Corpus-Bounded Semantic Retrieval Benchmark
+
+The semantic benchmark reuses mechanically resolved explicit-reference cases
+as query-explicit silver labels. It has three explicit steps:
+
+1. `tg-qa-corpus-bounded-semantic-embedding-batch` emits each canonical
+   question with `Query: ` semantics and each selected legal source fragment
+   body with `Document: ` semantics.
+2. The existing operator-managed `tg-qa-embed-batch` command produces vectors.
+3. `tg-qa-corpus-bounded-semantic-benchmark` ranks every selected legal section
+   for each query and reports Recall@k, MRR, and nDCG@k.
+
+Document inputs use only `source_fragment.body_text`, matching the current
+graph-write embedding contract. The benchmark does not improve scores by
+injecting section numbers or titles that are absent from graph-written source
+fragment vectors.
+
+All mechanically resolved cases remain in the `silver_all_query_explicit_targets`
+metric scope. An optional private JSONL review file may provide
+`benchmark_case_id`, `reference_correctness_decision` (`accept`, `exclude`, or
+`uncertain`), and `decision_reason`. Only `accept` records enter the separate
+`reviewed_accepted_targets` metric scope.
+
+Missing query or document vectors remain visible and count as retrieval
+failures. Semantic metrics do not establish legal-reference correctness,
+answer correctness, completeness, or trusted support. They measure
+query-explicit citation recovery, not general legal relevance: an explicit
+reference may describe the user's status or premise rather than the section
+that answers the question.
+
 ## Operator Commands
 
 Freeze a private snapshot:
@@ -83,4 +113,50 @@ PYTHONPATH=src python -m app evaluation tg-qa-corpus-bounded-reference-benchmark
   --law-code BeschV \
   --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_explicit_reference_cases.jsonl \
   --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_explicit_reference_summary.json
+```
+
+Emit semantic query/document embedding inputs:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-corpus-bounded-semantic-embedding-batch \
+  --reference-cases data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_explicit_reference_cases.jsonl \
+  --legal-preview data/import_preview/legal_xml_preview_003_smoke.json \
+  --law-code AufenthG \
+  --law-code AsylG \
+  --law-code BeschV \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_embedding_batch.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_embedding_batch_summary.json
+```
+
+Vectorize with the existing explicit live-service contour:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-embed-batch \
+  --embedding-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_embedding_batch.jsonl \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_external_vectors.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_vectorization_summary.json \
+  --endpoint-url "${EMBEDDING_ENDPOINT_URL}" \
+  --model-id "${EMBEDDING_MODEL_ID}" \
+  --batch-size 16 \
+  --timeout-seconds 240
+```
+
+The validated GTX 1060 operator profile currently exposes four effective
+`5376`-token slots. Use HTTP batches of `16` for mixed-length legal fragments:
+larger requests can exceed the client timeout even when every individual
+fragment fits an effective server slot.
+
+Evaluate the file vectors:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-corpus-bounded-semantic-benchmark \
+  --reference-cases data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_explicit_reference_cases.jsonl \
+  --embedding-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_embedding_batch.jsonl \
+  --external-vectors data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_external_vectors.jsonl \
+  --vectorization-summary data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_vectorization_summary.json \
+  --k 1 \
+  --k 5 \
+  --k 10 \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_cases.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_summary.json
 ```

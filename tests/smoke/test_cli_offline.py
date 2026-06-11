@@ -127,6 +127,11 @@ def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline
     snapshot = tmp_path / "snapshot.json"
     cases = tmp_path / "reference_cases.jsonl"
     summary = tmp_path / "reference_summary.json"
+    semantic_batch = tmp_path / "semantic_batch.jsonl"
+    semantic_batch_summary = tmp_path / "semantic_batch_summary.json"
+    semantic_vectors = tmp_path / "semantic_vectors.jsonl"
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    semantic_summary = tmp_path / "semantic_summary.json"
     _write_jsonl(
         dataset,
         [
@@ -203,11 +208,59 @@ def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline
             str(summary),
         ]
     )
+    semantic_batch_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-corpus-bounded-semantic-embedding-batch",
+            "--reference-cases",
+            str(cases),
+            "--legal-preview",
+            str(preview),
+            "--law-code",
+            "AufenthG",
+            "--output",
+            str(semantic_batch),
+            "--summary-output",
+            str(semantic_batch_summary),
+        ]
+    )
+    _write_jsonl(
+        semantic_vectors,
+        [
+            {
+                "embedding_item_id": item["embedding_item_id"],
+                "embedding_status": "completed",
+                "vector": [1.0, 0.0],
+            }
+            for item in _read_jsonl(semantic_batch)
+        ],
+    )
+    semantic_benchmark_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-corpus-bounded-semantic-benchmark",
+            "--reference-cases",
+            str(cases),
+            "--embedding-batch",
+            str(semantic_batch),
+            "--external-vectors",
+            str(semantic_vectors),
+            "--output",
+            str(semantic_cases),
+            "--summary-output",
+            str(semantic_summary),
+        ]
+    )
 
     assert snapshot_result.returncode == 0, snapshot_result.stderr
     assert benchmark_result.returncode == 0, benchmark_result.stderr
+    assert semantic_batch_result.returncode == 0, semantic_batch_result.stderr
+    assert semantic_benchmark_result.returncode == 0, semantic_benchmark_result.stderr
     assert json.loads(snapshot_result.stdout)["contains_record_content"] is False
     assert json.loads(benchmark_result.stdout)["exact_reference_recall_at_1"] == 1.0
+    assert json.loads(semantic_benchmark_result.stdout)["metric_scopes"][
+        "silver_all_query_explicit_targets"
+    ]["recall_at_1"] == 1.0
     assert len(cases.read_text(encoding="utf-8").splitlines()) == 1
 
 
@@ -1516,6 +1569,10 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
         "\n".join(json.dumps(record, ensure_ascii=False, sort_keys=True) for record in records) + "\n",
         encoding="utf-8",
     )
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _tg_qa_fixture_vector(item: dict) -> dict:

@@ -6,6 +6,8 @@ from pathlib import Path
 from evaluation.tg_qa_retrieval_benchmark import (
     build_private_artifact_snapshot_manifest,
     build_tg_qa_corpus_bounded_reference_benchmark,
+    build_tg_qa_corpus_bounded_semantic_benchmark,
+    emit_tg_qa_corpus_bounded_semantic_embedding_batch,
 )
 
 
@@ -87,12 +89,132 @@ def test_corpus_bounded_reference_benchmark_resolves_only_explicit_in_scope_law_
     assert all(item["dataset_snapshot_id"] == result["summary"]["dataset_snapshot_id"] for item in result["cases"])
 
 
+def test_semantic_embedding_batch_preserves_query_document_asymmetry(tmp_path: Path) -> None:
+    reference_cases = tmp_path / "reference_cases.jsonl"
+    preview = tmp_path / "preview.json"
+    batch = tmp_path / "batch.jsonl"
+    summary = tmp_path / "summary.json"
+    _write_jsonl(reference_cases, [_reference_case("case:1", "§ 1?", "legal-section:AufenthG:1:current")])
+    preview.write_text(json.dumps(_preview(), ensure_ascii=False), encoding="utf-8")
+
+    result = emit_tg_qa_corpus_bounded_semantic_embedding_batch(
+        reference_cases_path=reference_cases,
+        legal_preview_path=preview,
+        law_codes=["AufenthG"],
+        output_path=batch,
+        summary_output_path=summary,
+    )
+
+    assert result["summary"]["query_embedding_item_count"] == 1
+    assert result["summary"]["document_embedding_item_count"] == 2
+    query = next(item for item in result["items"] if item["text_role"] == "semantic_query")
+    document = next(
+        item
+        for item in result["items"]
+        if item.get("legal_section_id") == "legal-section:AufenthG:1:current"
+    )
+    assert query["embedding_input_text"] == "Query: § 1?"
+    assert document["embedding_input_text"] == "Document: Test one."
+    assert "Scope one" not in document["embedding_input_text"]
+
+
+def test_semantic_benchmark_reports_silver_and_reviewed_metrics(tmp_path: Path) -> None:
+    reference_cases = tmp_path / "reference_cases.jsonl"
+    preview = tmp_path / "preview.json"
+    batch = tmp_path / "batch.jsonl"
+    batch_summary = tmp_path / "batch_summary.json"
+    vectors = tmp_path / "vectors.jsonl"
+    reviews = tmp_path / "reviews.jsonl"
+    cases = tmp_path / "cases.jsonl"
+    summary = tmp_path / "summary.json"
+    _write_jsonl(
+        reference_cases,
+        [
+            _reference_case("case:1", "§ 1?", "legal-section:AufenthG:1:current"),
+            _reference_case("case:2", "§ 2?", "legal-section:AufenthG:2:current"),
+        ],
+    )
+    preview.write_text(json.dumps(_preview(), ensure_ascii=False), encoding="utf-8")
+    emitted = emit_tg_qa_corpus_bounded_semantic_embedding_batch(
+        reference_cases_path=reference_cases,
+        legal_preview_path=preview,
+        law_codes=["AufenthG"],
+        output_path=batch,
+        summary_output_path=batch_summary,
+    )
+    vector_rows = []
+    for item in emitted["items"]:
+        if item["text_role"] == "semantic_query":
+            vector = [1.0, 0.0]
+        elif item["legal_section_id"] == "legal-section:AufenthG:1:current":
+            vector = [1.0, 0.0]
+        else:
+            vector = [0.0, 1.0]
+        vector_rows.append(
+            {
+                "embedding_item_id": item["embedding_item_id"],
+                "embedding_status": "completed",
+                "vector": vector,
+            }
+        )
+    _write_jsonl(vectors, vector_rows)
+    _write_jsonl(
+        reviews,
+        [
+            {
+                "benchmark_case_id": "case:1",
+                "reference_correctness_decision": "accept",
+                "decision_reason": "fixture accepted",
+            },
+            {
+                "benchmark_case_id": "case:2",
+                "reference_correctness_decision": "exclude",
+                "decision_reason": "fixture excluded",
+            },
+        ],
+    )
+
+    result = build_tg_qa_corpus_bounded_semantic_benchmark(
+        reference_cases_path=reference_cases,
+        embedding_batch_path=batch,
+        external_vectors_path=vectors,
+        reference_review_decisions_path=reviews,
+        top_ks=(1, 2),
+        output_path=cases,
+        summary_output_path=summary,
+    )
+
+    silver = result["summary"]["metric_scopes"]["silver_all_query_explicit_targets"]
+    reviewed = result["summary"]["metric_scopes"]["reviewed_accepted_targets"]
+    assert silver["recall_at_1"] == 0.5
+    assert silver["recall_at_2"] == 1.0
+    assert silver["mean_reciprocal_rank"] == 0.75
+    assert silver["ndcg_at_2"] == 0.815465
+    assert reviewed["case_count"] == 1
+    assert reviewed["recall_at_1"] == 1.0
+
+
 def _dataset_record(record_id: str, question: str) -> dict:
     return {
         "artifact_type": "tg_qa_canonical_question_dataset_record",
         "dataset_record_id": record_id,
         "task_id": f"task:{record_id}",
         "canonical_question": question,
+    }
+
+
+def _reference_case(case_id: str, question: str, expected_section_id: str) -> dict:
+    law_code, section = expected_section_id.split(":")[1:3]
+    return {
+        "artifact_type": "tg_qa_corpus_bounded_explicit_reference_case",
+        "benchmark_case_id": case_id,
+        "dataset_record_id": f"record:{case_id}",
+        "canonical_question": question,
+        "target_law_code": law_code,
+        "target_section_reference": f"§ {section}",
+        "expected_legal_section_id": expected_section_id,
+        "observed_legal_section_id": expected_section_id,
+        "outcome": "mechanically_resolved",
     }
 
 
@@ -116,11 +238,22 @@ def _preview() -> dict:
                 "law_code": "AufenthG",
                 "section_reference": "§ 1",
                 "normalized_reference": "§ 1",
-                "title": "Scope",
-                "body_text": "Test.",
-                "checksum": "sha256:test",
+                "title": "Scope one",
+                "body_text": "Test one.",
+                "checksum": "sha256:test-one",
                 "order_index": 1,
-            }
+            },
+            {
+                "source_document_id": "source-document:DE:de:AufenthG",
+                "source_fragment_id": "source-fragment:AufenthG:2",
+                "law_code": "AufenthG",
+                "section_reference": "§ 2",
+                "normalized_reference": "§ 2",
+                "title": "Scope two",
+                "body_text": "Test two.",
+                "checksum": "sha256:test-two",
+                "order_index": 2,
+            },
         ],
         "missing_inputs": [],
         "source_scope": {"law_codes": ["AufenthG"]},

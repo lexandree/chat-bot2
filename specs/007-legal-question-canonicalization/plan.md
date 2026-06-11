@@ -265,6 +265,9 @@ MiniMax verdict, optional DeepSeek verdict, and a compact decision/edit form.
     canonicalization artifacts exist: pair benchmark, legal-intent candidates,
     similarity+recos baseline, slot comparator, pair judge, review labels, and
     equivalence evaluation report.
+11. Run corpus-bounded retrieval diagnostics over the private dataset: exact
+    query-explicit reference resolution first, then file-based semantic
+    retrieval metrics using the existing asymmetric embedding contract.
 
 ## Complexity Tracking
 

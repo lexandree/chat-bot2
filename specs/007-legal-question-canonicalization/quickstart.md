@@ -185,12 +185,12 @@ Expected result:
   reference answer material;
 - Telegram answers remain evaluation material, not legal truth.
 
-## Private Snapshot And Exact-Reference Retrieval Baseline
+## Private Snapshot And Corpus-Bounded Retrieval Baselines
 
 Use the commands in
 [contracts/private-snapshot-reference-benchmark.md](contracts/private-snapshot-reference-benchmark.md)
 to freeze a content-free private snapshot identity and run the first
-corpus-bounded exact-reference benchmark.
+corpus-bounded exact-reference and semantic retrieval benchmarks.
 
 Expected result:
 
@@ -198,5 +198,9 @@ Expected result:
 - the snapshot manifest contains hashes and counts but no record content;
 - the benchmark evaluates only explicit law-code references against the
   selected legal preview;
-- the summary does not claim legal-reference correctness, semantic retrieval,
-  reranking, or answer quality.
+- semantic retrieval uses the current asymmetric query/document embedding
+  contract and reports Recall@k, MRR, and nDCG@k;
+- silver query-explicit targets and any separately reviewed accepted targets
+  remain distinct;
+- neither summary claims legal-reference correctness, reranking quality,
+  answer quality, or trusted support.

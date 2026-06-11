@@ -40,6 +40,8 @@ from evaluation.tg_qa_dataset import (
 from evaluation.tg_qa_retrieval_benchmark import (
     build_private_artifact_snapshot_manifest,
     build_tg_qa_corpus_bounded_reference_benchmark,
+    build_tg_qa_corpus_bounded_semantic_benchmark,
+    emit_tg_qa_corpus_bounded_semantic_embedding_batch,
 )
 from evaluation.tg_question_canonicalization import (
     build_tg_qa_canonicalization_adjudication_batch,
@@ -684,6 +686,25 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_reference_benchmark_parser.add_argument("--law-code", action="append", dest="law_codes")
     tg_qa_reference_benchmark_parser.add_argument("--output", required=True)
     tg_qa_reference_benchmark_parser.add_argument("--summary-output", required=True)
+    tg_qa_semantic_batch_parser = evaluation_subparsers.add_parser(
+        "tg-qa-corpus-bounded-semantic-embedding-batch"
+    )
+    tg_qa_semantic_batch_parser.add_argument("--reference-cases", required=True)
+    tg_qa_semantic_batch_parser.add_argument("--legal-preview", required=True)
+    tg_qa_semantic_batch_parser.add_argument("--law-code", action="append", dest="law_codes")
+    tg_qa_semantic_batch_parser.add_argument("--output", required=True)
+    tg_qa_semantic_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_semantic_benchmark_parser = evaluation_subparsers.add_parser(
+        "tg-qa-corpus-bounded-semantic-benchmark"
+    )
+    tg_qa_semantic_benchmark_parser.add_argument("--reference-cases", required=True)
+    tg_qa_semantic_benchmark_parser.add_argument("--embedding-batch", required=True)
+    tg_qa_semantic_benchmark_parser.add_argument("--external-vectors", required=True)
+    tg_qa_semantic_benchmark_parser.add_argument("--vectorization-summary", default="")
+    tg_qa_semantic_benchmark_parser.add_argument("--reference-review-decisions", default="")
+    tg_qa_semantic_benchmark_parser.add_argument("--k", action="append", type=int, dest="top_ks")
+    tg_qa_semantic_benchmark_parser.add_argument("--output", required=True)
+    tg_qa_semantic_benchmark_parser.add_argument("--summary-output", required=True)
     evaluation_subparsers.add_parser("tg-qa-canonical-boundary-check")
 
     embeddings_parser = subparsers.add_parser("embeddings")
@@ -1666,6 +1687,31 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             legal_preview_path=args.legal_preview,
             dataset_snapshot_manifest_path=args.dataset_snapshot_manifest or None,
             law_codes=args.law_codes,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-corpus-bounded-semantic-embedding-batch":
+        result = emit_tg_qa_corpus_bounded_semantic_embedding_batch(
+            reference_cases_path=args.reference_cases,
+            legal_preview_path=args.legal_preview,
+            law_codes=args.law_codes,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-corpus-bounded-semantic-benchmark":
+        result = build_tg_qa_corpus_bounded_semantic_benchmark(
+            reference_cases_path=args.reference_cases,
+            embedding_batch_path=args.embedding_batch,
+            external_vectors_path=args.external_vectors,
+            vectorization_summary_path=args.vectorization_summary or None,
+            reference_review_decisions_path=args.reference_review_decisions or None,
+            top_ks=args.top_ks or (1, 5, 10),
             output_path=args.output,
             summary_output_path=args.summary_output,
         )
