@@ -145,6 +145,9 @@ policy, and does not approve automatic answer reuse.
 - **FR-032**: Semantic retrieval evaluation MUST report Recall@k, MRR, and nDCG@k while keeping missing vectors visible as failures.
 - **FR-033**: Query-explicit silver targets MUST remain separate from independently reviewed accepted reference targets.
 - **FR-034**: Semantic retrieval metrics MUST NOT create trusted legal-reference, answer, or graph-support decisions.
+- **FR-035**: The system MUST support a bounded human relevance-review batch containing the canonical question, semantic top candidates, and the query-explicit target when it is absent from the semantic top candidates.
+- **FR-036**: Human relevance review MUST support multiple relevant legal sections, an explicit no-relevant-candidate-shown decision, and a separate classification of the query-explicit reference role.
+- **FR-037**: Reviewed relevance metrics MUST use only completed positive human relevance labels and MUST preserve the distinction between relevance evidence and trusted legal answer support.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -166,6 +169,9 @@ policy, and does not approve automatic answer reuse.
 - **CorpusBoundedExplicitReferenceCase**: Private retrieval-evaluation case derived from an explicit law-code reference in a canonical question.
 - **CorpusBoundedSemanticEmbeddingItem**: Private query or legal-section document embedding input preserving the active asymmetric embedding contract.
 - **CorpusBoundedSemanticRetrievalCase**: Private ranked retrieval result for one query-explicit target with silver-label and optional reference-review status.
+- **RetrievalRelevanceReviewCard**: Bounded private review card containing one canonical question, semantic candidates, legal section text, and the query-explicit target.
+- **RetrievalRelevanceReviewLabel**: Human relevance decision identifying all relevant shown legal sections, no-relevant-candidate-shown state, and the role of the query-explicit reference.
+- **ReviewedRelevanceReport**: Retrieval metrics computed only from completed positive human relevance labels.
 
 ## Success Criteria *(mandatory)*
 
@@ -185,6 +191,7 @@ policy, and does not approve automatic answer reuse.
 - **SC-012**: A private snapshot manifest changes identity when an input artifact changes and never contains private record text.
 - **SC-013**: The corpus-bounded explicit-reference benchmark runs offline against a legal preview and reports exact-reference Recall@1 without claiming semantic retrieval quality.
 - **SC-014**: Offline fixture tests exercise semantic embedding-batch emission and Recall@k, MRR, and nDCG@k evaluation without a live embedding service or Neo4j.
+- **SC-015**: An operator can review a bounded semantic-retrieval sample without editing raw JSON, export multiple relevant sections or no-relevant-candidate-shown labels, and compute reviewed relevance metrics fully offline.
 
 ## Assumptions
 

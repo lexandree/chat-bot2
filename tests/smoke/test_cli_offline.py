@@ -132,6 +132,15 @@ def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline
     semantic_vectors = tmp_path / "semantic_vectors.jsonl"
     semantic_cases = tmp_path / "semantic_cases.jsonl"
     semantic_summary = tmp_path / "semantic_summary.json"
+    relevance_review_batch = tmp_path / "relevance_review_batch.jsonl"
+    relevance_review_batch_summary = tmp_path / "relevance_review_batch_summary.json"
+    relevance_review_html = tmp_path / "relevance_review.html"
+    relevance_review_html_summary = tmp_path / "relevance_review_html_summary.json"
+    raw_relevance_labels = tmp_path / "raw_relevance_labels.jsonl"
+    relevance_labels = tmp_path / "relevance_labels.jsonl"
+    relevance_labels_summary = tmp_path / "relevance_labels_summary.json"
+    reviewed_relevance_cases = tmp_path / "reviewed_relevance_cases.jsonl"
+    reviewed_relevance_summary = tmp_path / "reviewed_relevance_summary.json"
     _write_jsonl(
         dataset,
         [
@@ -251,16 +260,95 @@ def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline
             str(semantic_summary),
         ]
     )
+    relevance_review_batch_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-retrieval-relevance-review-batch",
+            "--semantic-cases",
+            str(semantic_cases),
+            "--embedding-batch",
+            str(semantic_batch),
+            "--max-cases",
+            "1",
+            "--top-k",
+            "1",
+            "--output",
+            str(relevance_review_batch),
+            "--summary-output",
+            str(relevance_review_batch_summary),
+        ]
+    )
+    relevance_review_html_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-retrieval-relevance-review-html",
+            "--review-batch",
+            str(relevance_review_batch),
+            "--output",
+            str(relevance_review_html),
+            "--summary-output",
+            str(relevance_review_html_summary),
+        ]
+    )
+    review_card = _read_jsonl(relevance_review_batch)[0]
+    _write_jsonl(
+        raw_relevance_labels,
+        [
+            {
+                "benchmark_case_id": review_card["benchmark_case_id"],
+                "relevant_legal_section_ids": [review_card["expected_legal_section_id"]],
+                "no_relevant_candidate_shown": False,
+                "review_status": "reviewed",
+                "explicit_reference_role": "answer_support",
+            }
+        ],
+    )
+    relevance_labels_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-retrieval-relevance-review-labels-import",
+            "--review-batch",
+            str(relevance_review_batch),
+            "--labels",
+            str(raw_relevance_labels),
+            "--output",
+            str(relevance_labels),
+            "--summary-output",
+            str(relevance_labels_summary),
+        ]
+    )
+    reviewed_relevance_result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-reviewed-relevance-report",
+            "--semantic-cases",
+            str(semantic_cases),
+            "--review-labels",
+            str(relevance_labels),
+            "--k",
+            "1",
+            "--output",
+            str(reviewed_relevance_cases),
+            "--summary-output",
+            str(reviewed_relevance_summary),
+        ]
+    )
 
     assert snapshot_result.returncode == 0, snapshot_result.stderr
     assert benchmark_result.returncode == 0, benchmark_result.stderr
     assert semantic_batch_result.returncode == 0, semantic_batch_result.stderr
     assert semantic_benchmark_result.returncode == 0, semantic_benchmark_result.stderr
+    assert relevance_review_batch_result.returncode == 0, relevance_review_batch_result.stderr
+    assert relevance_review_html_result.returncode == 0, relevance_review_html_result.stderr
+    assert relevance_labels_result.returncode == 0, relevance_labels_result.stderr
+    assert reviewed_relevance_result.returncode == 0, reviewed_relevance_result.stderr
     assert json.loads(snapshot_result.stdout)["contains_record_content"] is False
     assert json.loads(benchmark_result.stdout)["exact_reference_recall_at_1"] == 1.0
     assert json.loads(semantic_benchmark_result.stdout)["metric_scopes"][
         "silver_all_query_explicit_targets"
     ]["recall_at_1"] == 1.0
+    assert json.loads(reviewed_relevance_result.stdout)["metrics"]["recall_at_1"] == 1.0
+    assert "localStorage" in relevance_review_html.read_text(encoding="utf-8")
     assert len(cases.read_text(encoding="utf-8").splitlines()) == 1
 
 

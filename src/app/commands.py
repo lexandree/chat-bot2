@@ -41,7 +41,11 @@ from evaluation.tg_qa_retrieval_benchmark import (
     build_private_artifact_snapshot_manifest,
     build_tg_qa_corpus_bounded_reference_benchmark,
     build_tg_qa_corpus_bounded_semantic_benchmark,
+    build_tg_qa_retrieval_relevance_review_batch,
+    build_tg_qa_reviewed_relevance_report,
     emit_tg_qa_corpus_bounded_semantic_embedding_batch,
+    export_tg_qa_retrieval_relevance_review_html,
+    import_tg_qa_retrieval_relevance_review_labels,
 )
 from evaluation.tg_question_canonicalization import (
     build_tg_qa_canonicalization_adjudication_batch,
@@ -705,6 +709,36 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_semantic_benchmark_parser.add_argument("--k", action="append", type=int, dest="top_ks")
     tg_qa_semantic_benchmark_parser.add_argument("--output", required=True)
     tg_qa_semantic_benchmark_parser.add_argument("--summary-output", required=True)
+    tg_qa_relevance_review_batch_parser = evaluation_subparsers.add_parser(
+        "tg-qa-retrieval-relevance-review-batch"
+    )
+    tg_qa_relevance_review_batch_parser.add_argument("--semantic-cases", required=True)
+    tg_qa_relevance_review_batch_parser.add_argument("--embedding-batch", required=True)
+    tg_qa_relevance_review_batch_parser.add_argument("--max-cases", type=int, default=30)
+    tg_qa_relevance_review_batch_parser.add_argument("--top-k", type=int, default=10)
+    tg_qa_relevance_review_batch_parser.add_argument("--output", required=True)
+    tg_qa_relevance_review_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_relevance_review_html_parser = evaluation_subparsers.add_parser(
+        "tg-qa-retrieval-relevance-review-html"
+    )
+    tg_qa_relevance_review_html_parser.add_argument("--review-batch", required=True)
+    tg_qa_relevance_review_html_parser.add_argument("--output", required=True)
+    tg_qa_relevance_review_html_parser.add_argument("--summary-output", required=True)
+    tg_qa_relevance_review_import_parser = evaluation_subparsers.add_parser(
+        "tg-qa-retrieval-relevance-review-labels-import"
+    )
+    tg_qa_relevance_review_import_parser.add_argument("--review-batch", required=True)
+    tg_qa_relevance_review_import_parser.add_argument("--labels", required=True)
+    tg_qa_relevance_review_import_parser.add_argument("--output", required=True)
+    tg_qa_relevance_review_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_reviewed_relevance_report_parser = evaluation_subparsers.add_parser(
+        "tg-qa-reviewed-relevance-report"
+    )
+    tg_qa_reviewed_relevance_report_parser.add_argument("--semantic-cases", required=True)
+    tg_qa_reviewed_relevance_report_parser.add_argument("--review-labels", required=True)
+    tg_qa_reviewed_relevance_report_parser.add_argument("--k", action="append", type=int, dest="top_ks")
+    tg_qa_reviewed_relevance_report_parser.add_argument("--output", required=True)
+    tg_qa_reviewed_relevance_report_parser.add_argument("--summary-output", required=True)
     evaluation_subparsers.add_parser("tg-qa-canonical-boundary-check")
 
     embeddings_parser = subparsers.add_parser("embeddings")
@@ -1711,6 +1745,48 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             external_vectors_path=args.external_vectors,
             vectorization_summary_path=args.vectorization_summary or None,
             reference_review_decisions_path=args.reference_review_decisions or None,
+            top_ks=args.top_ks or (1, 5, 10),
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-retrieval-relevance-review-batch":
+        result = build_tg_qa_retrieval_relevance_review_batch(
+            semantic_cases_path=args.semantic_cases,
+            embedding_batch_path=args.embedding_batch,
+            max_cases=args.max_cases,
+            top_k=args.top_k,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-retrieval-relevance-review-html":
+        result = export_tg_qa_retrieval_relevance_review_html(
+            review_batch_path=args.review_batch,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-retrieval-relevance-review-labels-import":
+        result = import_tg_qa_retrieval_relevance_review_labels(
+            review_batch_path=args.review_batch,
+            labels_path=args.labels,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-reviewed-relevance-report":
+        result = build_tg_qa_reviewed_relevance_report(
+            semantic_cases_path=args.semantic_cases,
+            review_labels_path=args.review_labels,
             top_ks=args.top_ks or (1, 5, 10),
             output_path=args.output,
             summary_output_path=args.summary_output,

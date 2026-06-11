@@ -71,6 +71,13 @@
   the question. The result establishes that exact reference resolution must
   precede semantic retrieval and that query-explicit references are unsuitable
   as unreviewed gold relevance labels.
+- Added a bounded human retrieval-relevance review contour: deterministic
+  diverse sampling, static HTML review, validated label import, and reviewed
+  positive-label metrics with a separate bounded-candidate failure rate.
+- Generated a private 30-card `last_2000_v1` relevance-review batch over
+  semantic top-10 candidates plus query-explicit targets. The sample represents
+  all eight query-explicit target sections present in the 99 semantic cases;
+  human review remains pending.
 
 ## Verification
 
@@ -88,6 +95,10 @@
   `python -m pytest -q`: 174 passed, 11 skipped; compileall,
   canonicalization boundary check, `git diff --check`, and private artifact
   ignore checks passed.
+- After adding the bounded human retrieval-relevance diagnostic:
+  `python -m pytest -q`: 176 passed, 11 skipped; both 006 and 007 boundary
+  checks, compileall, `git diff --check`, and private artifact ignore checks
+  passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

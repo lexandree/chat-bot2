@@ -221,6 +221,20 @@ retrieval policy, or trusted support.
 - [X] T087 Add offline unit and CLI smoke tests without Neo4j, live embeddings, paid APIs, or network access
 - [X] T088 Run the private `last_2000_v1` three-law semantic retrieval diagnostic and record aggregate findings
 
+## Phase 11: Human-Reviewed Retrieval Relevance Diagnostic
+
+**Purpose**: Replace citation-recovery silver labels with a bounded human
+relevance sample without promoting reviewed sections into trusted answer
+support.
+
+- [X] T089 Document the bounded retrieval relevance-review contract and trust boundary
+- [X] T090 Add deterministic diverse review-batch generation over semantic top candidates plus the explicit-reference target
+- [X] T091 Add dependency-free HTML review with multiple relevant-section labels and explicit-reference role classification
+- [X] T092 Add validated relevance-label import and reviewed positive-label retrieval metrics
+- [X] T093 Add CLI commands for review-batch, HTML export, label import, and reviewed relevance report
+- [X] T094 Add offline unit and CLI smoke tests without Neo4j, live embeddings, paid APIs, or network access
+- [ ] T095 Generate the private `last_2000_v1` relevance-review sample and complete human review
+
 ---
 
 ## Dependencies & Execution Order

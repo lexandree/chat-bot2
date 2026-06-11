@@ -268,6 +268,9 @@ MiniMax verdict, optional DeepSeek verdict, and a compact decision/edit form.
 11. Run corpus-bounded retrieval diagnostics over the private dataset: exact
     query-explicit reference resolution first, then file-based semantic
     retrieval metrics using the existing asymmetric embedding contract.
+12. Build a bounded human relevance-review sample over semantic candidates,
+    import private review labels, and report metrics only for positively
+    reviewed relevance evidence.
 
 ## Complexity Tracking
 

@@ -202,5 +202,9 @@ Expected result:
   contract and reports Recall@k, MRR, and nDCG@k;
 - silver query-explicit targets and any separately reviewed accepted targets
   remain distinct;
+- a bounded static HTML review can label multiple actually relevant shown
+  sections or record that no relevant candidate was shown;
+- reviewed relevance metrics use only completed positive human relevance
+  labels;
 - neither summary claims legal-reference correctness, reranking quality,
   answer quality, or trusted support.

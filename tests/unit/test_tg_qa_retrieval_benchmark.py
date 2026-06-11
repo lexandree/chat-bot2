@@ -7,7 +7,11 @@ from evaluation.tg_qa_retrieval_benchmark import (
     build_private_artifact_snapshot_manifest,
     build_tg_qa_corpus_bounded_reference_benchmark,
     build_tg_qa_corpus_bounded_semantic_benchmark,
+    build_tg_qa_retrieval_relevance_review_batch,
+    build_tg_qa_reviewed_relevance_report,
     emit_tg_qa_corpus_bounded_semantic_embedding_batch,
+    export_tg_qa_retrieval_relevance_review_html,
+    import_tg_qa_retrieval_relevance_review_labels,
 )
 
 
@@ -194,6 +198,137 @@ def test_semantic_benchmark_reports_silver_and_reviewed_metrics(tmp_path: Path) 
     assert reviewed["recall_at_1"] == 1.0
 
 
+def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path: Path) -> None:
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    embedding_batch = tmp_path / "embedding_batch.jsonl"
+    review_batch = tmp_path / "review_batch.jsonl"
+    review_batch_summary = tmp_path / "review_batch_summary.json"
+    review_html = tmp_path / "review.html"
+    review_html_summary = tmp_path / "review_html_summary.json"
+    raw_labels = tmp_path / "raw_labels.jsonl"
+    labels = tmp_path / "labels.jsonl"
+    labels_summary = tmp_path / "labels_summary.json"
+    report = tmp_path / "report.jsonl"
+    report_summary = tmp_path / "report_summary.json"
+    _write_jsonl(
+        semantic_cases,
+        [
+            _semantic_case("case:a1", "legal-section:AufenthG:1:current", ["legal-section:AufenthG:2:current"]),
+            _semantic_case("case:a2", "legal-section:AufenthG:1:current", ["legal-section:AufenthG:1:current"]),
+            _semantic_case("case:b1", "legal-section:AufenthG:2:current", ["legal-section:AufenthG:2:current"]),
+        ],
+    )
+    _write_jsonl(
+        embedding_batch,
+        [
+            _document_embedding_item("legal-section:AufenthG:1:current", "Document: First section."),
+            _document_embedding_item("legal-section:AufenthG:2:current", "Document: Second section."),
+        ],
+    )
+
+    batch_result = build_tg_qa_retrieval_relevance_review_batch(
+        semantic_cases_path=semantic_cases,
+        embedding_batch_path=embedding_batch,
+        max_cases=2,
+        top_k=1,
+        output_path=review_batch,
+        summary_output_path=review_batch_summary,
+    )
+    html_result = export_tg_qa_retrieval_relevance_review_html(
+        review_batch_path=review_batch,
+        output_path=review_html,
+        summary_output_path=review_html_summary,
+    )
+    _write_jsonl(
+        raw_labels,
+        [
+            {
+                "benchmark_case_id": "case:b1",
+                "relevant_legal_section_ids": ["legal-section:AufenthG:2:current"],
+                "no_relevant_candidate_shown": False,
+                "review_status": "reviewed",
+                "explicit_reference_role": "answer_support",
+            },
+            {
+                "benchmark_case_id": "case:a1",
+                "relevant_legal_section_ids": [],
+                "no_relevant_candidate_shown": True,
+                "review_status": "reviewed",
+                "explicit_reference_role": "status_context",
+            },
+        ],
+    )
+    imported = import_tg_qa_retrieval_relevance_review_labels(
+        review_batch_path=review_batch,
+        labels_path=raw_labels,
+        output_path=labels,
+        summary_output_path=labels_summary,
+    )
+    evaluated = build_tg_qa_reviewed_relevance_report(
+        semantic_cases_path=semantic_cases,
+        review_labels_path=labels,
+        top_ks=(1, 2),
+        output_path=report,
+        summary_output_path=report_summary,
+    )
+
+    assert batch_result["summary"]["card_count"] == 2
+    assert [item["benchmark_case_id"] for item in batch_result["cards"]] == ["case:b1", "case:a1"]
+    assert len(batch_result["cards"][1]["candidates"]) == 2
+    assert html_result["summary"]["card_count"] == 2
+    assert "localStorage" in review_html.read_text(encoding="utf-8")
+    assert imported["summary"]["completed_count"] == 2
+    assert imported["summary"]["counts_by_explicit_reference_role"] == {
+        "answer_support": 1,
+        "status_context": 1,
+    }
+    assert evaluated["summary"]["metrics"]["hit_rate_at_1"] == 1.0
+    assert evaluated["summary"]["metrics"]["recall_at_1"] == 1.0
+    assert evaluated["summary"]["metrics"]["mean_reciprocal_rank"] == 1.0
+    assert evaluated["summary"]["positive_label_coverage_rate"] == 0.5
+    assert evaluated["summary"]["bounded_candidate_failure_rate"] == 0.5
+
+
+def test_retrieval_relevance_review_import_rejects_conflicting_reviewed_label(tmp_path: Path) -> None:
+    review_batch = tmp_path / "review_batch.jsonl"
+    raw_labels = tmp_path / "raw_labels.jsonl"
+    labels = tmp_path / "labels.jsonl"
+    summary = tmp_path / "summary.json"
+    _write_jsonl(
+        review_batch,
+        [
+            {
+                "benchmark_case_id": "case:1",
+                "candidates": [{"legal_section_id": "legal-section:AufenthG:1:current"}],
+            }
+        ],
+    )
+    _write_jsonl(
+        raw_labels,
+        [
+            {
+                "benchmark_case_id": "case:1",
+                "relevant_legal_section_ids": ["legal-section:AufenthG:1:current"],
+                "no_relevant_candidate_shown": True,
+                "review_status": "reviewed",
+                "explicit_reference_role": "answer_support",
+            }
+        ],
+    )
+
+    result = import_tg_qa_retrieval_relevance_review_labels(
+        review_batch_path=review_batch,
+        labels_path=raw_labels,
+        output_path=labels,
+        summary_output_path=summary,
+    )
+
+    assert result["summary"]["failed_count"] == 1
+    assert result["labels"][0]["failure_reason"] == (
+        "reviewed_label_requires_relevant_sections_xor_no_relevant_candidate_shown"
+    )
+
+
 def _dataset_record(record_id: str, question: str) -> dict:
     return {
         "artifact_type": "tg_qa_canonical_question_dataset_record",
@@ -215,6 +350,41 @@ def _reference_case(case_id: str, question: str, expected_section_id: str) -> di
         "expected_legal_section_id": expected_section_id,
         "observed_legal_section_id": expected_section_id,
         "outcome": "mechanically_resolved",
+    }
+
+
+def _semantic_case(case_id: str, expected_section_id: str, ranked_section_ids: list[str]) -> dict:
+    return {
+        "benchmark_case_id": case_id,
+        "dataset_record_id": f"record:{case_id}",
+        "canonical_question": f"Question {case_id}",
+        "expected_legal_section_id": expected_section_id,
+        "expected_rank": (
+            ranked_section_ids.index(expected_section_id) + 1 if expected_section_id in ranked_section_ids else 3
+        ),
+        "expected_score": 0.5,
+        "top_candidates": [
+            {
+                "legal_section_id": section_id,
+                "law_code": "AufenthG",
+                "section_reference": f"§ {section_id.split(':')[2]}",
+                "title": section_id,
+                "score": 1.0 - index * 0.1,
+            }
+            for index, section_id in enumerate(ranked_section_ids)
+        ],
+    }
+
+
+def _document_embedding_item(section_id: str, text: str) -> dict:
+    return {
+        "embedding_item_id": f"embedding:{section_id}",
+        "text_role": "legal_section_document",
+        "legal_section_id": section_id,
+        "law_code": "AufenthG",
+        "section_reference": f"§ {section_id.split(':')[2]}",
+        "title": section_id,
+        "embedding_input_text": text,
     }
 
 
