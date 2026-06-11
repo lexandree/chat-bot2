@@ -365,3 +365,20 @@ resolved meanings with evidence-term invariants. Treat separate funding,
 language, tax-jurisdiction, and similar requests as distinct issues when
 selecting one central canonical question, even when they are legally related to
 the selected access, eligibility, or status-compliance issue.
+
+## PL-018: Law-Code Hints Are Not Citation Evidence
+
+Evidence:
+
+- `tg-question-canonicalization-task:2ba9156e4de45257e559`
+
+Lesson: A weak upstream `law_code_candidates` hint can combine with an informal
+section-number mention and create a precise but false citation. In this case,
+the source said only "24 paragraph", the hint supplied `AsylG`, and the
+canonical question incorrectly emitted `§24 AsylG` instead of the Ukrainian
+temporary-protection context under `§24 AufenthG`.
+
+Prompt implication: Use `law_code_candidates` for topical routing only. Treat
+the source text and resolved legal context as citation evidence; preserve
+uncertainty when they do not establish the law code. Review any law code that
+appears only in the canonical question before using it as a retrieval target.

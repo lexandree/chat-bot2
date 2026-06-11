@@ -1014,6 +1014,30 @@
       ],
       "source_kind": "real_task",
       "task_id": "tg-question-canonicalization-task:e8db88759a2a7322b705"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_evidence_terms": [
+          "§24 AsylG"
+        ],
+        "required_all_evidence_terms": [
+          "§24",
+          "AufenthG"
+        ],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-060-canonicalizer-law-code-hint-not-citation",
+      "expected_focus": "Resolve the informal Ukrainian-refugee section-24 context without turning the weak AsylG routing hint into a false citation.",
+      "lesson_ids": [
+        "PL-008",
+        "PL-018"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:2ba9156e4de45257e559"
     }
   ],
   "registry_version": "007-prompt-regression-v1",

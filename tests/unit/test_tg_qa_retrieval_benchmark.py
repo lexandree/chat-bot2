@@ -201,6 +201,7 @@ def test_semantic_benchmark_reports_silver_and_reviewed_metrics(tmp_path: Path) 
 def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path: Path) -> None:
     semantic_cases = tmp_path / "semantic_cases.jsonl"
     embedding_batch = tmp_path / "embedding_batch.jsonl"
+    dataset = tmp_path / "dataset.jsonl"
     review_batch = tmp_path / "review_batch.jsonl"
     review_batch_summary = tmp_path / "review_batch_summary.json"
     review_html = tmp_path / "review.html"
@@ -225,10 +226,28 @@ def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path
             _document_embedding_item("legal-section:AufenthG:2:current", "Document: Second section."),
         ],
     )
+    _write_jsonl(
+        dataset,
+        [
+            {
+                "dataset_record_id": "record:case:a1",
+                "source_question_text_redacted": "Question about section 1 without a law name.",
+            },
+            {
+                "dataset_record_id": "record:case:a2",
+                "source_question_text_redacted": "Question about AufenthG.",
+            },
+            {
+                "dataset_record_id": "record:case:b1",
+                "source_question_text_redacted": "Question about AufenthG.",
+            },
+        ],
+    )
 
     batch_result = build_tg_qa_retrieval_relevance_review_batch(
         semantic_cases_path=semantic_cases,
         embedding_batch_path=embedding_batch,
+        dataset_path=dataset,
         max_cases=2,
         top_k=1,
         output_path=review_batch,
@@ -275,6 +294,12 @@ def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path
     assert batch_result["summary"]["card_count"] == 2
     assert [item["benchmark_case_id"] for item in batch_result["cards"]] == ["case:b1", "case:a1"]
     assert len(batch_result["cards"][1]["candidates"]) == 2
+    assert batch_result["cards"][1]["source_reference_diagnostics"] == [
+        "explicit_target_law_code_absent_from_source"
+    ]
+    assert batch_result["summary"]["source_reference_diagnostic_counts"] == {
+        "explicit_target_law_code_absent_from_source": 1
+    }
     assert html_result["summary"]["card_count"] == 2
     assert "localStorage" in review_html.read_text(encoding="utf-8")
     assert imported["summary"]["completed_count"] == 2

@@ -547,6 +547,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
     *,
     semantic_cases_path: str | Path,
     embedding_batch_path: str | Path,
+    dataset_path: str | Path | None = None,
     output_path: str | Path,
     summary_output_path: str | Path,
     max_cases: int = 30,
@@ -565,11 +566,24 @@ def build_tg_qa_retrieval_relevance_review_batch(
         for item in embedding_items
         if item.get("text_role") == "legal_section_document" and item.get("legal_section_id")
     }
+    dataset_by_record_id = {
+        str(item.get("dataset_record_id", "")): item
+        for item in (_read_jsonl(dataset_path) if dataset_path else [])
+        if item.get("dataset_record_id")
+    }
     selected_cases = _diverse_relevance_review_sample(semantic_cases, max_cases=max_cases)
     cards: list[dict[str, Any]] = []
     missing_document_counts: Counter[str] = Counter()
+    source_diagnostic_counts: Counter[str] = Counter()
     for case in selected_cases:
         expected_section_id = str(case.get("expected_legal_section_id", ""))
+        dataset_record = dataset_by_record_id.get(str(case.get("dataset_record_id", "")), {})
+        source_question = str(dataset_record.get("source_question_text_redacted", ""))
+        source_reference_diagnostics = _source_reference_diagnostics(
+            source_question,
+            expected_section_id=expected_section_id,
+        )
+        source_diagnostic_counts.update(source_reference_diagnostics)
         ranked_candidates = [
             item for item in case.get("top_candidates", []) if isinstance(item, Mapping)
         ][:top_k]
@@ -620,6 +634,8 @@ def build_tg_qa_retrieval_relevance_review_batch(
                 "benchmark_case_id": str(case.get("benchmark_case_id", "")),
                 "dataset_record_id": str(case.get("dataset_record_id", "")),
                 "canonical_question": str(case.get("canonical_question", "")),
+                "source_question_text_redacted": source_question,
+                "source_reference_diagnostics": source_reference_diagnostics,
                 "expected_legal_section_id": expected_section_id,
                 "expected_rank": int(case.get("expected_rank", 0) or 0),
                 "candidates": candidates,
@@ -641,6 +657,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
         "policy_version": RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION,
         "semantic_cases_path": str(semantic_cases_path),
         "embedding_batch_path": str(embedding_batch_path),
+        "dataset_path": str(dataset_path or ""),
         "output_path": str(output_path),
         "source_case_count": len(semantic_cases),
         "max_cases": max_cases,
@@ -650,6 +667,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
             str(item.get("expected_legal_section_id", "")) for item in cards
         ),
         "missing_document_counts": dict(sorted(missing_document_counts.items())),
+        "source_reference_diagnostic_counts": dict(sorted(source_diagnostic_counts.items())),
         "sample_policy": "stable_round_robin_rarest_expected_section_first",
         "privacy_classification": "private_project_artifact",
         "trust_boundary": "review_batch_requires_human_labels_before_relevance_metrics",
@@ -928,6 +946,23 @@ def _strip_embedding_prefix(text: str, prefix: str) -> str:
     return text[len(prefix) :] if text.startswith(prefix) else text
 
 
+def _source_reference_diagnostics(
+    source_question: str,
+    *,
+    expected_section_id: str,
+) -> list[str]:
+    if not source_question or not expected_section_id:
+        return []
+    parts = expected_section_id.split(":")
+    if len(parts) < 3:
+        return []
+    law_code = parts[1]
+    diagnostics: list[str] = []
+    if law_code.casefold() not in source_question.casefold():
+        diagnostics.append("explicit_target_law_code_absent_from_source")
+    return diagnostics
+
+
 def _retrieval_relevance_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
     data = json.dumps(list(cards), ensure_ascii=False, sort_keys=True).replace("</", "<\\/")
     return f"""<!doctype html>
@@ -949,6 +984,7 @@ def _retrieval_relevance_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
     textarea {{ width:100%; min-height:72px; resize:vertical; border:1px solid var(--line); border-radius:6px; padding:8px; }}
     .card {{ display:grid; gap:12px; }}
     .question,.candidate,.decision {{ background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; }}
+    .warning {{ color:#9a3412; font-weight:600; }}
     .candidate {{ display:grid; grid-template-columns:26px minmax(0,1fr); gap:8px; }}
     .candidate.target {{ background:var(--target); }}
     .meta,.muted {{ color:var(--muted); font-size:12px; }}
@@ -1012,7 +1048,11 @@ function render() {{
     <div class="meta">${{esc(c.title)}} · ${{esc(c.candidate_source)}}</div><div class="body">${{esc(c.body_text)}}</div></div>
   </label>`).join('');
   document.getElementById('app').innerHTML = `<article class="card">
-    <section class="question"><strong>${{esc(card.benchmark_case_id)}}</strong><h2>${{esc(card.canonical_question)}}</h2><div class="meta">explicit target: ${{esc(card.expected_legal_section_id)}} · rank=${{esc(card.expected_rank)}}</div></section>
+    <section class="question"><strong>${{esc(card.benchmark_case_id)}}</strong><h2>${{esc(card.canonical_question)}}</h2>
+      <div class="meta">source question</div><div>${{esc(card.source_question_text_redacted || 'not supplied')}}</div>
+      <div class="meta">explicit target: ${{esc(card.expected_legal_section_id)}} · rank=${{esc(card.expected_rank)}}</div>
+      <div class="warning">${{esc((card.source_reference_diagnostics || []).join('; '))}}</div>
+    </section>
     ${{candidates}}
     <section class="decision"><div class="decision-grid">
       <label class="field"><span>review status</span><select id="reviewStatus">${{['','reviewed','uncertain','skip'].map(v => `<option value="${{v}}" ${{saved.review_status===v?'selected':''}}>${{v || 'select'}}</option>`).join('')}}</select></label>

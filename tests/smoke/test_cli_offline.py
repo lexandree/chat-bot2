@@ -268,6 +268,8 @@ def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline
             str(semantic_cases),
             "--embedding-batch",
             str(semantic_batch),
+            "--dataset",
+            str(dataset),
             "--max-cases",
             "1",
             "--top-k",

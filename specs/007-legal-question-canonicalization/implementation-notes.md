@@ -78,6 +78,17 @@
   semantic top-10 candidates plus query-explicit targets. The sample represents
   all eight query-explicit target sections present in the 99 semantic cases;
   human review remains pending.
+- The first relevance-review card exposed one legacy `v1` canonicalization
+  error: a weak `law_code_candidates=["AsylG"]` hint combined with an informal
+  "24 paragraph" source mention and produced the false citation `§24 AsylG`.
+  A targeted Qwen 3.6 smoke with `tg_question_canonicalizer_v22_positive`
+  correctly emitted `§24 AufenthG` and passed the new cumulative regression
+  invariant. The corrected result remains private correction evidence until a
+  new dataset snapshot and its dependent retrieval vectors are rebuilt.
+- Relevance-review cards now show the private redacted source question when the
+  dataset is supplied and warn when the query-explicit target law code was not
+  named in the source. The warning requires review and is not an automatic
+  rejection because inferred law codes may be correct.
 
 ## Verification
 

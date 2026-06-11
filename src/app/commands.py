@@ -714,6 +714,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tg_qa_relevance_review_batch_parser.add_argument("--semantic-cases", required=True)
     tg_qa_relevance_review_batch_parser.add_argument("--embedding-batch", required=True)
+    tg_qa_relevance_review_batch_parser.add_argument("--dataset", default="")
     tg_qa_relevance_review_batch_parser.add_argument("--max-cases", type=int, default=30)
     tg_qa_relevance_review_batch_parser.add_argument("--top-k", type=int, default=10)
     tg_qa_relevance_review_batch_parser.add_argument("--output", required=True)
@@ -1756,6 +1757,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
         result = build_tg_qa_retrieval_relevance_review_batch(
             semantic_cases_path=args.semantic_cases,
             embedding_batch_path=args.embedding_batch,
+            dataset_path=args.dataset or None,
             max_cases=args.max_cases,
             top_k=args.top_k,
             output_path=args.output,

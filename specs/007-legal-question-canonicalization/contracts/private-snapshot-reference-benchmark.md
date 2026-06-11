@@ -94,9 +94,15 @@ The bounded relevance-review contour samples semantic cases deterministically
 across expected sections and presents:
 
 - the canonical question;
+- the redacted source question when the private dataset is supplied;
 - the semantic top candidates with legal source text;
 - the query-explicit target, added separately when absent from the top
   candidates.
+
+When source text is available, the review card flags a query-explicit target
+law code that was introduced during canonicalization rather than named in the
+source. This is a review warning, not an automatic error: inferred law codes may
+be correct, but they require scrutiny before citation-based evaluation.
 
 The reviewer may mark multiple shown sections as relevant, mark that no
 relevant candidate is shown, and classify the query-explicit reference as
@@ -190,6 +196,7 @@ Build and open a bounded relevance-review sample:
 PYTHONPATH=src python -m app evaluation tg-qa-retrieval-relevance-review-batch \
   --semantic-cases data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_cases.jsonl \
   --embedding-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_semantic_embedding_batch.jsonl \
+  --dataset data/evaluation/tg_qa_canonicalization/real_data_007_canonical_question_dataset_last_2000_v1.jsonl \
   --max-cases 30 \
   --top-k 10 \
   --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_relevance_review_30.jsonl \
