@@ -696,6 +696,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
                     "multiple_relevant_sections_allowed": True,
                     "no_relevant_candidate_shown_allowed": True,
                     "additional_relevant_sections_allowed": True,
+                    "rerun_after_corpus_expansion_allowed": True,
                 },
                 "policy_version": RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION,
                 "trust_boundary": "private_human_relevance_review_card_not_legal_authority",
@@ -787,6 +788,17 @@ def import_tg_qa_retrieval_relevance_review_labels(
                 if str(item)
             )
         )
+        raw_rerun_after_corpus_expansion = raw.get("rerun_after_corpus_expansion", [])
+        rerun_after_corpus_expansion_valid = isinstance(raw_rerun_after_corpus_expansion, list) and all(
+            isinstance(item, str) for item in raw_rerun_after_corpus_expansion
+        )
+        rerun_after_corpus_expansion = sorted(
+            set(
+                str(item).strip()
+                for item in raw_rerun_after_corpus_expansion
+                if str(item).strip()
+            )
+        ) if rerun_after_corpus_expansion_valid else []
         relevant_ids = sorted(set(shown_relevant_ids + additional_relevant_ids))
         no_relevant_shown = bool(raw.get("no_relevant_candidate_shown", False))
         candidate_ids = {
@@ -808,6 +820,8 @@ def import_tg_qa_retrieval_relevance_review_labels(
             failure_reason = f"invalid_review_status:{review_status}"
         elif explicit_reference_role not in EXPLICIT_REFERENCE_ROLES:
             failure_reason = f"invalid_explicit_reference_role:{explicit_reference_role}"
+        elif not rerun_after_corpus_expansion_valid:
+            failure_reason = "rerun_after_corpus_expansion_must_be_string_list"
         elif set(shown_relevant_ids).difference(candidate_ids):
             failure_reason = "shown_relevant_section_not_in_review_candidates"
         elif set(additional_relevant_ids).difference(catalog_ids):
@@ -820,6 +834,8 @@ def import_tg_qa_retrieval_relevance_review_labels(
             seen_case_ids.add(case_id)
             counts[review_status] += 1
             counts[f"explicit_reference_role:{explicit_reference_role}"] += 1
+            for law_code in rerun_after_corpus_expansion:
+                counts[f"rerun_after_corpus_expansion:{law_code}"] += 1
         else:
             counts["failed"] += 1
         records.append(
@@ -835,6 +851,7 @@ def import_tg_qa_retrieval_relevance_review_labels(
                         "no_relevant_candidate_shown": no_relevant_shown,
                         "review_status": review_status,
                         "explicit_reference_role": explicit_reference_role,
+                        "rerun_after_corpus_expansion": rerun_after_corpus_expansion,
                     },
                 ),
                 "benchmark_case_id": case_id,
@@ -844,6 +861,7 @@ def import_tg_qa_retrieval_relevance_review_labels(
                 "no_relevant_candidate_shown": no_relevant_shown,
                 "review_status": review_status,
                 "explicit_reference_role": explicit_reference_role,
+                "rerun_after_corpus_expansion": rerun_after_corpus_expansion,
                 "decision_reason": str(raw.get("decision_reason", "")),
                 "reviewed_at": str(raw.get("reviewed_at", "")) or _utc_timestamp(),
                 "status": "failed" if failure_reason else "completed",
@@ -869,6 +887,12 @@ def import_tg_qa_retrieval_relevance_review_labels(
         ),
         "counts_by_explicit_reference_role": _counts(
             str(item.get("explicit_reference_role", "")) for item in records if item["status"] == "completed"
+        ),
+        "counts_by_rerun_after_corpus_expansion_law_code": _counts(
+            law_code
+            for item in records
+            if item["status"] == "completed"
+            for law_code in item.get("rerun_after_corpus_expansion", [])
         ),
         "trust_boundary": "reviewed_relevance_labels_remain_private_evaluation_artifacts",
     }
@@ -938,6 +962,7 @@ def build_tg_qa_reviewed_relevance_report(
                     label.get("additional_relevant_legal_section_ids", [])
                 ),
                 "explicit_reference_role": str(label.get("explicit_reference_role", "")),
+                "rerun_after_corpus_expansion": list(label.get("rerun_after_corpus_expansion", [])),
                 "policy_version": RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION,
                 "trust_boundary": "reviewed_relevance_evaluation_not_trusted_answer_support",
             }
@@ -965,6 +990,11 @@ def build_tg_qa_reviewed_relevance_report(
         "excluded_counts": dict(sorted(counts.items())),
         "counts_by_explicit_reference_role": _counts(
             str(item.get("explicit_reference_role", "")) for item in records
+        ),
+        "counts_by_rerun_after_corpus_expansion_law_code": _counts(
+            law_code
+            for item in records
+            for law_code in item.get("rerun_after_corpus_expansion", [])
         ),
         "metrics": metrics,
         "known_limitations": [
@@ -1110,7 +1140,7 @@ def _retrieval_relevance_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
   <span id="counter" class="muted"></span>
   <button id="prev">Prev</button>
   <button id="next">Next</button>
-  <select id="filter"><option value="all">all</option><option value="undecided">undecided</option><option value="reviewed">reviewed</option><option value="uncertain">uncertain</option></select>
+  <select id="filter"><option value="all">all</option><option value="undecided">undecided</option><option value="reviewed">reviewed</option><option value="uncertain">uncertain</option><option value="corpus-rerun">corpus rerun</option></select>
   <button id="export" class="primary">Export JSONL</button>
 </header>
 <main id="app"></main>
@@ -1128,11 +1158,14 @@ function filtered() {{
     if (filter === 'undecided') return !d || !d.review_status;
     if (filter === 'reviewed') return d && d.review_status === 'reviewed';
     if (filter === 'uncertain') return d && d.review_status === 'uncertain';
+    if (filter === 'corpus-rerun') return d && (d.rerun_after_corpus_expansion || []).length;
     return true;
   }});
 }}
 function save(card) {{
   const relevant = Array.from(document.querySelectorAll('input[data-section]:checked')).map(x => x.dataset.section);
+  const rerunLawCodes = document.getElementById('rerunLawCodes').value.split(',').map(x => x.trim()).filter(Boolean);
+  if (document.getElementById('rerunVwvfg').checked && !rerunLawCodes.includes('VwVfG')) rerunLawCodes.push('VwVfG');
   const record = {{
     benchmark_case_id: card.benchmark_case_id,
     relevant_legal_section_ids: relevant,
@@ -1140,6 +1173,7 @@ function save(card) {{
     no_relevant_candidate_shown: document.getElementById('noneShown').checked,
     review_status: document.getElementById('reviewStatus').value,
     explicit_reference_role: document.getElementById('referenceRole').value,
+    rerun_after_corpus_expansion: [...new Set(rerunLawCodes)].sort(),
     decision_reason: document.getElementById('reason').value,
     reviewed_at: new Date().toISOString()
   }};
@@ -1153,6 +1187,8 @@ function render() {{
   const card = list[index];
   const saved = decisions.get(card.benchmark_case_id) || {{}};
   additionalSections = [...(saved.additional_relevant_legal_section_ids || [])];
+  const savedRerunLawCodes = [...(saved.rerun_after_corpus_expansion || [])];
+  const savedOtherRerunLawCodes = savedRerunLawCodes.filter(lawCode => lawCode !== 'VwVfG');
   document.getElementById('counter').textContent = `${{index + 1}}/${{list.length}}`;
   const candidateIds = new Set((card.candidates || []).map(c => c.legal_section_id));
   const catalog = (card.legal_section_catalog || []).filter(c => !candidateIds.has(c.legal_section_id));
@@ -1174,6 +1210,7 @@ function render() {{
       <label class="field"><span>expected-target role</span><select id="referenceRole">${{['uncertain','answer_support','status_context','incorrect'].map(v => `<option value="${{v}}" ${{saved.explicit_reference_role===v?'selected':''}}>${{v}}</option>`).join('')}}</select></label>
       <label class="field"><span>bounded candidate result</span><span><input id="noneShown" type="checkbox" ${{saved.no_relevant_candidate_shown?'checked':''}}> no relevant candidate shown</span></label>
       <label class="field"><span>decision reason</span><textarea id="reason" placeholder="optional">${{esc(saved.decision_reason || '')}}</textarea></label>
+      <label class="field"><span>rerun after corpus expansion</span><span><input id="rerunVwvfg" type="checkbox" ${{savedRerunLawCodes.includes('VwVfG')?'checked':''}}> VwVfG</span><input id="rerunLawCodes" value="${{esc(savedOtherRerunLawCodes.join(', '))}}" placeholder="other law codes, comma-separated"></label>
     </div>
     <div class="field"><span>additional relevant section outside shown candidates</span>
       <span><input id="additionalSectionInput" list="sectionCatalog" placeholder="Choose a legal section"><button id="addSection" type="button">Add section</button></span>
@@ -1212,7 +1249,7 @@ function render() {{
     if (event.target.checked) document.querySelectorAll('input[data-section]').forEach(node => node.checked = false);
     save(card);
   }};
-  document.querySelectorAll('select,textarea').forEach(node => node.oninput = () => save(card));
+  document.querySelectorAll('select,textarea,input').forEach(node => node.oninput = () => save(card));
 }}
 document.getElementById('prev').onclick=()=>{{index--;render();}};
 document.getElementById('next').onclick=()=>{{index++;render();}};

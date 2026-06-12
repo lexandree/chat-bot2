@@ -245,6 +245,7 @@ stress/backlog diagnostic or changing general retrieval methods.
 - [X] T098 Run the current retrieval methods on the clean set and record baseline metrics without tuning against individual cases
 - [ ] T099 Group later real-record failures by recurring mechanism before adding exact-reference features, legal-keyword expansion, reranking, typed traversal, or quality gates
 - [ ] T100 Require cumulative clean and stress benchmark evidence before retaining a general method change
+- [X] T101 Add a validated `rerun_after_corpus_expansion` review-routing marker for questions that require a named missing law scope
 
 ---
 

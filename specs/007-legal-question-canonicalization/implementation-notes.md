@@ -107,6 +107,9 @@
   artifact family.
 - Generalized semantic benchmark metrics and review-card labels so curated
   checked targets are not misreported as query-explicit silver references.
+- Added the independent `rerun_after_corpus_expansion` relevance-review routing
+  marker, including `VwVfG` UI shortcut, generic law-code input, JSONL
+  export/import preservation, summary counts, and a `corpus rerun` filter.
 
 ## Verification
 
@@ -137,6 +140,10 @@
   scopes: `python -m pytest -q`: 180 passed, 11 skipped; both 006 and 007
   boundary checks, generated review JavaScript syntax check, compileall, and
   `git diff --check` passed.
+- After adding `rerun_after_corpus_expansion`: `python -m pytest -q`: 181
+  passed, 11 skipped; existing four-label export imported with 4/4 completed;
+  both boundary checks, generated review JavaScript syntax check, compileall,
+  and `git diff --check` passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

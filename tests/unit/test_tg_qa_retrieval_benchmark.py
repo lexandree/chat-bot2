@@ -278,6 +278,7 @@ def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path
                 "no_relevant_candidate_shown": False,
                 "review_status": "reviewed",
                 "explicit_reference_role": "answer_support",
+                "rerun_after_corpus_expansion": ["VwVfG", "VwVfG"],
             },
             {
                 "benchmark_case_id": "case:a1",
@@ -312,17 +313,27 @@ def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path
         "explicit_target_law_code_absent_from_source": 1
     }
     assert html_result["summary"]["card_count"] == 2
-    assert "localStorage" in review_html.read_text(encoding="utf-8")
+    html_text = review_html.read_text(encoding="utf-8")
+    assert "localStorage" in html_text
+    assert "rerun_after_corpus_expansion" in html_text
+    assert "corpus rerun" in html_text
     assert imported["summary"]["completed_count"] == 2
     assert imported["summary"]["counts_by_explicit_reference_role"] == {
         "answer_support": 1,
         "status_context": 1,
     }
+    assert imported["summary"]["counts_by_rerun_after_corpus_expansion_law_code"] == {
+        "VwVfG": 1
+    }
+    assert imported["labels"][0]["rerun_after_corpus_expansion"] == ["VwVfG"]
     assert evaluated["summary"]["metrics"]["hit_rate_at_1"] == 1.0
     assert evaluated["summary"]["metrics"]["recall_at_1"] == 1.0
     assert evaluated["summary"]["metrics"]["mean_reciprocal_rank"] == 1.0
     assert evaluated["summary"]["positive_label_coverage_rate"] == 0.5
     assert evaluated["summary"]["bounded_candidate_failure_rate"] == 0.5
+    assert evaluated["summary"]["counts_by_rerun_after_corpus_expansion_law_code"] == {
+        "VwVfG": 1
+    }
 
 
 def test_retrieval_relevance_review_import_rejects_conflicting_reviewed_label(tmp_path: Path) -> None:
@@ -362,6 +373,49 @@ def test_retrieval_relevance_review_import_rejects_conflicting_reviewed_label(tm
     assert result["summary"]["failed_count"] == 1
     assert result["labels"][0]["failure_reason"] == (
         "reviewed_label_requires_shown_relevant_sections_xor_no_relevant_candidate_shown"
+    )
+
+
+def test_retrieval_relevance_review_import_rejects_non_list_corpus_rerun_marker(
+    tmp_path: Path,
+) -> None:
+    review_batch = tmp_path / "review_batch.jsonl"
+    raw_labels = tmp_path / "raw_labels.jsonl"
+    labels = tmp_path / "labels.jsonl"
+    summary = tmp_path / "summary.json"
+    _write_jsonl(
+        review_batch,
+        [
+            {
+                "benchmark_case_id": "case:1",
+                "candidates": [{"legal_section_id": "legal-section:AufenthG:1:current"}],
+            }
+        ],
+    )
+    _write_jsonl(
+        raw_labels,
+        [
+            {
+                "benchmark_case_id": "case:1",
+                "relevant_legal_section_ids": ["legal-section:AufenthG:1:current"],
+                "no_relevant_candidate_shown": False,
+                "review_status": "reviewed",
+                "explicit_reference_role": "answer_support",
+                "rerun_after_corpus_expansion": "VwVfG",
+            }
+        ],
+    )
+
+    result = import_tg_qa_retrieval_relevance_review_labels(
+        review_batch_path=review_batch,
+        labels_path=raw_labels,
+        output_path=labels,
+        summary_output_path=summary,
+    )
+
+    assert result["summary"]["failed_count"] == 1
+    assert result["labels"][0]["failure_reason"] == (
+        "rerun_after_corpus_expansion_must_be_string_list"
     )
 
 

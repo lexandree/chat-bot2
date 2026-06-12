@@ -157,6 +157,13 @@ section or `no_relevant_candidate_shown`, but not both. Reviewer-added relevant
 sections may coexist with `no_relevant_candidate_shown`; they record the
 sections that retrieval failed to show.
 
+The reviewer may also set `rerun_after_corpus_expansion` to a list of law
+codes, for example `["VwVfG"]`. This is an independent routing marker: it does
+not alter the current relevance decision or metrics, and it identifies the
+question for a later repeat after the named corpus scope is available. The
+review UI provides a `VwVfG` shortcut, a generic comma-separated law-code
+input, and a `corpus rerun` filter.
+
 The reviewed relevance report evaluates only completed labels with at least one
 positive relevance section. This intentionally excludes no-relevant-shown
 labels from positive-label ranking metrics while reporting their separate
