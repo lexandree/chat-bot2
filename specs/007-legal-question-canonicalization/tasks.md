@@ -247,6 +247,7 @@ stress/backlog diagnostic or changing general retrieval methods.
 - [ ] T100 Require cumulative clean and stress benchmark evidence before retaining a general method change
 - [X] T101 Add a validated `rerun_after_corpus_expansion` review-routing marker for questions that require a named missing law scope
 - [X] T116 Complete human review of the 24-question clean curated retrieval baseline, rerun the VwVfG-dependent hearing-assistant case on the expanded corpus, and record reviewed clean metrics
+- [X] T117 Add an offline deterministic report that groups completed human-reviewed retrieval labels by recurring diagnostic mechanism
 
 ## Phase 13: Context-Sensitive Legal-Route Retrieval Diagnostic
 

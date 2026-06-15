@@ -322,4 +322,43 @@ PYTHONPATH=src python -m app evaluation tg-qa-reviewed-relevance-report \
   --k 10 \
   --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_reviewed_relevance_cases.jsonl \
   --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_reviewed_relevance_summary.json
+
+PYTHONPATH=src python -m app evaluation tg-qa-retrieval-mechanism-report \
+  --semantic-cases data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_semantic_cases.jsonl \
+  --review-labels data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30_labels.jsonl \
+  --sample-limit 5 \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_mechanisms.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_mechanisms_summary.json
+```
+
+The mechanism report is offline and deterministic. It groups only completed
+human-reviewed labels into observable retrieval signals such as wrong-law
+top-1, relevant evidence below top-1/top-5, missing bounded candidates,
+multi-section or multi-law support, explicit-reference role mismatch, and
+required corpus expansion. These groups are diagnostic evidence for deciding
+which general retrieval change to test; they are not trusted legal conclusions.
+
+For the current four-law stress review, open
+`data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30.html`.
+After exporting its labels, run:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-retrieval-relevance-review-labels-import \
+  --review-batch data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30.jsonl \
+  --labels data/evaluation/tg_qa_retrieval_benchmark/tg_007_retrieval_relevance_review_labels.jsonl \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30_labels.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30_labels_summary.json
+
+PYTHONPATH=src python -m app evaluation tg-qa-reviewed-relevance-report \
+  --semantic-cases data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_semantic_cases.jsonl \
+  --review-labels data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30_labels.jsonl \
+  --k 1 --k 5 --k 10 \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_reviewed_cases.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_reviewed_summary.json
+
+PYTHONPATH=src python -m app evaluation tg-qa-retrieval-mechanism-report \
+  --semantic-cases data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_semantic_cases.jsonl \
+  --review-labels data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30_labels.jsonl \
+  --output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_mechanisms.jsonl \
+  --summary-output data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_mechanisms_summary.json
 ```

@@ -177,6 +177,19 @@
   references, 122 embeddings, and no errors or warnings.
 - The final clean curated relevance export imported with 24/24 completed
   labels and zero pending corpus-expansion reruns.
+- Rebuilt the private real-record stress review against the active four-law
+  corpus (`AufenthG`, `AsylG`, `BeschV`, `VwVfG`) by reusing 576/576 compatible
+  vectors with zero missing or duplicate embedding item IDs. The resulting
+  bounded review contains 30 cards over 99 source cases.
+- Added an offline deterministic retrieval-mechanism report over completed
+  human relevance labels. On the reviewed clean 24-case baseline it found six
+  cases with first relevant evidence below top-1, two below top-5, one wrong-law
+  top-1, and seven cases without any diagnostic signal. Multi-section and
+  multi-law support remain separate complexity signals rather than retrieval
+  failures.
+- After the four-law stress-review rebuild and retrieval-mechanism report:
+  `python -m pytest -q` passed with 197 tests and 11 skipped; both 006 and 007
+  boundary checks, compileall, and `git diff --check` passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

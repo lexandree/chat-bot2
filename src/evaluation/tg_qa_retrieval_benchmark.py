@@ -21,9 +21,18 @@ CORPUS_BOUNDED_REFERENCE_BENCHMARK_POLICY_VERSION = "tg_qa_corpus_bounded_explic
 CORPUS_BOUNDED_SEMANTIC_BATCH_POLICY_VERSION = "tg_qa_corpus_bounded_semantic_embedding_batch_v1"
 CORPUS_BOUNDED_SEMANTIC_BENCHMARK_POLICY_VERSION = "tg_qa_corpus_bounded_semantic_retrieval_v1"
 RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION = "tg_qa_retrieval_relevance_review_v1"
+RETRIEVAL_MECHANISM_REPORT_POLICY_VERSION = "tg_qa_retrieval_mechanism_report_v1"
 REFERENCE_REVIEW_DECISIONS = {"accept", "exclude", "uncertain"}
 RELEVANCE_REVIEW_STATUSES = {"reviewed", "uncertain", "skip"}
 EXPLICIT_REFERENCE_ROLES = {"answer_support", "status_context", "incorrect", "uncertain"}
+RETRIEVAL_FAILURE_SIGNALS = {
+    "asyl_aufenthg_route_mismatch",
+    "no_relevant_candidate_shown",
+    "relevant_evidence_unranked",
+    "relevant_only_below_top1",
+    "relevant_only_below_top5",
+    "top1_wrong_law",
+}
 
 
 def build_private_artifact_snapshot_manifest(
@@ -1009,6 +1018,164 @@ def build_tg_qa_reviewed_relevance_report(
     return {"cases": records, "summary": summary}
 
 
+def build_tg_qa_retrieval_mechanism_report(
+    *,
+    semantic_cases_path: str | Path,
+    review_labels_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+    sample_limit: int = 5,
+) -> dict[str, Any]:
+    """Group human-reviewed retrieval diagnostics by recurring mechanism."""
+
+    if sample_limit < 1:
+        raise ValueError("sample_limit must be positive")
+    semantic_cases = {
+        str(item.get("benchmark_case_id", "")): item
+        for item in _read_jsonl(semantic_cases_path)
+        if item.get("benchmark_case_id")
+    }
+    labels = [
+        item
+        for item in _read_jsonl(review_labels_path)
+        if item.get("status") == "completed" and item.get("review_status") == "reviewed"
+    ]
+    records: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    samples: dict[str, list[str]] = {}
+    for label in labels:
+        case_id = str(label.get("benchmark_case_id", ""))
+        case = semantic_cases.get(case_id)
+        if not case:
+            counts["missing_semantic_case"] += 1
+            continue
+        relevant_ids = sorted(
+            set(str(item) for item in label.get("relevant_legal_section_ids", []) if str(item))
+        )
+        relevant_law_codes = sorted(
+            set(_law_code_from_legal_section_id(item) for item in relevant_ids)
+        )
+        top_candidates = [
+            item for item in case.get("top_candidates", []) if isinstance(item, Mapping)
+        ]
+        top_one = top_candidates[0] if top_candidates else {}
+        top_one_id = str(top_one.get("legal_section_id", ""))
+        top_one_law_code = str(top_one.get("law_code", "")) or _law_code_from_legal_section_id(
+            top_one_id
+        )
+        rank_by_id = {
+            str(item.get("legal_section_id", "")): index
+            for index, item in enumerate(top_candidates, start=1)
+            if item.get("legal_section_id")
+        }
+        expected_id = str(case.get("expected_legal_section_id", ""))
+        expected_rank = int(case.get("expected_rank", 0) or 0)
+        if expected_id and expected_rank:
+            rank_by_id.setdefault(expected_id, expected_rank)
+        relevant_ranks = sorted(rank_by_id[item] for item in relevant_ids if item in rank_by_id)
+        unranked_relevant_ids = sorted(set(relevant_ids).difference(rank_by_id))
+        explicit_reference_role = str(label.get("explicit_reference_role", ""))
+        rerun_after_corpus_expansion = sorted(
+            set(str(item) for item in label.get("rerun_after_corpus_expansion", []) if str(item))
+        )
+
+        signals: list[str] = []
+        if label.get("no_relevant_candidate_shown"):
+            signals.append("no_relevant_candidate_shown")
+        if unranked_relevant_ids:
+            signals.append("relevant_evidence_unranked")
+        if relevant_ranks and relevant_ranks[0] > 1:
+            signals.append("relevant_only_below_top1")
+        if relevant_ranks and relevant_ranks[0] > 5:
+            signals.append("relevant_only_below_top5")
+        if top_one_law_code and relevant_law_codes and top_one_law_code not in relevant_law_codes:
+            signals.append("top1_wrong_law")
+        if len(relevant_ids) > 1:
+            signals.append("multi_section_support")
+        if len(relevant_law_codes) > 1:
+            signals.append("multi_law_support")
+        if {"AsylG", "AufenthG"}.issubset(relevant_law_codes):
+            signals.append("asyl_aufenthg_multi_route_support")
+        elif (
+            top_one_law_code in {"AsylG", "AufenthG"}
+            and set(relevant_law_codes).intersection({"AsylG", "AufenthG"})
+            and top_one_law_code not in relevant_law_codes
+        ):
+            signals.append("asyl_aufenthg_route_mismatch")
+        if expected_id and expected_id not in relevant_ids:
+            signals.append("expected_reference_not_relevant")
+        if explicit_reference_role and explicit_reference_role != "answer_support":
+            signals.append("explicit_reference_not_answer_support")
+        if rerun_after_corpus_expansion:
+            signals.append("corpus_expansion_required")
+        if not signals:
+            signals.append("no_diagnostic_signal")
+        signals = sorted(set(signals))
+        for signal in signals:
+            counts[signal] += 1
+            samples.setdefault(signal, [])
+            if len(samples[signal]) < sample_limit:
+                samples[signal].append(case_id)
+        records.append(
+            {
+                "artifact_type": "tg_qa_retrieval_mechanism_case",
+                "benchmark_case_id": case_id,
+                "canonical_question": str(case.get("canonical_question", "")),
+                "expected_legal_section_id": expected_id,
+                "top1_legal_section_id": top_one_id,
+                "top1_law_code": top_one_law_code,
+                "relevant_legal_section_ids": relevant_ids,
+                "relevant_law_codes": relevant_law_codes,
+                "relevant_ranks": relevant_ranks,
+                "first_relevant_rank": relevant_ranks[0] if relevant_ranks else 0,
+                "unranked_relevant_legal_section_ids": unranked_relevant_ids,
+                "explicit_reference_role": explicit_reference_role,
+                "rerun_after_corpus_expansion": rerun_after_corpus_expansion,
+                "diagnostic_signals": signals,
+                "policy_version": RETRIEVAL_MECHANISM_REPORT_POLICY_VERSION,
+                "trust_boundary": "reviewed_diagnostic_grouping_not_legal_answer_support",
+            }
+        )
+
+    _write_jsonl(Path(output_path), records)
+    summary = {
+        "artifact_type": "tg_qa_retrieval_mechanism_report_summary",
+        "generated_at": _utc_timestamp(),
+        "policy_version": RETRIEVAL_MECHANISM_REPORT_POLICY_VERSION,
+        "semantic_cases_path": str(semantic_cases_path),
+        "review_labels_path": str(review_labels_path),
+        "output_path": str(output_path),
+        "reviewed_label_count": len(labels),
+        "evaluated_case_count": len(records),
+        "missing_semantic_case_count": counts.get("missing_semantic_case", 0),
+        "cases_with_diagnostic_signal_count": sum(
+            "no_diagnostic_signal" not in item["diagnostic_signals"] for item in records
+        ),
+        "cases_with_retrieval_failure_signal_count": sum(
+            bool(set(item["diagnostic_signals"]).intersection(RETRIEVAL_FAILURE_SIGNALS))
+            for item in records
+        ),
+        "retrieval_failure_signals": sorted(RETRIEVAL_FAILURE_SIGNALS),
+        "counts_by_diagnostic_signal": dict(
+            sorted(
+                (key, value)
+                for key, value in counts.items()
+                if key != "missing_semantic_case"
+            )
+        ),
+        "sample_case_ids_by_diagnostic_signal": dict(sorted(samples.items())),
+        "known_limitations": [
+            "signals are deterministic groupings of human-reviewed labels, not legal conclusions",
+            "unreviewed, uncertain, skipped, and failed labels are excluded",
+            "recorded ranks cover semantic top candidates plus the recorded expected target only",
+            "temporal applicability and nuanced legal-route ambiguity require separate reviewed evidence",
+        ],
+        "trust_boundary": "reviewed_diagnostic_grouping_does_not_create_trusted_answer_support",
+    }
+    _write_json(Path(summary_output_path), summary)
+    return {"cases": records, "summary": summary}
+
+
 def _reference_review_decisions(path: str | Path | None) -> dict[str, dict[str, str]]:
     if not path:
         return {}
@@ -1416,6 +1583,11 @@ def _stable_id(prefix: str, payload: Mapping[str, Any]) -> str:
 
 def _counts(values: Iterable[str]) -> dict[str, int]:
     return dict(sorted(Counter(value for value in values if value).items()))
+
+
+def _law_code_from_legal_section_id(legal_section_id: str) -> str:
+    parts = legal_section_id.split(":")
+    return parts[1] if len(parts) >= 4 and parts[0] == "legal-section" else ""
 
 
 def _utc_timestamp() -> str:

@@ -382,6 +382,66 @@ def test_cli_private_snapshot_and_corpus_bounded_reference_benchmark_are_offline
     assert len(cases.read_text(encoding="utf-8").splitlines()) == 1
 
 
+def test_cli_retrieval_mechanism_report_is_offline(tmp_path: Path) -> None:
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    review_labels = tmp_path / "review_labels.jsonl"
+    output = tmp_path / "mechanisms.jsonl"
+    summary = tmp_path / "mechanisms_summary.json"
+    _write_jsonl(
+        semantic_cases,
+        [
+            {
+                "benchmark_case_id": "case:1",
+                "canonical_question": "Question?",
+                "expected_legal_section_id": "legal-section:AufenthG:24:current",
+                "expected_rank": 2,
+                "top_candidates": [
+                    {
+                        "legal_section_id": "legal-section:AsylG:3:current",
+                        "law_code": "AsylG",
+                    }
+                ],
+            }
+        ],
+    )
+    _write_jsonl(
+        review_labels,
+        [
+            {
+                "benchmark_case_id": "case:1",
+                "status": "completed",
+                "review_status": "reviewed",
+                "relevant_legal_section_ids": ["legal-section:AufenthG:24:current"],
+                "explicit_reference_role": "answer_support",
+            }
+        ],
+    )
+
+    result = _run_cli(
+        [
+            "evaluation",
+            "tg-qa-retrieval-mechanism-report",
+            "--semantic-cases",
+            str(semantic_cases),
+            "--review-labels",
+            str(review_labels),
+            "--output",
+            str(output),
+            "--summary-output",
+            str(summary),
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["evaluated_case_count"] == 1
+    assert payload["counts_by_diagnostic_signal"] == {
+        "asyl_aufenthg_route_mismatch": 1,
+        "relevant_only_below_top1": 1,
+        "top1_wrong_law": 1,
+    }
+
+
 def test_cli_relationships_quality_writes_artifact_with_injected_repository(tmp_path: Path) -> None:
     output_path = tmp_path / "relationship_quality.json"
 

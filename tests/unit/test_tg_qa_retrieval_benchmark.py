@@ -8,6 +8,7 @@ from evaluation.tg_qa_retrieval_benchmark import (
     build_tg_qa_corpus_bounded_reference_benchmark,
     build_tg_qa_corpus_bounded_semantic_benchmark,
     build_tg_qa_retrieval_relevance_review_batch,
+    build_tg_qa_retrieval_mechanism_report,
     build_tg_qa_reviewed_relevance_report,
     emit_tg_qa_corpus_bounded_semantic_embedding_batch,
     export_tg_qa_retrieval_relevance_review_html,
@@ -374,6 +375,70 @@ def test_retrieval_relevance_review_import_rejects_conflicting_reviewed_label(tm
     assert result["labels"][0]["failure_reason"] == (
         "reviewed_label_requires_shown_relevant_sections_xor_no_relevant_candidate_shown"
     )
+
+
+def test_retrieval_mechanism_report_groups_only_reviewed_evidence(tmp_path: Path) -> None:
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    labels = tmp_path / "labels.jsonl"
+    output = tmp_path / "mechanisms.jsonl"
+    summary = tmp_path / "mechanisms_summary.json"
+    case = _semantic_case(
+        "case:route",
+        "legal-section:AufenthG:24:current",
+        [
+            "legal-section:AsylG:3:current",
+            "legal-section:AufenthG:2:current",
+        ],
+    )
+    case["top_candidates"][0]["law_code"] = "AsylG"
+    _write_jsonl(semantic_cases, [case])
+    _write_jsonl(
+        labels,
+        [
+            {
+                "benchmark_case_id": "case:route",
+                "status": "completed",
+                "review_status": "reviewed",
+                "relevant_legal_section_ids": [
+                    "legal-section:AufenthG:2:current",
+                    "legal-section:VwVfG:14:current",
+                ],
+                "explicit_reference_role": "status_context",
+                "rerun_after_corpus_expansion": ["VwVfG"],
+            },
+            {
+                "benchmark_case_id": "case:ignored",
+                "status": "completed",
+                "review_status": "uncertain",
+                "relevant_legal_section_ids": ["legal-section:AufenthG:2:current"],
+            },
+        ],
+    )
+
+    result = build_tg_qa_retrieval_mechanism_report(
+        semantic_cases_path=semantic_cases,
+        review_labels_path=labels,
+        output_path=output,
+        summary_output_path=summary,
+        sample_limit=1,
+    )
+
+    assert result["summary"]["reviewed_label_count"] == 1
+    assert result["summary"]["evaluated_case_count"] == 1
+    assert result["summary"]["counts_by_diagnostic_signal"] == {
+        "asyl_aufenthg_route_mismatch": 1,
+        "corpus_expansion_required": 1,
+        "expected_reference_not_relevant": 1,
+        "explicit_reference_not_answer_support": 1,
+        "multi_law_support": 1,
+        "multi_section_support": 1,
+        "relevant_evidence_unranked": 1,
+        "relevant_only_below_top1": 1,
+        "top1_wrong_law": 1,
+    }
+    assert result["summary"]["sample_case_ids_by_diagnostic_signal"]["top1_wrong_law"] == [
+        "case:route"
+    ]
 
 
 def test_retrieval_relevance_review_import_rejects_non_list_corpus_rerun_marker(
