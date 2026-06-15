@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from app.settings import FoundationSettings, load_settings
+from app.operator_progress import OperatorProgress
 from graph.client import Neo4jGraphClient
 from graph.repositories import GraphDataRepository, GraphFoundationRepository
 from graph.types import to_plain_dict
@@ -80,6 +81,7 @@ from evaluation.tg_question_canonicalization import (
     sample_tg_qa_canonicalization_batch,
     verify_tg_question_canonicalization_boundaries,
 )
+from ingestion.legal_corpus_workflow import build_new_law_preflight
 from ingestion.legal_preview_loader import build_preview_from_manifest_path, write_preview_artifact
 from ingestion.verification import build_embedding_run_report
 from retrieval.embedding_backend import build_local_embedding_backend
@@ -167,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     refresh_parser = relationships_subparsers.add_parser("refresh")
     refresh_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
     refresh_parser.add_argument("--classifier-policy", default="legal-ref-context-v1")
+    refresh_parser.add_argument("--no-progress", action="store_true")
     relationship_verify_parser = relationships_subparsers.add_parser("verify")
     relationship_verify_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
     relationship_verify_parser.add_argument("--classifier-policy", default="")
@@ -180,6 +183,12 @@ def build_parser() -> argparse.ArgumentParser:
     readiness_parser = corpus_subparsers.add_parser("readiness")
     readiness_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
     readiness_parser.add_argument("--output", required=True)
+    new_law_preflight_parser = corpus_subparsers.add_parser("new-law-preflight")
+    new_law_preflight_parser.add_argument("--manifest", required=True)
+    new_law_preflight_parser.add_argument("--new-law-code", required=True)
+    new_law_preflight_parser.add_argument("--preview-output", required=True)
+    new_law_preflight_parser.add_argument("--output", required=True)
+    new_law_preflight_parser.add_argument("--classifier-policy", default="legal-ref-context-v1")
 
     evaluation_parser = subparsers.add_parser("evaluation")
     evaluation_subparsers = evaluation_parser.add_subparsers(dest="action")
@@ -746,6 +755,8 @@ def build_parser() -> argparse.ArgumentParser:
     embeddings_subparsers = embeddings_parser.add_subparsers(dest="action")
     write_parser = embeddings_subparsers.add_parser("write")
     write_parser.add_argument("--law-code", action="append", required=True, dest="law_codes")
+    write_parser.add_argument("--batch-size", type=int, default=16)
+    write_parser.add_argument("--no-progress", action="store_true")
 
     return parser
 
@@ -860,22 +871,31 @@ def handle_embeddings_command(args: argparse.Namespace, settings: FoundationSett
     profile = _embedding_profile_from_settings(settings)
     backend = build_local_embedding_backend(endpoint_url=settings.embedding_endpoint_url, profile=profile)
     client = _graph_client_from_settings(settings)
+    progress = OperatorProgress(enabled=not args.no_progress, label="embeddings-write")
     try:
         repo = GraphDataRepository(client)
         report = repo.write_embeddings(
             law_codes=args.law_codes,
-            embedding_service=EmbeddingService(profile=profile, backend=backend),
+            embedding_service=EmbeddingService(
+                profile=profile,
+                backend=backend,
+                batch_size=args.batch_size,
+            ),
+            progress_callback=progress.update,
         )
+        progress.finish(status="completed", detail=f"processed={report.processed_count}")
     except Exception as exc:
         report = build_embedding_run_report(
             selected_scope={"law_codes": args.law_codes},
             processed_count=0,
             skipped_count=0,
-            failed_count=0,
+            failed_count=1,
             profile=profile,
             backend_name=backend.backend_name,
+            batch_size=args.batch_size,
             failure_reason=str(exc),
         )
+        progress.finish(status="failed", detail=str(exc))
         return 1, to_plain_dict(report)
     finally:
         client.close()
@@ -962,9 +982,18 @@ def handle_relationships_command(
         repo = GraphDataRepository(client)
     try:
         if args.action == "refresh":
+            progress = OperatorProgress(
+                enabled=not args.no_progress,
+                label="relationships-refresh",
+            )
             report = repo.refresh_relationships(
                 law_codes=args.law_codes,
                 classifier_policy_version=args.classifier_policy,
+                progress_callback=progress.update,
+            )
+            progress.finish(
+                status=report.status,
+                detail=f"references={report.created_reference_count} edges={report.created_edge_count}",
             )
             return (0 if report.status == "completed" else 1), to_plain_dict(report)
         if args.action == "verify":
@@ -995,6 +1024,17 @@ def handle_corpus_command(
     repository_factory=None,
 ) -> tuple[int, dict[str, object]]:
     client = None
+    if args.action == "new-law-preflight":
+        artifact = build_new_law_preflight(
+            manifest_path=args.manifest,
+            new_law_code=args.new_law_code,
+            preview_output_path=args.preview_output,
+            classifier_policy_version=args.classifier_policy,
+        )
+        output_path = write_json_artifact(args.output, artifact)
+        payload = dict(artifact)
+        payload["preflight_artifact_path"] = str(output_path)
+        return (0 if artifact["status"] == "ready" else 1), payload
     if repository_factory is not None:
         repo = repository_factory(settings)
     else:

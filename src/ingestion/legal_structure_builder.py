@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from hashlib import sha256
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from graph.types import CLASSIFIER_POLICY_VERSION, LegalAct, LegalFragment, LegalReference, LegalSection
 from ingestion.legal_reference_parser import ParsedReferenceCandidate, parse_explicit_legal_references
@@ -137,6 +137,7 @@ def build_relationship_evidence_from_records(
     source_documents: dict[str, dict[str, Any]] | None = None,
     law_codes: list[str] | None = None,
     classifier_policy_version: str = CLASSIFIER_POLICY_VERSION,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> list[dict[str, Any]]:
     source_documents = source_documents or {}
     fragment_rows = sorted(
@@ -156,12 +157,13 @@ def build_relationship_evidence_from_records(
         ),
     )
     selected_law_codes = _selected_law_codes(law_codes, fragment_rows, section_rows)
+    selected_fragment_rows = [
+        fragment for fragment in fragment_rows if str(fragment.get("law_code", "")) in selected_law_codes
+    ]
     section_index = _section_index(section_rows)
     references: list[dict[str, Any]] = []
-    for fragment in fragment_rows:
+    for fragment_index, fragment in enumerate(selected_fragment_rows, start=1):
         law_code = str(fragment.get("law_code", ""))
-        if law_code not in selected_law_codes:
-            continue
         document = source_documents.get(str(fragment.get("source_document_id", "")), {})
         source_legal_section_id = str(
             fragment.get("source_legal_section_id")
@@ -194,6 +196,12 @@ def build_relationship_evidence_from_records(
                         section_index=section_index,
                     )
                 )
+            )
+        if progress_callback is not None:
+            progress_callback(
+                fragment_index,
+                len(selected_fragment_rows),
+                f"references={len(references)} law={law_code} section={fragment.get('section_reference', '')}",
             )
     return references
 

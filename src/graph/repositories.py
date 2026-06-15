@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 from graph.schema import bootstrap_schema, build_schema_statements, candidate_review_placeholders_present
 from graph.types import (
@@ -112,22 +112,61 @@ class GraphDataRepository:
         *,
         law_codes: list[str],
         classifier_policy_version: str = CLASSIFIER_POLICY_VERSION,
+        progress_callback: Callable[[str, int, int, str], None] | None = None,
     ) -> RelationshipRefreshReport:
         if not law_codes:
             raise ValueError("relationship refresh requires at least one law code")
         started_at = _utc_timestamp()
         try:
+            _report_progress(progress_callback, "collect_graph_source", 0, 1, "")
             source = _collect_relationship_source(self.client, law_codes=law_codes)
+            _report_progress(
+                progress_callback,
+                "collect_graph_source",
+                1,
+                1,
+                (
+                    f"fragments={len(source['source_fragments'])} "
+                    f"sections={len(source['legal_sections'])} documents={len(source['source_documents'])}"
+                ),
+            )
             references = build_relationship_evidence_from_records(
                 source_fragments=source["source_fragments"],
                 legal_sections=source["legal_sections"],
                 source_documents=source["source_documents"],
                 law_codes=law_codes,
                 classifier_policy_version=classifier_policy_version,
+                progress_callback=(
+                    lambda processed, total, detail: _report_progress(
+                        progress_callback,
+                        "build_relationship_evidence",
+                        processed,
+                        total,
+                        detail,
+                    )
+                ),
             )
-            self.writer.cleanup_relationships_for_scope(law_codes=law_codes)
-            for reference in references:
+            self.writer.cleanup_relationships_for_scope(
+                law_codes=law_codes,
+                progress_callback=(
+                    lambda processed, total, detail: _report_progress(
+                        progress_callback,
+                        "cleanup_relationships",
+                        processed,
+                        total,
+                        detail,
+                    )
+                ),
+            )
+            for reference_index, reference in enumerate(references, start=1):
                 self.writer.upsert_legal_reference(reference)
+                _report_progress(
+                    progress_callback,
+                    "write_relationships",
+                    reference_index,
+                    len(references),
+                    f"reference={reference.get('legal_reference_id', '')}",
+                )
             status = "completed"
             errors: list[str] = []
         except Exception as exc:
@@ -407,32 +446,62 @@ class GraphDataRepository:
         *,
         law_codes: list[str],
         embedding_service: EmbeddingService,
+        progress_callback: Callable[[str, int, int, str], None] | None = None,
     ) -> EmbeddingRunReport:
+        _report_progress(progress_callback, "collect_embedding_source", 0, 1, "")
         rows = self.client.read(
             "MATCH (n) WHERE (n:SourceDocument OR n:SourceFragment) "
             "AND (size($law_codes) = 0 OR n.law_code IN $law_codes) "
             "RETURN labels(n) AS labels, "
-            "coalesce(n.source_document_id, n.source_fragment_id) AS entity_id, "
+            "n.source_document_id AS source_document_id, "
+            "n.source_fragment_id AS source_fragment_id, "
             "coalesce(n.body_text, n.title, n.source_uri, '') AS text, "
             "n.law_code AS law_code",
             {"law_codes": law_codes},
+        )
+        _report_progress(
+            progress_callback,
+            "collect_embedding_source",
+            1,
+            1,
+            f"entities={len(rows)}",
         )
         inputs = []
         for row in rows:
             labels = set(row.get("labels") or [])
             entity_kind = "source_document" if "SourceDocument" in labels else "source_fragment"
+            entity_id = row.get(
+                "source_document_id" if entity_kind == "source_document" else "source_fragment_id"
+            )
+            if not entity_id:
+                raise ValueError(f"embedding source row is missing {entity_kind} id")
             inputs.append(
                 EmbeddingInput(
                     entity_kind=entity_kind,
-                    entity_id=str(row["entity_id"]),
+                    entity_id=str(entity_id),
                     text=str(row.get("text") or ""),
                     law_code=str(row.get("law_code") or ""),
                 )
             )
-        records = embedding_service.embed_inputs(inputs)
+        records = embedding_service.embed_inputs(inputs, progress_callback=progress_callback)
+
+        def graph_write_preflight() -> None:
+            _report_progress(progress_callback, "graph_write_preflight", 0, 1, "")
+            embedding_service.preflight()
+            _report_progress(progress_callback, "graph_write_preflight", 1, 1, "")
+
         self.writer.write_source_embeddings(
             [asdict(record) for record in records],
-            preflight=embedding_service.preflight,
+            preflight=graph_write_preflight,
+            progress_callback=(
+                lambda processed, total, detail: _report_progress(
+                    progress_callback,
+                    "write_embedding_vectors",
+                    processed,
+                    total,
+                    detail,
+                )
+            ),
         )
         return build_embedding_run_report(
             selected_scope={"law_codes": law_codes},
@@ -441,6 +510,7 @@ class GraphDataRepository:
             failed_count=0,
             profile=embedding_service.profile,
             backend_name=embedding_service.backend.backend_name,
+            batch_size=embedding_service.batch_size,
         )
 
     def snapshot_scope(
@@ -1046,6 +1116,17 @@ def _collect_relationship_source(client: Any, *, law_codes: list[str]) -> dict[s
 
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _report_progress(
+    callback: Callable[[str, int, int, str], None] | None,
+    stage: str,
+    processed: int,
+    total: int,
+    detail: str,
+) -> None:
+    if callback is not None:
+        callback(stage, processed, total, detail)
 
 
 def _count_records(records: list[dict[str, Any]], key: str, allowed_keys: tuple[str, ...]) -> dict[str, int]:

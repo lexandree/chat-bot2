@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from graph.repositories import GraphDataRepository
 from graph.types import RELATION_TYPES
 from graph.writer import GraphWriter
 from ingestion.legal_preview_loader import build_preview_from_manifest_path
+from retrieval.embedding_profile import EmbeddingProfile
+from retrieval.embedding_service import EmbeddingService
 
 
 class FakeClient:
@@ -67,6 +71,44 @@ class FakeRefreshClient(FakeClient):
                 }
             ]
         return []
+
+
+class FakeEmbeddingClient(FakeClient):
+    def read(self, query: str, parameters: dict[str, Any]) -> list[dict[str, Any]]:
+        if "n.embedding_v1 IS NOT NULL" in query:
+            return []
+        return [
+            {
+                "labels": ["SourceDocument"],
+                "source_document_id": "source-document:TestG",
+                "source_fragment_id": None,
+                "text": "Document",
+                "law_code": "TestG",
+            },
+            {
+                "labels": ["SourceFragment"],
+                "source_document_id": "source-document:TestG",
+                "source_fragment_id": "source-fragment:TestG:1",
+                "text": "Fragment",
+                "law_code": "TestG",
+            },
+        ]
+
+    def write(self, query: str, parameters: dict[str, Any]) -> list[dict[str, Any]]:
+        self.writes.append((query, parameters))
+        if "matched_entity_id" in query:
+            return [{"matched_entity_id": parameters["entity_id"]}]
+        return []
+
+
+class FakeEmbeddingBackend:
+    backend_name = "local_embedding_endpoint"
+
+    def preflight(self) -> None:
+        return None
+
+    def embed(self, inputs: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0] for _ in inputs]
 
 
 def test_writer_serializes_nested_source_metadata_for_neo4j_properties() -> None:
@@ -264,6 +306,72 @@ def test_relationship_refresh_repeats_cleanup_and_upsert_semantics_deterministic
     assert first.counts_by_unresolved_reason["missing_target_in_corpus"] == 1
     assert len(cleanup_node_deletes) == 2
     assert len(cleanup_edge_deletes) == len(RELATION_TYPES) * 2
+
+
+def test_relationship_refresh_reports_build_and_write_progress() -> None:
+    client = FakeRefreshClient()
+    progress_events: list[tuple[str, int, int, str]] = []
+
+    report = GraphDataRepository(client).refresh_relationships(
+        law_codes=["TestG"],
+        progress_callback=lambda stage, processed, total, detail: progress_events.append(
+            (stage, processed, total, detail)
+        ),
+    )
+
+    assert report.status == "completed"
+    assert {event[0] for event in progress_events} == {
+        "collect_graph_source",
+        "build_relationship_evidence",
+        "cleanup_relationships",
+        "write_relationships",
+    }
+    write_events = [event for event in progress_events if event[0] == "write_relationships"]
+    assert [event[1] for event in write_events] == [1, 2]
+    assert all(event[2] == 2 for event in write_events)
+
+
+def test_embedding_write_uses_fragment_id_instead_of_parent_document_id() -> None:
+    client = FakeEmbeddingClient()
+    service = EmbeddingService(
+        profile=EmbeddingProfile(embedding_profile_id="profile", dimensions=2),
+        backend=FakeEmbeddingBackend(),
+        batch_size=2,
+    )
+
+    report = GraphDataRepository(client).write_embeddings(
+        law_codes=["TestG"],
+        embedding_service=service,
+    )
+
+    embedding_ids = [
+        parameters["entity_id"]
+        for query, parameters in client.writes
+        if "matched_entity_id" in query
+    ]
+    assert report.processed_count == 2
+    assert embedding_ids == ["source-document:TestG", "source-fragment:TestG:1"]
+
+
+def test_embedding_writer_fails_when_graph_entity_does_not_match() -> None:
+    with pytest.raises(RuntimeError, match="matched no unique source_fragment"):
+        GraphWriter(FakeClient()).write_source_embeddings(
+            [
+                {
+                    "entity_kind": "source_fragment",
+                    "entity_id": "source-fragment:missing",
+                    "law_code": "TestG",
+                    "vector": [1.0, 0.0],
+                    "embedding_profile_id": "profile",
+                    "model_id": "model",
+                    "backend_name": "backend",
+                    "routing_mode": "local_only",
+                    "vector_dimensions": 2,
+                    "normalized": True,
+                }
+            ],
+            preflight=lambda: None,
+        )
 
 
 def _reference_record(**overrides: Any) -> dict[str, Any]:

@@ -14,6 +14,7 @@ class FakeBackend:
         self.vectors = vectors or [[1.0, 0.0]]
         self.prefighted = False
         self.inputs: list[str] = []
+        self.calls: list[list[str]] = []
 
     def preflight(self) -> None:
         self.prefighted = True
@@ -22,7 +23,8 @@ class FakeBackend:
 
     def embed(self, inputs: list[str]) -> list[list[float]]:
         self.inputs = inputs
-        return self.vectors
+        self.calls.append(inputs)
+        return self.vectors[: len(inputs)]
 
 
 def test_embedding_service_prefixes_documents_and_returns_profile_metadata() -> None:
@@ -63,3 +65,41 @@ def test_embedding_service_validates_vector_profile() -> None:
 
     with pytest.raises(ValueError, match="normalized"):
         service.embed_inputs([EmbeddingInput(entity_kind="source_document", entity_id="d1", text="Doc")])
+
+
+def test_embedding_service_sends_sequential_bounded_batches() -> None:
+    backend = FakeBackend(vectors=[[1.0, 0.0]] * 5)
+    progress_events: list[tuple[str, int, int, str]] = []
+    service = EmbeddingService(
+        profile=EmbeddingProfile(embedding_profile_id="profile", dimensions=2),
+        backend=backend,
+        batch_size=2,
+    )
+
+    records = service.embed_inputs(
+        [
+            EmbeddingInput(entity_kind="source_fragment", entity_id=f"f{index}", text=f"Text {index}")
+            for index in range(5)
+        ],
+        progress_callback=lambda stage, processed, total, detail: progress_events.append(
+            (stage, processed, total, detail)
+        ),
+    )
+
+    assert len(records) == 5
+    assert [len(call) for call in backend.calls] == [2, 2, 1]
+    assert progress_events[:2] == [
+        ("embedding_preflight", 0, 1, ""),
+        ("embedding_preflight", 1, 1, ""),
+    ]
+    assert [event[1] for event in progress_events if event[0] == "embedding_http_batches"] == [2, 4, 5]
+
+
+@pytest.mark.parametrize("batch_size", [0, 17])
+def test_embedding_service_rejects_batch_sizes_outside_local_limit(batch_size: int) -> None:
+    with pytest.raises(ValueError, match="between 1 and 16"):
+        EmbeddingService(
+            profile=EmbeddingProfile(embedding_profile_id="profile", dimensions=2),
+            backend=FakeBackend(),
+            batch_size=batch_size,
+        )

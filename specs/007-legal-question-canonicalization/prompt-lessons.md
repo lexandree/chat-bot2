@@ -153,7 +153,19 @@ in Germany, but asylum procedure and section 24 temporary protection are
 materially different legal routes. Do not blindly reinterpret every `Asyl`
 mention as section 24, and do not blindly accept it as an AsylG procedure when
 the surrounding context suggests early Ukrainian-refugee registration and work
-authorization.
+authorization. Ukrainian citizenship alone does not establish eligibility for
+section 24; prior residence, displacement circumstances, current status, and
+other material eligibility facts may leave Asyl or another route applicable.
+Likewise, a previously granted section-24 permit does not by itself establish
+current validity or eligibility for automatic continuation: initial protection,
+individual renewal, and later automatic continuation are distinct legal
+questions whose answer may depend on the relevant date and status history.
+
+Prompt implication: Preserve the source question date and distinguish it from
+the date of review or answering. Treat age as evidence that currentness may need
+review, not as proof that the question is obsolete. Keep stable generalized
+legal issues reusable while flagging transition-bound or superseded branches
+for temporal review.
 
 Prompt implication: For canonicalization, preserve the ambiguity in
 `hidden_issues` or lower confidence when the source itself does not resolve it.

@@ -97,6 +97,8 @@ legal XML inputs without graph writes.
 - Selected scope with `law_codes`.
 - Active embedding profile.
 - Local-only Jina-compatible endpoint URL.
+- Sequential HTTP batch size from `1` through `16`; default `16` for the
+  established four-slot local Jina runtime.
 
 **Preconditions**:
 - Source documents/fragments are loaded.
@@ -107,10 +109,13 @@ legal XML inputs without graph writes.
 - Embedding run report.
 - Processed/skipped/failed counts.
 - Embedding profile id, model id, backend name, routing mode, dimensions,
-  normalization status.
+  normalization status, and effective batch size.
+- Stage progress, processed counts, rate, and ETA on stderr; final report
+  remains JSON on stdout.
 
 **Failure output**:
 - Endpoint unavailable or profile mismatch.
+- Source document/fragment identifier does not match exactly one graph node.
 - Must fail before partial graph writes when preflight checks fail.
 
 ## `foundation graph verify`

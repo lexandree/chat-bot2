@@ -26,6 +26,7 @@ data/snapshots/*.json
 data/comparisons/*.json
 data/relationship_quality/*.json
 data/corpus_readiness/*.json
+data/corpus_expansion/
 data/structural_workflows/*.json
 # Evaluation inputs, outputs, vectors, review files, and dataset snapshots are
 # private generated artifacts regardless of file extension.

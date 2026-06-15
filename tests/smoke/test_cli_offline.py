@@ -54,6 +54,34 @@ def test_cli_preview_legal_xml_writes_artifact_without_graph(tmp_path: Path) -> 
     assert artifact["source_scope"]["law_codes"] == ["AufenthG"]
 
 
+def test_cli_new_law_preflight_is_offline_and_writes_artifacts(tmp_path: Path) -> None:
+    preview_path = tmp_path / "active_corpus_preview.json"
+    output_path = tmp_path / "new_law_preflight.json"
+
+    result = _run_cli(
+        [
+            "corpus",
+            "new-law-preflight",
+            "--manifest",
+            "tests/fixtures/legal_xml_new_law_manifest.json",
+            "--new-law-code",
+            "VwVfG",
+            "--preview-output",
+            str(preview_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    artifact = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "ready"
+    assert payload["graph_writes_performed"] is False
+    assert artifact["active_law_codes"] == ["AufenthG", "VwVfG"]
+    assert preview_path.exists()
+
+
 def test_cli_graph_compare_writes_comparison_artifact_without_live_services(tmp_path: Path) -> None:
     new_snapshot = tmp_path / "new_snapshot.json"
     baseline_snapshot = tmp_path / "baseline_snapshot.json"

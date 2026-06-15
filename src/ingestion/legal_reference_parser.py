@@ -23,6 +23,17 @@ REFERENCE_PATTERN = re.compile(
     r"(?P<law>[A-ZÄÖÜ][A-Za-zÄÖÜäöüß0-9/]*[A-Z][A-Za-zÄÖÜäöüß0-9/]*))?"
 )
 
+LAW_NAME_ALIASES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bVerwaltungsverfahrensgesetz(?:es)?\b", re.IGNORECASE), "VwVfG"),
+    (re.compile(r"\bAufenthaltsgesetz(?:es)?\b", re.IGNORECASE), "AufenthG"),
+    (re.compile(r"\bAsylgesetz(?:es)?\b", re.IGNORECASE), "AsylG"),
+    (re.compile(r"\bAsylbewerberleistungsgesetz(?:es)?\b", re.IGNORECASE), "AsylbLG"),
+    (re.compile(r"\bBeschäftigungsverordnung\b", re.IGNORECASE), "BeschV"),
+    (re.compile(r"\bAufenthaltsverordnung\b", re.IGNORECASE), "AufenthV"),
+    (re.compile(r"\bStaatsangehörigkeitsgesetz(?:es)?\b", re.IGNORECASE), "StAG"),
+    (re.compile(r"\bIntegrationskursverordnung\b", re.IGNORECASE), "IntV"),
+)
+
 SENTENCE_BOUNDARY_PATTERN = re.compile(r"[.!?]\s+|\n+")
 TEMPORAL_HINT_PATTERN = re.compile(
     r"\b(ab|bis|seit|fassung|geändert|änderung|aufgehoben|ersetzt|tritt|inkraft|"
@@ -127,7 +138,7 @@ def parse_explicit_legal_references(
         raw_reference_text = match.group(0).strip()
         target_section_reference = normalize_section_reference(f"§ {match.group('section')}")
         normalized_reference_text = _normalized_reference_text(match, target_section_reference)
-        explicit_law = match.group("law")
+        explicit_law = _explicit_law_code(text, match)
         target_law_code = explicit_law or default_law_code or law_code
         context_before, context_text, context_after = _context_window(
             text,
@@ -198,6 +209,32 @@ def parse_explicit_legal_references(
             )
         )
     return references
+
+
+def _explicit_law_code(text: str, match: re.Match[str]) -> str:
+    explicit_law = match.group("law")
+    if explicit_law:
+        return _canonical_law_code(explicit_law)
+
+    sentence_tail = _same_sentence_tail(text, match.end())
+    for pattern, law_code in LAW_NAME_ALIASES:
+        alias_match = pattern.search(sentence_tail)
+        if alias_match and "§" not in sentence_tail[: alias_match.start()]:
+            return law_code
+    return ""
+
+
+def _canonical_law_code(value: str) -> str:
+    for pattern, law_code in LAW_NAME_ALIASES:
+        if pattern.fullmatch(value):
+            return law_code
+    return value
+
+
+def _same_sentence_tail(text: str, start: int) -> str:
+    next_boundary = SENTENCE_BOUNDARY_PATTERN.search(text[start:])
+    end = len(text) if next_boundary is None else start + next_boundary.start()
+    return text[start:end]
 
 
 def _normalized_reference_text(match: re.Match[str], section_reference: str) -> str:

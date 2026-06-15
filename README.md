@@ -56,3 +56,21 @@ python -m app references resolve --law-code AufenthG --section-reference "§ 1"
 python -m app traversal run --legal-section-id legal-section:AufenthG:1:current --relation-type CITES --depth 1 --fanout 25 --node-limit 100
 python -m app graph delete --law-code AufenthG --confirm
 ```
+
+Add a new law to the active corpus only through the guarded corpus-expansion
+runner. Offline preflight performs no graph writes:
+
+```bash
+NEW_LAW_CODE=VwVfG bash scripts/legal_graph/load_new_law.sh preflight
+```
+
+The complete workflow requires explicit graph-write opt-in:
+
+```bash
+NEW_LAW_CODE=VwVfG ALLOW_GRAPH_WRITES=1 \
+  bash scripts/legal_graph/load_new_law.sh full
+```
+
+See
+[`specs/004-corpus-boundary-status/new-law-operator-workflow.md`](specs/004-corpus-boundary-status/new-law-operator-workflow.md)
+for manifest, relationship-refresh, embedding, and artifact requirements.

@@ -116,3 +116,16 @@ browser export become `hold`, then imports and routes that strict decision set.
 
 Only after the batch is fully reviewed should its accepted retry results be
 merged into the broader canonicalization artifact.
+
+## MRN-007: Dataset Acceptance Does Not Mean Current Retrieval Eligibility
+
+Review convention: A historically meaningful legal question may remain accepted
+as canonicalization evidence while being unsuitable for the current-default
+question bank or retrieval path. Do not reject useful historical evidence
+solely because it is old, and do not promote it as current solely because its
+canonicalization is coherent.
+
+Route questions involving transitional rules, temporary extensions, expired
+deadlines, or superseded procedures to temporal-currentness review. Preserve
+the source question date and distinguish current reuse from historical
+evaluation.

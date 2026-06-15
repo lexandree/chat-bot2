@@ -110,6 +110,30 @@
 - Added the independent `rerun_after_corpus_expansion` relevance-review routing
   marker, including `VwVfG` UI shortcut, generic law-code input, JSONL
   export/import preservation, summary counts, and a `corpus rerun` filter.
+- Added `VwVfG` to the active legal corpus through the guarded new-law
+  workflow. The offline four-law preflight parsed 477 sections and 1,922
+  relationship references; all five incoming references from existing laws to
+  `VwVfG` resolved. The live load completed with 1,796 resolved relationship
+  edges and no reported graph-write failures.
+- Added stage progress reporting for relationship refresh and graph embedding
+  writes. Progress is written to stderr with counts, rate, and ETA, while final
+  command reports remain JSON on stdout. Non-interactive logs emit bounded
+  ten-percent milestones instead of one line per record.
+- Fixed graph embedding writes so `SourceFragment` records use their own
+  `source_fragment_id` instead of the parent `source_document_id`. Graph writes
+  now fail when an embedding record does not match exactly one graph node.
+  Re-running the VwVfG embedding stage produced 122 verified embeddings: one
+  source document plus 121 source fragments.
+- Completed human relevance review of all 24 clean curated questions. The
+  final reviewed metrics are Hit@1 `0.750000`, Hit@5 `0.916667`, Hit@10
+  `1.000000`, Recall@10 `0.944444`, Recall@40 `1.000000`, and MRR `0.817526`.
+  All 24 labels are valid and no `rerun_after_corpus_expansion` marker remains.
+- The four-law rerun for
+  `tg-qa-clean-retrieval-case:asylg-hearing-assistant` retrieves `AsylG §25`
+  at rank 1 and `VwVfG §14` at rank 34. Typed traversal from `AsylG §25`
+  resolves the direct `DEFINES` edge to `VwVfG §14`, demonstrating that
+  semantic retrieval should identify the primary section and bounded
+  structural traversal should add dependent legal support.
 
 ## Verification
 
@@ -144,6 +168,15 @@
   passed, 11 skipped; existing four-label export imported with 4/4 completed;
   both boundary checks, generated review JavaScript syntax check, compileall,
   and `git diff --check` passed.
+- After adding the guarded VwVfG corpus-expansion workflow, progress reporting,
+  bounded graph embeddings, and exact graph-write matching:
+  `tests/unit` passed with 178 tests and `tests/smoke` passed with 17 tests;
+  compileall, shell syntax checks, and `git diff --check` passed.
+- Live VwVfG verification after correcting embedding writes reported one
+  source document, 121 source fragments, 121 legal sections, 118 legal
+  references, 122 embeddings, and no errors or warnings.
+- The final clean curated relevance export imported with 24/24 completed
+  labels and zero pending corpus-expansion reruns.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:
@@ -188,3 +221,6 @@ APIs, network services, or remote notebooks.
   reviewed reference answer material.
 - Legal-intent equivalence reports evaluate pair decisions against reviewed
   labels. They do not approve automatic duplicate removal or answer reuse.
+- The clean curated reviewed baseline is small and intentionally moderate. It
+  does not replace the pending real-record stress/backlog review or the route
+  ambiguity and temporal-relevance diagnostics.

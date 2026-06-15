@@ -67,6 +67,49 @@ def test_parse_reference_does_not_treat_following_title_word_as_law_code() -> No
     assert references[0].target_section_reference == "§ 3d"
 
 
+def test_parse_full_law_name_alias_as_explicit_vwvfg_reference() -> None:
+    reference = parse_explicit_legal_references(
+        "Der Ausländer kann sich nach § 14 des Verwaltungsverfahrensgesetzes begleiten lassen.",
+        default_law_code="AsylG",
+    )[0]
+
+    assert reference.raw_reference_text == "§ 14"
+    assert reference.target_law_code == "VwVfG"
+    assert reference.target_law_code_explicit is True
+
+
+def test_parse_full_law_name_alias_after_reference_range_context() -> None:
+    references = parse_explicit_legal_references(
+        "Die §§ 48 und 49 des Verwaltungsverfahrensgesetzes bleiben unberührt.",
+        default_law_code="IntV",
+    )
+
+    assert references[0].target_law_code == "VwVfG"
+    assert references[0].target_law_code_explicit is True
+
+
+def test_full_law_name_alias_does_not_cross_sentence_boundary() -> None:
+    references = parse_explicit_legal_references(
+        "Nach § 2 gilt dies. § 14 des Verwaltungsverfahrensgesetzes bleibt unberührt.",
+        default_law_code="AsylG",
+    )
+
+    assert references[0].target_law_code == "AsylG"
+    assert references[0].target_law_code_explicit is False
+    assert references[1].target_law_code == "VwVfG"
+    assert references[1].target_law_code_explicit is True
+
+
+def test_full_law_name_alias_does_not_cross_later_section_marker() -> None:
+    references = parse_explicit_legal_references(
+        "Nach § 2 gilt dies, während § 14 des Verwaltungsverfahrensgesetzes unberührt bleibt.",
+        default_law_code="AsylG",
+    )
+
+    assert references[0].target_law_code == "AsylG"
+    assert references[1].target_law_code == "VwVfG"
+
+
 def test_fixture_driven_mandatory_relation_classification() -> None:
     fixture = json.loads(Path("tests/fixtures/legal_relationship_cases.json").read_text(encoding="utf-8"))
 

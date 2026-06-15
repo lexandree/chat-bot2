@@ -550,7 +550,7 @@ def build_tg_qa_corpus_bounded_semantic_benchmark(
             "unreviewed query-explicit silver references may penalize legally better retrieval",
             "an explicit law reference may identify the user's status or premise rather than relevant answer support",
             "document vectors use source fragment body text only to match the current graph-write embedding contract",
-            "the benchmark evaluates a bounded three-law preview rather than the full German legal corpus",
+            "the benchmark evaluates the selected bounded legal preview rather than the full German legal corpus",
         ],
         "trust_boundary": "semantic_retrieval_benchmark_does_not_create_trusted_answer_support",
     }

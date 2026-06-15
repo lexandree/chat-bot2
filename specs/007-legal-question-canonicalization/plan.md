@@ -271,6 +271,20 @@ MiniMax verdict, optional DeepSeek verdict, and a compact decision/edit form.
 12. Build a bounded human relevance-review sample over semantic candidates,
     import private review labels, and report metrics only for positively
     reviewed relevance evidence.
+13. Evaluate context-sensitive legal-route ambiguity before changing retrieval
+    policy: build a small reviewed benchmark containing explicit section-24
+    cases, explicit AsylG cases, and unresolved same-wording cases; compare the
+    unrestricted semantic baseline with multi-hypothesis candidate generation.
+14. Keep future clarification behavior documented separately from 007:
+    evaluation may preserve route hypotheses and missing material context, but
+    it must not implement chatbot dialogue or silently choose a route from
+    nationality assumptions, corpus prior, or refugee/asylum keywords alone.
+15. Add a temporal-relevance diagnostic before current-default question-bank
+    promotion: preserve source question date through every evaluation stage,
+    distinguish current reusable issues from historical, transition-bound,
+    superseded, and unresolved-currentness records, and keep historical records
+    available without allowing obsolete branches into current retrieval by
+    default.
 
 ## Complexity Tracking
 

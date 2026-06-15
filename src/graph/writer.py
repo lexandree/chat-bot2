@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from graph.types import RELATION_TYPES
 
@@ -117,8 +117,14 @@ class GraphWriter:
                 },
             )
 
-    def cleanup_relationships_for_scope(self, *, law_codes: list[str]) -> None:
-        for relation_type in RELATION_TYPES:
+    def cleanup_relationships_for_scope(
+        self,
+        *,
+        law_codes: list[str],
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> None:
+        total_steps = len(RELATION_TYPES) + 1
+        for step_index, relation_type in enumerate(RELATION_TYPES, start=1):
             self.client.write(
                 "MATCH (s:LegalSection)-[r]->(:LegalSection) "
                 f"WHERE type(r) = '{relation_type}' "
@@ -127,14 +133,24 @@ class GraphWriter:
                 "DELETE r",
                 {"law_codes": law_codes},
             )
+            if progress_callback is not None:
+                progress_callback(step_index, total_steps, f"relation_type={relation_type}")
         self.client.write(
             "MATCH (n:LegalReference) WHERE n.law_code IN $law_codes DETACH DELETE n",
             {"law_codes": law_codes},
         )
+        if progress_callback is not None:
+            progress_callback(total_steps, total_steps, "reference_nodes")
 
-    def write_source_embeddings(self, records: list[dict[str, Any]], *, preflight) -> None:
+    def write_source_embeddings(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        preflight,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> None:
         preflight()
-        for record in records:
+        for record_index, record in enumerate(records, start=1):
             if record["entity_kind"] == "source_document":
                 label = "SourceDocument"
                 id_field = "source_document_id"
@@ -143,7 +159,7 @@ class GraphWriter:
                 id_field = "source_fragment_id"
             else:
                 raise ValueError(f"unsupported embedding entity kind: {record['entity_kind']}")
-            self.client.write(
+            matched = self.client.write(
                 f"MATCH (n:{label} {{{id_field}: $entity_id}}) "
                 "SET n.embedding_v1 = $vector, "
                 "n.embedding_profile_id = $embedding_profile_id, "
@@ -151,7 +167,8 @@ class GraphWriter:
                 "n.embedding_backend_name = $backend_name, "
                 "n.embedding_routing_mode = $routing_mode, "
                 "n.embedding_dimensions = $vector_dimensions, "
-                "n.embedding_normalized = $normalized",
+                "n.embedding_normalized = $normalized "
+                f"RETURN n.{id_field} AS matched_entity_id",
                 {
                     "entity_id": record["entity_id"],
                     "vector": record["vector"],
@@ -163,6 +180,16 @@ class GraphWriter:
                     "normalized": record["normalized"],
                 },
             )
+            if len(matched) != 1 or str(matched[0].get("matched_entity_id", "")) != record["entity_id"]:
+                raise RuntimeError(
+                    f"embedding graph write matched no unique {record['entity_kind']}: {record['entity_id']}"
+                )
+            if progress_callback is not None:
+                progress_callback(
+                    record_index,
+                    len(records),
+                    f"entity={record['entity_kind']}:{record['entity_id']}",
+                )
 
 
 def _neo4j_properties(record: dict[str, Any]) -> dict[str, Any]:

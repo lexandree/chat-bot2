@@ -95,6 +95,7 @@ def build_embedding_run_report(
     failed_count: int,
     profile: EmbeddingProfile,
     backend_name: str,
+    batch_size: int = 16,
     failure_reason: str | None = None,
 ) -> EmbeddingRunReport:
     return EmbeddingRunReport(
@@ -106,6 +107,7 @@ def build_embedding_run_report(
         routing_mode=profile.routing_mode,
         vector_dimensions=profile.dimensions,
         normalized=profile.normalized,
+        batch_size=batch_size,
         processed_count=processed_count,
         skipped_count=skipped_count,
         failed_count=failed_count,

@@ -363,6 +363,7 @@ class EmbeddingRunReport:
     routing_mode: str
     vector_dimensions: int
     normalized: bool
+    batch_size: int = 16
     processed_count: int = 0
     skipped_count: int = 0
     failed_count: int = 0

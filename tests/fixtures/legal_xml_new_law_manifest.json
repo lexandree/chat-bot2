@@ -1,0 +1,19 @@
+{
+  "name": "minimal_active_corpus_with_new_law",
+  "inputs": [
+    {
+      "path": "tests/fixtures/legal_xml/aufenthg.xml",
+      "law_code": "AufenthG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    },
+    {
+      "path": "tests/fixtures/legal_xml/vwvfg.xml",
+      "law_code": "VwVfG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    }
+  ]
+}

@@ -246,6 +246,35 @@ stress/backlog diagnostic or changing general retrieval methods.
 - [ ] T099 Group later real-record failures by recurring mechanism before adding exact-reference features, legal-keyword expansion, reranking, typed traversal, or quality gates
 - [ ] T100 Require cumulative clean and stress benchmark evidence before retaining a general method change
 - [X] T101 Add a validated `rerun_after_corpus_expansion` review-routing marker for questions that require a named missing law scope
+- [X] T116 Complete human review of the 24-question clean curated retrieval baseline, rerun the VwVfG-dependent hearing-assistant case on the expanded corpus, and record reviewed clean metrics
+
+## Phase 13: Context-Sensitive Legal-Route Retrieval Diagnostic
+
+**Purpose**: Measure and reduce wrong-law retrieval caused by colloquial
+`refugee`/`Asyl` terminology without implementing future chatbot clarification
+or forcing every ambiguous question into one legal route.
+
+- [ ] T102 Define a reviewed route-ambiguity benchmark contract covering explicit section-24 cases, explicit AsylG cases, and unresolved cases whose applicable route depends on missing material context
+- [ ] T103 Curate a small balanced benchmark with paired or near-identical Russian questions whose correct route changes with section-24 eligibility circumstances, prior residence, displacement context, nationality, status history, relevant date, prior procedure, or explicit user intent; include Ukrainian nationals who do not qualify for section 24 and non-Ukrainian third-country nationals whose initial protection does not establish later automatic continuation
+- [ ] T104 Report the current unrestricted semantic baseline and early `law_code_candidates` hints on the route-ambiguity benchmark, including wrong-route-at-k and both-routes-recalled-at-k
+- [ ] T105 Evaluate multi-hypothesis candidate generation that unions unrestricted semantic candidates with bounded candidates from every plausible legal route, without changing trusted retrieval or answer policy
+- [ ] T106 Record whether ambiguous refugee/asylum keywords should produce both `AufenthG` and `AsylG` weak hints, retaining corpus prior and nationality only as reviewable ranking evidence rather than a hard route decision
+- [ ] T107 Require cumulative clean-baseline and route-ambiguity evidence before retaining any general candidate-generation or hint-policy change
+
+## Phase 14: Temporal Relevance And Current-Default Promotion
+
+**Purpose**: Prevent historically correct but obsolete questions and decision
+branches from silently entering current-default retrieval while retaining them
+for audit and temporal evaluation.
+
+- [ ] T108 Define a reviewable temporal-relevance contract with separate source-question date, evaluation date, legal-corpus as-of date, and review date
+- [ ] T109 Define bounded temporal-relevance states for current reusable, historical-but-generalizable, transition-bound, superseded-or-expired, and unresolved-currentness records
+- [ ] T110 Preserve `question_date` in compact canonicalizer, verifier, adjudicator, legal-intent, retrieval-review, and promotion payloads without treating age alone as proof of obsolescence
+- [ ] T111 Add a temporal-currentness review queue and report counts by temporal-relevance state before question-bank promotion
+- [ ] T112 Block transition-bound, superseded-or-expired, and unresolved-currentness records from current-default question-bank and retrieval promotion unless explicitly reviewed
+- [ ] T113 Retain blocked records in a separate historical/temporal evaluation artifact instead of deleting them
+- [ ] T114 Build a small temporal benchmark containing stable issues, expired transition questions, changed extension rules, and historically worded questions that can be safely generalized
+- [ ] T115 Require cumulative clean, route-ambiguity, and temporal benchmark evidence before retaining temporal routing or generalization changes
 
 ---
 

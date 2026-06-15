@@ -129,3 +129,17 @@ targets resolvable. Until a later feature defines traversal behavior, downstream
 graph workflows should use resolved typed edges only, avoid inferring trusted
 edges for these missing targets, and treat references in this inventory as
 coverage-boundary stops rather than blockers for starting 005.
+
+## 8. Add A New Law
+
+Use the guarded active-corpus workflow documented in
+[new-law-operator-workflow.md](new-law-operator-workflow.md). It performs an
+offline full-corpus preflight before any graph writes and refreshes relationship
+evidence across the complete active law-code scope after loading the new law.
+
+```bash
+NEW_LAW_CODE=VwVfG bash scripts/legal_graph/load_new_law.sh preflight
+
+NEW_LAW_CODE=VwVfG ALLOW_GRAPH_WRITES=1 \
+  bash scripts/legal_graph/load_new_law.sh full
+```
