@@ -9,6 +9,8 @@ REFERENCE_CASES="${REFERENCE_CASES:-specs/007-legal-question-canonicalization/ro
 LEGAL_PREVIEW="${LEGAL_PREVIEW:-data/corpus_expansion/new_law_VwVfG_20260613T013823Z/active_corpus_preview.json}"
 OUT_DIR="${OUT_DIR:-data/evaluation/tg_qa_retrieval_benchmark}"
 PREFIX="${PREFIX:-route_ambiguity_v1_four_law}"
+LAW_CODES="${LAW_CODES:-AufenthG AsylG BeschV VwVfG}"
+VECTOR_MODE="${VECTOR_MODE:-reuse-documents}"
 DOCUMENT_VECTOR_SOURCE="${DOCUMENT_VECTOR_SOURCE:-${OUT_DIR}/real_data_007_last_2000_v1_four_law_vectors.jsonl}"
 ENDPOINT_URL="${ENDPOINT_URL:-${EMBEDDING_ENDPOINT_URL:-http://127.0.0.1:18080/v1/embeddings}}"
 MODEL_ID="${MODEL_ID:-${EMBEDDING_MODEL_ID:-jina-embeddings-v5-text-small-retrieval-GGUF}}"
@@ -17,6 +19,8 @@ TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-240}"
 
 FULL_BATCH="${OUT_DIR}/${PREFIX}_embedding_batch.jsonl"
 FULL_BATCH_SUMMARY="${OUT_DIR}/${PREFIX}_embedding_batch_summary.json"
+FULL_VECTORS="${OUT_DIR}/${PREFIX}_vectors.jsonl"
+FULL_VECTOR_SUMMARY="${OUT_DIR}/${PREFIX}_vectorization_summary.json"
 QUERY_BATCH="${OUT_DIR}/${PREFIX}_query_embedding_batch.jsonl"
 QUERY_VECTORS="${OUT_DIR}/${PREFIX}_query_external_vectors.jsonl"
 QUERY_VECTOR_SUMMARY="${OUT_DIR}/${PREFIX}_query_vectorization_summary.json"
@@ -28,16 +32,29 @@ ROUTE_SUMMARY="${OUT_DIR}/${PREFIX}_route_summary.json"
 
 prepare() {
   mkdir -p "${OUT_DIR}"
+  local law_code_args=()
+  local law_code
+  for law_code in ${LAW_CODES}; do
+    law_code_args+=(--law-code "${law_code}")
+  done
   python -m app evaluation tg-qa-corpus-bounded-semantic-embedding-batch \
     --reference-cases "${REFERENCE_CASES}" \
     --legal-preview "${LEGAL_PREVIEW}" \
-    --law-code AufenthG \
-    --law-code AsylG \
-    --law-code BeschV \
-    --law-code VwVfG \
+    "${law_code_args[@]}" \
     --output "${FULL_BATCH}" \
     --summary-output "${FULL_BATCH_SUMMARY}"
   jq -c 'select(.text_role == "semantic_query")' "${FULL_BATCH}" > "${QUERY_BATCH}"
+}
+
+embed_full() {
+  python -m app evaluation tg-qa-embed-batch \
+    --embedding-batch "${FULL_BATCH}" \
+    --output "${FULL_VECTORS}" \
+    --summary-output "${FULL_VECTOR_SUMMARY}" \
+    --endpoint-url "${ENDPOINT_URL}" \
+    --model-id "${MODEL_ID}" \
+    --batch-size "${BATCH_SIZE}" \
+    --timeout-seconds "${TIMEOUT_SECONDS}"
 }
 
 embed_queries() {
@@ -56,6 +73,11 @@ verify_query_vectors() {
   jq -e '.failed_count == 0 and .completed_count > 0' "${QUERY_VECTOR_SUMMARY}" >/dev/null
 }
 
+verify_full_vectors() {
+  test -f "${FULL_VECTOR_SUMMARY}"
+  jq -e '.failed_count == 0 and .completed_count > 0' "${FULL_VECTOR_SUMMARY}" >/dev/null
+}
+
 verify_reusable_documents() {
   test -f "${DOCUMENT_VECTOR_SOURCE}"
   local missing_document_count
@@ -72,17 +94,25 @@ verify_reusable_documents() {
 }
 
 finish() {
-  verify_query_vectors
-  verify_reusable_documents
-  jq -c 'select(.text_role == "legal_section_document" and .embedding_status == "completed")' \
-    "${DOCUMENT_VECTOR_SOURCE}" > "${COMBINED_VECTORS}"
-  jq -c 'select(.text_role == "semantic_query" and .embedding_status == "completed")' \
-    "${QUERY_VECTORS}" >> "${COMBINED_VECTORS}"
+  local vector_source="${COMBINED_VECTORS}"
+  local vector_summary="${QUERY_VECTOR_SUMMARY}"
+  if [[ "${VECTOR_MODE}" == "full" ]]; then
+    verify_full_vectors
+    vector_source="${FULL_VECTORS}"
+    vector_summary="${FULL_VECTOR_SUMMARY}"
+  else
+    verify_query_vectors
+    verify_reusable_documents
+    jq -c 'select(.text_role == "legal_section_document" and .embedding_status == "completed")' \
+      "${DOCUMENT_VECTOR_SOURCE}" > "${COMBINED_VECTORS}"
+    jq -c 'select(.text_role == "semantic_query" and .embedding_status == "completed")' \
+      "${QUERY_VECTORS}" >> "${COMBINED_VECTORS}"
+  fi
   python -m app evaluation tg-qa-corpus-bounded-semantic-benchmark \
     --reference-cases "${REFERENCE_CASES}" \
     --embedding-batch "${FULL_BATCH}" \
-    --external-vectors "${COMBINED_VECTORS}" \
-    --vectorization-summary "${QUERY_VECTOR_SUMMARY}" \
+    --external-vectors "${vector_source}" \
+    --vectorization-summary "${vector_summary}" \
     --k 1 \
     --k 5 \
     --k 10 \
@@ -104,6 +134,9 @@ case "${ACTION}" in
   prepare)
     prepare
     ;;
+  embed-full)
+    embed_full
+    ;;
   embed-queries)
     embed_queries
     ;;
@@ -115,8 +148,13 @@ case "${ACTION}" in
     embed_queries
     finish
     ;;
+  full-fresh)
+    prepare
+    embed_full
+    VECTOR_MODE=full finish
+    ;;
   *)
-    printf 'Usage: %s {prepare|embed-queries|finish|full}\n' "$0" >&2
+    printf 'Usage: %s {prepare|embed-full|embed-queries|finish|full|full-fresh}\n' "$0" >&2
     exit 2
     ;;
 esac

@@ -288,5 +288,8 @@ APIs, network services, or remote notebooks.
   aliases were not recognized. Added aliases for common external laws such as
   `ZPO`, `StGB`, `BGB`, `VwGO`, and selected `SGB_*` books. Offline six-law
   preflight shifted counts from `unresolved=170/out_of_scope=2` to
-  `unresolved=79/out_of_scope=152`; live graph relationship evidence still
-  requires an explicit relationship refresh to adopt the parser change.
+  `unresolved=79/out_of_scope=152`; the follow-up six-law relationship refresh
+  produced the same live counts.
+- Clean curated and route ambiguity retrieval runners now support explicit
+  `LAW_CODES` and `full-fresh` vectorization so expanded-corpus diagnostics do
+  not reuse stale four-law document vectors.

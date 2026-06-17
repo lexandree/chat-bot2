@@ -75,6 +75,18 @@ from ordinary Recall@k query evaluation. `embed-queries` requires the local
 embedding endpoint. `finish` reuses the existing four-law document vectors and
 stops if query vectorization has any failures.
 
+After corpus expansion, run the same diagnostic with explicit six-law scope and
+fresh query+document vectors:
+
+```bash
+LEGAL_PREVIEW=data/corpus_expansion/core_six_law_alias_fix_20260618/active_corpus_preview.json \
+PREFIX=route_ambiguity_v1_six_law \
+LAW_CODES='AufenthG AsylG BeschV VwVfG AsylbLG AufenthV' \
+VECTOR_MODE=full \
+BATCH_SIZE=16 \
+bash scripts/evaluation/run_007_route_ambiguity_retrieval.sh full-fresh
+```
+
 The route report writes:
 
 - `expected_route_hit_rate`: whether at least one candidate from the expected

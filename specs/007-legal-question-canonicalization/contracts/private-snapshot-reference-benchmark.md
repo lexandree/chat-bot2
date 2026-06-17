@@ -299,6 +299,19 @@ Build the clean curated review with the local helper:
 bash scripts/evaluation/run_007_clean_curated_retrieval.sh full
 ```
 
+After corpus expansion, rebuild clean curated semantic artifacts against the
+expanded preview with a fresh query+document vectorization pass instead of
+reusing stale document vectors:
+
+```bash
+LEGAL_PREVIEW=data/corpus_expansion/core_six_law_alias_fix_20260618/active_corpus_preview.json \
+PREFIX=clean_curated_v1_six_law \
+LAW_CODES='AufenthG AsylG BeschV VwVfG AsylbLG AufenthV' \
+VECTOR_MODE=full \
+BATCH_SIZE=16 \
+bash scripts/evaluation/run_007_clean_curated_retrieval.sh full-fresh
+```
+
 The helper reuses existing document vectors only when their run completed
 without failures, used the requested embedding model, and contains every
 document item required by the current legal-preview batch. It always generates
