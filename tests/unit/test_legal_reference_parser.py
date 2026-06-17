@@ -110,6 +110,37 @@ def test_full_law_name_alias_does_not_cross_later_section_marker() -> None:
     assert references[1].target_law_code == "VwVfG"
 
 
+def test_parse_common_external_law_aliases_after_reference_context() -> None:
+    examples = [
+        (
+            "die in den §§ 376, 383 bis 385 und 408 der Zivilprozessordnung bezeichneten Gründe",
+            "ZPO",
+            "§ 376",
+        ),
+        (
+            "Opfer einer Straftat nach den §§ 232 bis 233a des Strafgesetzbuches",
+            "StGB",
+            "§ 232",
+        ),
+        (
+            "Betriebsübergang nach § 613a des Bürgerlichen Gesetzbuchs",
+            "BGB",
+            "§ 613a",
+        ),
+        (
+            "Verstoß gegen § 404 Absatz 1 des Dritten Buches Sozialgesetzbuch",
+            "SGB_3",
+            "§ 404",
+        ),
+    ]
+
+    for text, expected_law_code, expected_section in examples:
+        reference = parse_explicit_legal_references(text, default_law_code="VwVfG")[0]
+        assert reference.target_law_code == expected_law_code
+        assert reference.target_section_reference == expected_section
+        assert reference.target_law_code_explicit is True
+
+
 def test_fixture_driven_mandatory_relation_classification() -> None:
     fixture = json.loads(Path("tests/fixtures/legal_relationship_cases.json").read_text(encoding="utf-8"))
 

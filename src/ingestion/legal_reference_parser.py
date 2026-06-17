@@ -32,6 +32,16 @@ LAW_NAME_ALIASES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bAufenthaltsverordnung\b", re.IGNORECASE), "AufenthV"),
     (re.compile(r"\bStaatsangehörigkeitsgesetz(?:es)?\b", re.IGNORECASE), "StAG"),
     (re.compile(r"\bIntegrationskursverordnung\b", re.IGNORECASE), "IntV"),
+    (re.compile(r"\bVerwaltungsgerichtsordnung\b", re.IGNORECASE), "VwGO"),
+    (re.compile(r"\bZivilprozessordnung\b", re.IGNORECASE), "ZPO"),
+    (re.compile(r"\bStrafgesetzbuch(?:es)?\b", re.IGNORECASE), "StGB"),
+    (re.compile(r"\bBürgerlich(?:es|en)\s+Gesetzbuch(?:es|s)?\b", re.IGNORECASE), "BGB"),
+    (re.compile(r"\bZweit(?:es|en)\s+Buch(?:es)?\s+Sozialgesetzbuch\b", re.IGNORECASE), "SGB_2"),
+    (re.compile(r"\bDritt(?:es|en)\s+Buch(?:es)?\s+Sozialgesetzbuch\b", re.IGNORECASE), "SGB_3"),
+    (re.compile(r"\bF(?:ü|ue)nft(?:es|en)\s+Buch(?:es)?\s+Sozialgesetzbuch\b", re.IGNORECASE), "SGB_5"),
+    (re.compile(r"\bAcht(?:es|en)\s+Buch(?:es)?\s+Sozialgesetzbuch\b", re.IGNORECASE), "SGB_8"),
+    (re.compile(r"\bZehnt(?:es|en)\s+Buch(?:es)?\s+Sozialgesetzbuch\b", re.IGNORECASE), "SGB_10"),
+    (re.compile(r"\bZw(?:ö|oe)lft(?:es|en)\s+Buch(?:es)?\s+Sozialgesetzbuch\b", re.IGNORECASE), "SGB_12"),
 )
 
 SENTENCE_BOUNDARY_PATTERN = re.compile(r"[.!?]\s+|\n+")

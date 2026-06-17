@@ -283,3 +283,10 @@ APIs, network services, or remote notebooks.
 - The clean curated reviewed baseline is small and intentionally moderate. It
   does not replace the pending real-record stress/backlog review or the route
   ambiguity and temporal-relevance diagnostics.
+- After the six-law corpus import, relationship preflight exposed false
+  `missing_target_in_corpus` noise from external law references whose full-name
+  aliases were not recognized. Added aliases for common external laws such as
+  `ZPO`, `StGB`, `BGB`, `VwGO`, and selected `SGB_*` books. Offline six-law
+  preflight shifted counts from `unresolved=170/out_of_scope=2` to
+  `unresolved=79/out_of_scope=152`; live graph relationship evidence still
+  requires an explicit relationship refresh to adopt the parser change.
