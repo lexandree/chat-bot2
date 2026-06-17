@@ -190,6 +190,40 @@
 - After the four-law stress-review rebuild and retrieval-mechanism report:
   `python -m pytest -q` passed with 197 tests and 11 skipped; both 006 and 007
   boundary checks, compileall, and `git diff --check` passed.
+- The four-law real-record stress review was completed with
+  `tg_007_retrieval_relevance_review_labels4.jsonl`. Import validation
+  completed 30/30 labels with zero failures: 28 reviewed records and 2 skipped
+  records. The reviewed positive-label report evaluated 18 records with
+  Hit@1 `0.388889`, Hit@5 `0.611111`, Hit@10 `0.777778`,
+  Recall@1 `0.324074`, Recall@5 `0.564815`, Recall@10 `0.759259`, and
+  MRR `0.491425`.
+- The stress mechanism report over the same labels found 21 records with at
+  least one retrieval-failure signal. The main signals were 11 records with no
+  relevant candidate shown, 10 where relevant evidence appeared only below
+  top-1, 6 where it appeared only below top-5, and 1 reviewer-added relevant
+  section absent from the recorded ranking. Ten records require corpus
+  expansion before a fair rerun; the normalized missing-law markers are
+  `AsylbLG`, `AufenthV`, `BGB`, `FeV`, `SGB_5`, and `SGB_12`.
+- A general retrieval method change must now report both the clean 24-case
+  reviewed baseline and the four-law real-record stress review before it is
+  retained. Single-case fixes may still be explored, but they are not accepted
+  as general method evidence without this cumulative comparison.
+- Added the first route-ambiguity benchmark contract and a tracked 12-record
+  publication-safe fixture. The fixture contains 5 section-24 temporary
+  protection records, 5 AsylG asylum-procedure records, and 2 unresolved
+  route-clarification records. It includes paired or near-identical Russian
+  surface wording where material context changes the expected route, including
+  Ukrainian wartime displacement, individual persecution, Ukrainian residence
+  history, and third-country nationals with temporary Ukrainian residence.
+- Added a dedicated route-ambiguity retrieval runner. The runner emits a
+  four-law embedding batch, vectorizes only resolvable route queries, reuses
+  existing four-law document vectors, and refuses to finish when query
+  vectorization fails. The current environment did not have a live embedding
+  endpoint on `127.0.0.1:18080`, so the route semantic baseline remains pending
+  until the local endpoint is started.
+- After adding the route-ambiguity contract, fixture, and runner:
+  `python -m pytest -q` passed with 198 tests and 11 skipped; both 006 and 007
+  boundary checks and `git diff --check` passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

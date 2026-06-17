@@ -149,6 +149,10 @@ policy, and does not approve automatic answer reuse.
 - **FR-036**: Human relevance review MUST support multiple relevant legal sections, an explicit no-relevant-candidate-shown decision, reviewer-added relevant sections from the selected corpus when retrieval omitted them, and a separate classification of the query-explicit reference role.
 - **FR-037**: Reviewed relevance metrics MUST use only completed positive human relevance labels and MUST preserve the distinction between relevance evidence and trusted legal answer support.
 - **FR-038**: The initial retrieval benchmark MUST use a separately curated set of coherent, moderate, independently checked single-issue questions with known relevant sections; ambiguous, contradictory, inferred-reference, multi-question, multi-reference, and flagged real canonicalization records MUST remain in later stress/backlog diagnostics.
+- **FR-039**: The route-ambiguity benchmark MUST keep section-24 temporary-protection, asylum-procedure, and unresolved route records separate from the clean retrieval baseline.
+- **FR-040**: Route-ambiguity records MUST include material context, plausible route law codes, expected route law codes, route class, and paired surface-group provenance so that the same wording can intentionally map to different legal routes.
+- **FR-041**: Records whose route depends on missing material facts MUST be marked unresolved and MUST NOT be forced into a single expected legal section for ordinary Recall@k metrics.
+- **FR-042**: Candidate-generation or route-hint policies MUST NOT be retained unless they report cumulative clean-baseline and route-ambiguity evidence.
 
 ### Key Entities *(include if feature involves data)*
 

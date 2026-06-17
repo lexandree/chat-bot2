@@ -670,6 +670,43 @@ def test_clean_curated_retrieval_fixture_has_balanced_unambiguous_questions() ->
     assert all(item["curation_reason"] for item in cases)
 
 
+def test_route_ambiguity_fixture_preserves_paired_and_unresolved_routes() -> None:
+    fixture_path = (
+        Path(__file__).parents[2]
+        / "specs"
+        / "007-legal-question-canonicalization"
+        / "route-ambiguity-reference-cases.jsonl"
+    )
+    cases = [
+        json.loads(line)
+        for line in fixture_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert len(cases) == 12
+    assert len({item["benchmark_case_id"] for item in cases}) == 12
+    assert {
+        route_class: sum(item["route_class"] == route_class for item in cases)
+        for route_class in ("section_24", "asyl", "unresolved_requires_clarification")
+    } == {"section_24": 5, "asyl": 5, "unresolved_requires_clarification": 2}
+    assert all(item["target_evidence_type"] == "route_ambiguity_checked" for item in cases)
+    assert all(item["curation_reason"] for item in cases)
+    assert all(item["material_context"] for item in cases)
+    assert all(item["surface_group_id"] for item in cases)
+    assert sum(item["outcome"] == "mechanically_resolved" for item in cases) == 10
+    assert sum(item["outcome"] == "route_unresolved_requires_clarification" for item in cases) == 2
+    assert all(
+        bool(item["expected_legal_section_id"]) == (item["outcome"] == "mechanically_resolved")
+        for item in cases
+    )
+    same_surface_routes = {
+        item["route_class"]
+        for item in cases
+        if item["surface_group_id"] == "same-surface-bezhentsvo"
+    }
+    assert same_surface_routes == {"section_24", "asyl"}
+
+
 def _dataset_record(record_id: str, question: str) -> dict:
     return {
         "artifact_type": "tg_qa_canonical_question_dataset_record",

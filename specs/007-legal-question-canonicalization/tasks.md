@@ -233,7 +233,7 @@ support.
 - [X] T092 Add validated relevance-label import and reviewed positive-label retrieval metrics
 - [X] T093 Add CLI commands for review-batch, HTML export, label import, and reviewed relevance report
 - [X] T094 Add offline unit and CLI smoke tests without Neo4j, live embeddings, paid APIs, or network access
-- [ ] T095 Generate the private `last_2000_v1` real-record stress/backlog relevance-review sample and complete human review
+- [X] T095 Generate the private `last_2000_v1` real-record stress/backlog relevance-review sample and complete human review
 
 ## Phase 12: Clean Curated Retrieval Baseline
 
@@ -243,8 +243,8 @@ stress/backlog diagnostic or changing general retrieval methods.
 - [X] T096 Define a synthetic/curated clean-question contract with independently checked relevant legal sections
 - [X] T097 Create a small diverse initial set of coherent, moderate, single-issue questions without known factual or legal contradictions
 - [X] T098 Run the current retrieval methods on the clean set and record baseline metrics without tuning against individual cases
-- [ ] T099 Group later real-record failures by recurring mechanism before adding exact-reference features, legal-keyword expansion, reranking, typed traversal, or quality gates
-- [ ] T100 Require cumulative clean and stress benchmark evidence before retaining a general method change
+- [X] T099 Group later real-record failures by recurring mechanism before adding exact-reference features, legal-keyword expansion, reranking, typed traversal, or quality gates
+- [X] T100 Require cumulative clean and stress benchmark evidence before retaining a general method change
 - [X] T101 Add a validated `rerun_after_corpus_expansion` review-routing marker for questions that require a named missing law scope
 - [X] T116 Complete human review of the 24-question clean curated retrieval baseline, rerun the VwVfG-dependent hearing-assistant case on the expanded corpus, and record reviewed clean metrics
 - [X] T117 Add an offline deterministic report that groups completed human-reviewed retrieval labels by recurring diagnostic mechanism
@@ -255,8 +255,8 @@ stress/backlog diagnostic or changing general retrieval methods.
 `refugee`/`Asyl` terminology without implementing future chatbot clarification
 or forcing every ambiguous question into one legal route.
 
-- [ ] T102 Define a reviewed route-ambiguity benchmark contract covering explicit section-24 cases, explicit AsylG cases, and unresolved cases whose applicable route depends on missing material context
-- [ ] T103 Curate a small balanced benchmark with paired or near-identical Russian questions whose correct route changes with section-24 eligibility circumstances, prior residence, displacement context, nationality, status history, relevant date, prior procedure, or explicit user intent; include Ukrainian nationals who do not qualify for section 24 and non-Ukrainian third-country nationals whose initial protection does not establish later automatic continuation
+- [X] T102 Define a reviewed route-ambiguity benchmark contract covering explicit section-24 cases, explicit AsylG cases, and unresolved cases whose applicable route depends on missing material context
+- [X] T103 Curate a small balanced benchmark with paired or near-identical Russian questions whose correct route changes with section-24 eligibility circumstances, prior residence, displacement context, nationality, status history, relevant date, prior procedure, or explicit user intent; include Ukrainian nationals who do not qualify for section 24 and non-Ukrainian third-country nationals whose initial protection does not establish later automatic continuation
 - [ ] T104 Report the current unrestricted semantic baseline and early `law_code_candidates` hints on the route-ambiguity benchmark, including wrong-route-at-k and both-routes-recalled-at-k
 - [ ] T105 Evaluate multi-hypothesis candidate generation that unions unrestricted semantic candidates with bounded candidates from every plausible legal route, without changing trusted retrieval or answer policy
 - [ ] T106 Record whether ambiguous refugee/asylum keywords should produce both `AufenthG` and `AsylG` weak hints, retaining corpus prior and nationality only as reviewable ranking evidence rather than a hard route decision

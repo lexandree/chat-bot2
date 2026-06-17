@@ -338,6 +338,29 @@ multi-section or multi-law support, explicit-reference role mismatch, and
 required corpus expansion. These groups are diagnostic evidence for deciding
 which general retrieval change to test; they are not trusted legal conclusions.
 
+### Cumulative Retrieval Evidence Gate
+
+Any retained general retrieval-method change, including exact-reference
+expansion, legal-keyword expansion, reranking, typed traversal, route hints, or
+quality gates, must report both:
+
+- the clean curated 24-case reviewed baseline; and
+- the latest human-reviewed real-record stress/backlog report.
+
+Single-record improvements are allowed as diagnostic experiments only. A change
+is not retained as a general method unless the cumulative evidence shows that it
+does not trade clean-case behavior for stress-case behavior, or vice versa.
+
+The current four-law stress review is based on
+`tg_007_retrieval_relevance_review_labels4.jsonl`. It imported 30/30 labels
+with zero validation failures, containing 28 reviewed records and 2 skipped
+records. The reviewed positive-label report evaluated 18 records with
+Hit@10 `0.777778`, Recall@10 `0.759259`, and MRR `0.491425`. The mechanism
+report found 21 records with retrieval-failure signals, including 11 records
+with no relevant candidate shown and 10 records where relevant evidence was
+below top-1. Ten records also carry corpus-expansion markers for missing laws:
+`AsylbLG`, `AufenthV`, `BGB`, `FeV`, `SGB_5`, and `SGB_12`.
+
 For the current four-law stress review, open
 `data/evaluation/tg_qa_retrieval_benchmark/real_data_007_last_2000_v1_four_law_stress_review_30.html`.
 After exporting its labels, run:

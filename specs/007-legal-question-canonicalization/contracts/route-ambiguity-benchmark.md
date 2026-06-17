@@ -1,0 +1,76 @@
+# Route-Ambiguity Retrieval Benchmark
+
+## Purpose
+
+This benchmark measures whether retrieval can keep plausible legal routes
+visible when colloquial Russian wording such as "беженство", "убежище",
+"лагерь", or "беженец" may refer either to:
+
+- temporary protection under `AufenthG`, especially `§ 24`; or
+- the asylum procedure under `AsylG`.
+
+It is a diagnostic benchmark, not a trusted answer source. It must not force a
+hard legal route when material facts are missing.
+
+## Contract
+
+Each JSONL record contains:
+
+- `artifact_type`: `tg_qa_route_ambiguity_reference_case`
+- `benchmark_case_id`: stable route benchmark id
+- `canonical_question`: publication-safe Russian diagnostic question
+- `material_context`: the fact that makes the route resolvable or unresolved
+- `surface_group_id`: id for paired or near-identical surface wording
+- `route_class`: one of `section_24`, `asyl`, or
+  `unresolved_requires_clarification`
+- `plausible_route_law_codes`: route laws that should remain reviewable
+- `expected_route_law_codes`: reviewed route law codes for resolvable records,
+  or all plausible laws for unresolved records
+- `outcome`: `mechanically_resolved` only when one primary expected legal
+  section is defined; otherwise `route_unresolved_requires_clarification`
+- `expected_legal_section_id`: the primary expected section for current
+  semantic baseline compatibility, empty for unresolved records
+- `target_evidence_type`: `route_ambiguity_checked`
+- `curation_reason`: why the route is selected or unresolved
+
+## Review Rules
+
+1. Similar surface wording is intentional. A correct method must use material
+   context, not the word "беженство" alone.
+2. Ukrainian nationality alone is not a complete hard route decision. The
+   question may still require residence-history, displacement, date, prior
+   protection, or status-history facts.
+3. Third-country nationals with Ukrainian temporary residence must not be
+   treated as automatically continuing `§ 24` cases.
+4. Unresolved records should produce both plausible routes for review rather
+   than a single hidden decision.
+5. Retain a candidate-generation or route-hint policy only after reporting this
+   route benchmark together with the clean retrieval baseline.
+
+## Initial Fixture
+
+The tracked fixture is:
+
+```text
+specs/007-legal-question-canonicalization/route-ambiguity-reference-cases.jsonl
+```
+
+It starts with a small balanced set of section-24, asylum, and unresolved
+records. Later expansion should preserve paired surface groups and add new
+examples only when the route distinction is general, not a one-off correction.
+
+## Baseline Runner
+
+Use the dedicated runner so route records are not mixed with clean retrieval
+artifacts:
+
+```bash
+bash scripts/evaluation/run_007_route_ambiguity_retrieval.sh prepare
+bash scripts/evaluation/run_007_route_ambiguity_retrieval.sh embed-queries
+bash scripts/evaluation/run_007_route_ambiguity_retrieval.sh finish
+```
+
+`prepare` writes a four-law embedding batch and excludes unresolved records
+from ordinary Recall@k query evaluation. `embed-queries` requires the local
+embedding endpoint. `finish` reuses the existing four-law document vectors and
+stops if query vectorization has any failures.
