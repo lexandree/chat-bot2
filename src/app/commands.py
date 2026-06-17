@@ -44,6 +44,7 @@ from evaluation.tg_qa_retrieval_benchmark import (
     build_tg_qa_corpus_bounded_semantic_benchmark,
     build_tg_qa_retrieval_relevance_review_batch,
     build_tg_qa_retrieval_mechanism_report,
+    build_tg_qa_route_ambiguity_report,
     build_tg_qa_reviewed_relevance_report,
     emit_tg_qa_corpus_bounded_semantic_embedding_batch,
     export_tg_qa_retrieval_relevance_review_html,
@@ -758,6 +759,14 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_retrieval_mechanism_report_parser.add_argument("--sample-limit", type=int, default=5)
     tg_qa_retrieval_mechanism_report_parser.add_argument("--output", required=True)
     tg_qa_retrieval_mechanism_report_parser.add_argument("--summary-output", required=True)
+    tg_qa_route_ambiguity_report_parser = evaluation_subparsers.add_parser(
+        "tg-qa-route-ambiguity-report"
+    )
+    tg_qa_route_ambiguity_report_parser.add_argument("--reference-cases", required=True)
+    tg_qa_route_ambiguity_report_parser.add_argument("--semantic-cases", required=True)
+    tg_qa_route_ambiguity_report_parser.add_argument("--k", action="append", type=int, dest="top_ks")
+    tg_qa_route_ambiguity_report_parser.add_argument("--output", required=True)
+    tg_qa_route_ambiguity_report_parser.add_argument("--summary-output", required=True)
     evaluation_subparsers.add_parser("tg-qa-canonical-boundary-check")
 
     embeddings_parser = subparsers.add_parser("embeddings")
@@ -1850,6 +1859,17 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             semantic_cases_path=args.semantic_cases,
             review_labels_path=args.review_labels,
             sample_limit=args.sample_limit,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
+    if args.action == "tg-qa-route-ambiguity-report":
+        result = build_tg_qa_route_ambiguity_report(
+            reference_cases_path=args.reference_cases,
+            semantic_cases_path=args.semantic_cases,
+            top_ks=args.top_ks or (1, 5, 10),
             output_path=args.output,
             summary_output_path=args.summary_output,
         )

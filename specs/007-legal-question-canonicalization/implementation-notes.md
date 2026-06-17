@@ -224,6 +224,18 @@
 - After adding the route-ambiguity contract, fixture, and runner:
   `python -m pytest -q` passed with 198 tests and 11 skipped; both 006 and 007
   boundary checks and `git diff --check` passed.
+- Completed the current unrestricted four-law route-ambiguity baseline after
+  the local embedding endpoint was available. The generic semantic report over
+  10 resolvable route records produced Recall@1 `0.400000`, Recall@5
+  `0.500000`, Recall@10 `0.600000`, and MRR `0.466774`; 2 unresolved route
+  records were excluded from ordinary Recall@k by contract. The route-specific
+  report found expected-route hit `0.900000` at k=1 and `1.000000` at k=5/k=10,
+  one top-1 wrong-route case, wrong-route-only rate `0.000000` at all measured
+  k values, and both `AufenthG`/`AsylG` recalled for `0.750000` of dual-route
+  cases at k=5 and `1.000000` at k=10.
+- After adding and running the route-ambiguity report:
+  `python -m pytest -q` passed with 199 tests and 11 skipped; both 006 and 007
+  boundary checks and `git diff --check` passed.
 - `python -m pytest`:
   148 passed, 11 skipped.
 - `PYTHONPATH=src python -m app evaluation tg-qa-canonical-boundary-check`:

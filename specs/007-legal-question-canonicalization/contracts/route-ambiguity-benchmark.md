@@ -74,3 +74,29 @@ bash scripts/evaluation/run_007_route_ambiguity_retrieval.sh finish
 from ordinary Recall@k query evaluation. `embed-queries` requires the local
 embedding endpoint. `finish` reuses the existing four-law document vectors and
 stops if query vectorization has any failures.
+
+The route report writes:
+
+- `expected_route_hit_rate`: whether at least one candidate from the expected
+  route law appears at k;
+- `wrong_route_only_rate`: whether only a wrong plausible route appears at k;
+- `both_aufenthg_asylg_recalled_rate`: among records where both routes should
+  remain visible, whether both route laws appear at k;
+- `avg_plausible_route_law_code_recall`: average recall of reviewable route
+  law-code hints.
+
+Current unrestricted four-law baseline:
+
+- expected-route hit: `0.900000` at k=1, `1.000000` at k=5 and k=10;
+- top-1 wrong route count: `1/10`;
+- wrong-route-only rate: `0.000000` at k=1, k=5, and k=10;
+- both `AufenthG`/`AsylG` recalled: `0.000000` at k=1, `0.750000` at k=5,
+  `1.000000` at k=10;
+- ordinary expected-section Recall@1/5/10: `0.400000`, `0.500000`,
+  `0.600000`.
+
+The single top-1 route error is
+`tg-qa-route-ambiguity-case:ua-section24-fiktionsbescheinigung`, where the
+unrestricted semantic top law is `AsylG` while the expected route is
+`AufenthG`. This is diagnostic evidence for multi-hypothesis route candidate
+generation, not a hard rule change.

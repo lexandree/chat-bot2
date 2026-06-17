@@ -9,6 +9,7 @@ from evaluation.tg_qa_retrieval_benchmark import (
     build_tg_qa_corpus_bounded_semantic_benchmark,
     build_tg_qa_retrieval_relevance_review_batch,
     build_tg_qa_retrieval_mechanism_report,
+    build_tg_qa_route_ambiguity_report,
     build_tg_qa_reviewed_relevance_report,
     emit_tg_qa_corpus_bounded_semantic_embedding_batch,
     export_tg_qa_retrieval_relevance_review_html,
@@ -705,6 +706,85 @@ def test_route_ambiguity_fixture_preserves_paired_and_unresolved_routes() -> Non
         if item["surface_group_id"] == "same-surface-bezhentsvo"
     }
     assert same_surface_routes == {"section_24", "asyl"}
+
+
+def test_route_ambiguity_report_measures_route_visibility(tmp_path: Path) -> None:
+    reference_cases = tmp_path / "route_cases.jsonl"
+    semantic_cases = tmp_path / "semantic_cases.jsonl"
+    output = tmp_path / "route_report.jsonl"
+    summary = tmp_path / "route_summary.json"
+    _write_jsonl(
+        reference_cases,
+        [
+            {
+                "benchmark_case_id": "case:section24",
+                "route_class": "section_24",
+                "surface_group_id": "same",
+                "canonical_question": "Question 24?",
+                "outcome": "mechanically_resolved",
+                "expected_legal_section_id": "legal-section:AufenthG:24:current",
+                "expected_route_law_codes": ["AufenthG"],
+                "plausible_route_law_codes": ["AufenthG", "AsylG"],
+            },
+            {
+                "benchmark_case_id": "case:asyl",
+                "route_class": "asyl",
+                "surface_group_id": "same",
+                "canonical_question": "Question asylum?",
+                "outcome": "mechanically_resolved",
+                "expected_legal_section_id": "legal-section:AsylG:13:current",
+                "expected_route_law_codes": ["AsylG"],
+                "plausible_route_law_codes": ["AsylG"],
+            },
+            {
+                "benchmark_case_id": "case:unresolved",
+                "route_class": "unresolved_requires_clarification",
+                "surface_group_id": "same",
+                "canonical_question": "Question unresolved?",
+                "outcome": "route_unresolved_requires_clarification",
+                "expected_legal_section_id": "",
+                "expected_route_law_codes": ["AufenthG", "AsylG"],
+                "plausible_route_law_codes": ["AufenthG", "AsylG"],
+            },
+        ],
+    )
+    _write_jsonl(
+        semantic_cases,
+        [
+            {
+                "benchmark_case_id": "case:section24",
+                "top_candidates": [
+                    {"legal_section_id": "legal-section:AsylG:13:current", "law_code": "AsylG"},
+                    {"legal_section_id": "legal-section:AufenthG:24:current", "law_code": "AufenthG"},
+                ],
+            },
+            {
+                "benchmark_case_id": "case:asyl",
+                "top_candidates": [
+                    {"legal_section_id": "legal-section:AsylG:13:current", "law_code": "AsylG"},
+                ],
+            },
+        ],
+    )
+
+    result = build_tg_qa_route_ambiguity_report(
+        reference_cases_path=reference_cases,
+        semantic_cases_path=semantic_cases,
+        output_path=output,
+        summary_output_path=summary,
+        top_ks=(1, 2),
+    )
+
+    assert result["summary"]["evaluated_case_count"] == 2
+    assert result["summary"]["both_aufenthg_asylg_plausible_case_count"] == 1
+    assert result["summary"]["top1_wrong_route_count"] == 1
+    assert result["summary"]["excluded_counts"] == {
+        "route_unresolved_requires_clarification": 1
+    }
+    assert result["summary"]["metrics_by_k"]["at_1"]["expected_route_hit_rate"] == 0.5
+    assert result["summary"]["metrics_by_k"]["at_1"]["wrong_route_only_rate"] == 0.5
+    assert result["summary"]["metrics_by_k"]["at_2"]["expected_route_hit_rate"] == 1.0
+    assert result["summary"]["metrics_by_k"]["at_2"]["both_aufenthg_asylg_recalled_rate"] == 1.0
 
 
 def _dataset_record(record_id: str, question: str) -> dict:

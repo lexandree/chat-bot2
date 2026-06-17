@@ -23,6 +23,8 @@ QUERY_VECTOR_SUMMARY="${OUT_DIR}/${PREFIX}_query_vectorization_summary.json"
 COMBINED_VECTORS="${OUT_DIR}/${PREFIX}_external_vectors.jsonl"
 SEMANTIC_CASES="${OUT_DIR}/${PREFIX}_semantic_cases.jsonl"
 SEMANTIC_SUMMARY="${OUT_DIR}/${PREFIX}_semantic_summary.json"
+ROUTE_REPORT="${OUT_DIR}/${PREFIX}_route_report.jsonl"
+ROUTE_SUMMARY="${OUT_DIR}/${PREFIX}_route_summary.json"
 
 prepare() {
   mkdir -p "${OUT_DIR}"
@@ -86,7 +88,16 @@ finish() {
     --k 10 \
     --output "${SEMANTIC_CASES}" \
     --summary-output "${SEMANTIC_SUMMARY}"
+  python -m app evaluation tg-qa-route-ambiguity-report \
+    --reference-cases "${REFERENCE_CASES}" \
+    --semantic-cases "${SEMANTIC_CASES}" \
+    --k 1 \
+    --k 5 \
+    --k 10 \
+    --output "${ROUTE_REPORT}" \
+    --summary-output "${ROUTE_SUMMARY}"
   printf 'Route ambiguity semantic summary: %s\n' "${SEMANTIC_SUMMARY}"
+  printf 'Route ambiguity route summary: %s\n' "${ROUTE_SUMMARY}"
 }
 
 case "${ACTION}" in

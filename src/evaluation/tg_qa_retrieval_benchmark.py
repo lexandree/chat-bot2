@@ -22,6 +22,7 @@ CORPUS_BOUNDED_SEMANTIC_BATCH_POLICY_VERSION = "tg_qa_corpus_bounded_semantic_em
 CORPUS_BOUNDED_SEMANTIC_BENCHMARK_POLICY_VERSION = "tg_qa_corpus_bounded_semantic_retrieval_v1"
 RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION = "tg_qa_retrieval_relevance_review_v1"
 RETRIEVAL_MECHANISM_REPORT_POLICY_VERSION = "tg_qa_retrieval_mechanism_report_v1"
+ROUTE_AMBIGUITY_REPORT_POLICY_VERSION = "tg_qa_route_ambiguity_report_v1"
 REFERENCE_REVIEW_DECISIONS = {"accept", "exclude", "uncertain"}
 RELEVANCE_REVIEW_STATUSES = {"reviewed", "uncertain", "skip"}
 EXPLICIT_REFERENCE_ROLES = {"answer_support", "status_context", "incorrect", "uncertain"}
@@ -1171,6 +1172,197 @@ def build_tg_qa_retrieval_mechanism_report(
             "temporal applicability and nuanced legal-route ambiguity require separate reviewed evidence",
         ],
         "trust_boundary": "reviewed_diagnostic_grouping_does_not_create_trusted_answer_support",
+    }
+    _write_json(Path(summary_output_path), summary)
+    return {"cases": records, "summary": summary}
+
+
+def build_tg_qa_route_ambiguity_report(
+    *,
+    reference_cases_path: str | Path,
+    semantic_cases_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+    top_ks: Sequence[int] = (1, 5, 10),
+) -> dict[str, Any]:
+    """Report route-level retrieval behavior for section-24/asylum ambiguity."""
+
+    ks = sorted({int(value) for value in top_ks if int(value) > 0})
+    if not ks:
+        raise ValueError("at least one positive top-k value is required")
+    reference_cases = {
+        str(item.get("benchmark_case_id", "")): item
+        for item in _read_jsonl(reference_cases_path)
+        if item.get("benchmark_case_id")
+    }
+    semantic_cases = {
+        str(item.get("benchmark_case_id", "")): item
+        for item in _read_jsonl(semantic_cases_path)
+        if item.get("benchmark_case_id")
+    }
+    records: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for case_id, reference in sorted(reference_cases.items()):
+        route_class = str(reference.get("route_class", ""))
+        expected_route_law_codes = sorted(
+            set(str(item) for item in reference.get("expected_route_law_codes", []) if str(item))
+        )
+        plausible_route_law_codes = sorted(
+            set(str(item) for item in reference.get("plausible_route_law_codes", []) if str(item))
+        )
+        semantic_case = semantic_cases.get(case_id)
+        if not semantic_case:
+            outcome = str(reference.get("outcome", ""))
+            skipped_reason = "route_unresolved_requires_clarification" if outcome != "mechanically_resolved" else "missing_semantic_case"
+            counts[skipped_reason] += 1
+            records.append(
+                {
+                    "artifact_type": "tg_qa_route_ambiguity_report_case",
+                    "benchmark_case_id": case_id,
+                    "status": "skipped",
+                    "skipped_reason": skipped_reason,
+                    "route_class": route_class,
+                    "surface_group_id": str(reference.get("surface_group_id", "")),
+                    "expected_route_law_codes": expected_route_law_codes,
+                    "plausible_route_law_codes": plausible_route_law_codes,
+                    "policy_version": ROUTE_AMBIGUITY_REPORT_POLICY_VERSION,
+                    "trust_boundary": "route_ambiguity_report_not_legal_answer_support",
+                }
+            )
+            continue
+        top_candidates = [
+            item for item in semantic_case.get("top_candidates", []) if isinstance(item, Mapping)
+        ]
+        top1_law_code = str(top_candidates[0].get("law_code", "")) if top_candidates else ""
+        route_at_k: dict[str, dict[str, Any]] = {}
+        for k in ks:
+            top_law_codes = [
+                str(item.get("law_code", ""))
+                for item in top_candidates[:k]
+                if item.get("law_code")
+            ]
+            top_law_code_set = set(top_law_codes)
+            expected_set = set(expected_route_law_codes)
+            plausible_set = set(plausible_route_law_codes)
+            expected_route_hit = bool(top_law_code_set.intersection(expected_set))
+            wrong_plausible_routes = sorted(top_law_code_set.intersection(plausible_set.difference(expected_set)))
+            both_aufenthg_asylg_required = {"AufenthG", "AsylG"}.issubset(plausible_set)
+            route_at_k[str(k)] = {
+                "top_law_codes": sorted(top_law_code_set),
+                "expected_route_hit": expected_route_hit,
+                "wrong_route_only": bool(wrong_plausible_routes) and not expected_route_hit,
+                "wrong_plausible_route_law_codes": wrong_plausible_routes,
+                "both_aufenthg_asylg_required": both_aufenthg_asylg_required,
+                "both_aufenthg_asylg_recalled": (
+                    {"AufenthG", "AsylG"}.issubset(top_law_code_set)
+                    if both_aufenthg_asylg_required
+                    else False
+                ),
+                "plausible_route_law_code_recall": (
+                    round(len(top_law_code_set.intersection(plausible_set)) / len(plausible_set), 6)
+                    if plausible_set
+                    else 0.0
+                ),
+            }
+        record = {
+            "artifact_type": "tg_qa_route_ambiguity_report_case",
+            "benchmark_case_id": case_id,
+            "status": "evaluated",
+            "route_class": route_class,
+            "surface_group_id": str(reference.get("surface_group_id", "")),
+            "canonical_question": str(reference.get("canonical_question", "")),
+            "expected_legal_section_id": str(reference.get("expected_legal_section_id", "")),
+            "expected_route_law_codes": expected_route_law_codes,
+            "plausible_route_law_codes": plausible_route_law_codes,
+            "top1_law_code": top1_law_code,
+            "top1_wrong_route": bool(expected_route_law_codes) and top1_law_code not in expected_route_law_codes,
+            "route_at_k": route_at_k,
+            "policy_version": ROUTE_AMBIGUITY_REPORT_POLICY_VERSION,
+            "trust_boundary": "route_ambiguity_report_not_legal_answer_support",
+        }
+        counts[f"route_class:{route_class}"] += 1
+        if record["top1_wrong_route"]:
+            counts["top1_wrong_route"] += 1
+        records.append(record)
+
+    evaluated_records = [item for item in records if item.get("status") == "evaluated"]
+    both_route_records = [
+        item
+        for item in evaluated_records
+        if {"AufenthG", "AsylG"}.issubset(set(item.get("plausible_route_law_codes", [])))
+    ]
+    metrics_by_k: dict[str, dict[str, Any]] = {}
+    for k in ks:
+        key = str(k)
+        metrics_by_k[f"at_{k}"] = {
+            "expected_route_hit_rate": (
+                round(
+                    sum(bool(item["route_at_k"][key]["expected_route_hit"]) for item in evaluated_records)
+                    / len(evaluated_records),
+                    6,
+                )
+                if evaluated_records
+                else 0.0
+            ),
+            "wrong_route_only_rate": (
+                round(
+                    sum(bool(item["route_at_k"][key]["wrong_route_only"]) for item in evaluated_records)
+                    / len(evaluated_records),
+                    6,
+                )
+                if evaluated_records
+                else 0.0
+            ),
+            "both_aufenthg_asylg_recalled_rate": (
+                round(
+                    sum(
+                        bool(item["route_at_k"][key]["both_aufenthg_asylg_recalled"])
+                        for item in both_route_records
+                    )
+                    / len(both_route_records),
+                    6,
+                )
+                if both_route_records
+                else 0.0
+            ),
+            "avg_plausible_route_law_code_recall": (
+                round(
+                    sum(float(item["route_at_k"][key]["plausible_route_law_code_recall"]) for item in evaluated_records)
+                    / len(evaluated_records),
+                    6,
+                )
+                if evaluated_records
+                else 0.0
+            ),
+        }
+
+    _write_jsonl(Path(output_path), records)
+    summary = {
+        "artifact_type": "tg_qa_route_ambiguity_report_summary",
+        "generated_at": _utc_timestamp(),
+        "policy_version": ROUTE_AMBIGUITY_REPORT_POLICY_VERSION,
+        "reference_cases_path": str(reference_cases_path),
+        "semantic_cases_path": str(semantic_cases_path),
+        "output_path": str(output_path),
+        "reference_case_count": len(reference_cases),
+        "evaluated_case_count": len(evaluated_records),
+        "both_aufenthg_asylg_plausible_case_count": len(both_route_records),
+        "top1_wrong_route_count": counts.get("top1_wrong_route", 0),
+        "counts_by_route_class": _counts(str(item.get("route_class", "")) for item in evaluated_records),
+        "excluded_counts": dict(
+            sorted(
+                (key, value)
+                for key, value in counts.items()
+                if not key.startswith("route_class:") and key != "top1_wrong_route"
+            )
+        ),
+        "metrics_by_k": metrics_by_k,
+        "known_limitations": [
+            "route metrics evaluate law-code visibility, not answer correctness",
+            "unresolved route-clarification records are excluded from ordinary semantic query evaluation",
+            "plausible route hints are review evidence and must not force a hard legal route",
+        ],
+        "trust_boundary": "route_ambiguity_report_does_not_create_trusted_answer_support",
     }
     _write_json(Path(summary_output_path), summary)
     return {"cases": records, "summary": summary}

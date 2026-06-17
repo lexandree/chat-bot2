@@ -257,7 +257,7 @@ or forcing every ambiguous question into one legal route.
 
 - [X] T102 Define a reviewed route-ambiguity benchmark contract covering explicit section-24 cases, explicit AsylG cases, and unresolved cases whose applicable route depends on missing material context
 - [X] T103 Curate a small balanced benchmark with paired or near-identical Russian questions whose correct route changes with section-24 eligibility circumstances, prior residence, displacement context, nationality, status history, relevant date, prior procedure, or explicit user intent; include Ukrainian nationals who do not qualify for section 24 and non-Ukrainian third-country nationals whose initial protection does not establish later automatic continuation
-- [ ] T104 Report the current unrestricted semantic baseline and early `law_code_candidates` hints on the route-ambiguity benchmark, including wrong-route-at-k and both-routes-recalled-at-k
+- [X] T104 Report the current unrestricted semantic baseline and early `law_code_candidates` hints on the route-ambiguity benchmark, including wrong-route-at-k and both-routes-recalled-at-k
 - [ ] T105 Evaluate multi-hypothesis candidate generation that unions unrestricted semantic candidates with bounded candidates from every plausible legal route, without changing trusted retrieval or answer policy
 - [ ] T106 Record whether ambiguous refugee/asylum keywords should produce both `AufenthG` and `AsylG` weak hints, retaining corpus prior and nationality only as reviewable ranking evidence rather than a hard route decision
 - [ ] T107 Require cumulative clean-baseline and route-ambiguity evidence before retaining any general candidate-generation or hint-policy change
