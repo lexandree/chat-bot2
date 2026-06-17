@@ -71,6 +71,22 @@ NEW_LAW_CODE=VwVfG ALLOW_GRAPH_WRITES=1 \
   bash scripts/legal_graph/load_new_law.sh full
 ```
 
+For the reviewed 007 core-corpus expansion from four to six laws
+(`AsylbLG`, `AufenthV`), use the dedicated wrapper. Its preflight allows a
+recorded `needs_review` warning for `AsylbLG` without graph writes:
+
+```bash
+bash scripts/legal_graph/load_core_six_law_corpus.sh preflight
+```
+
+The complete six-law workflow requires both graph-write opt-in and explicit
+acknowledgement of the reviewed preflight warning:
+
+```bash
+ALLOW_GRAPH_WRITES=1 ALLOW_PREFLIGHT_NEEDS_REVIEW=1 \
+  bash scripts/legal_graph/load_core_six_law_corpus.sh full
+```
+
 See
 [`specs/004-corpus-boundary-status/new-law-operator-workflow.md`](specs/004-corpus-boundary-status/new-law-operator-workflow.md)
 for manifest, relationship-refresh, embedding, and artifact requirements.

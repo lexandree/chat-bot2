@@ -1,0 +1,47 @@
+{
+  "name": "core_six_german_legal_corpus",
+  "inputs": [
+    {
+      "path": "data/legal_xml/AufenthG.xml",
+      "law_code": "AufenthG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    },
+    {
+      "path": "data/legal_xml/AsylG.xml",
+      "law_code": "AsylG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    },
+    {
+      "path": "data/legal_xml/BeschV.xml",
+      "law_code": "BeschV",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    },
+    {
+      "path": "data/legal_xml/VwVfG.xml",
+      "law_code": "VwVfG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    },
+    {
+      "path": "data/legal_xml/AsylbLG.xml",
+      "law_code": "AsylbLG",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    },
+    {
+      "path": "data/legal_xml/AufenthV.xml",
+      "law_code": "AufenthV",
+      "jurisdiction": "DE",
+      "language": "de",
+      "required": true
+    }
+  ]
+}
