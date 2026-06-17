@@ -148,6 +148,12 @@ post_load() {
     "${ACTIVE_LAW_ARGS[@]}" \
     --classifier-policy "${CLASSIFIER_POLICY}"
 
+  write_new_law_embeddings
+  finalize_core_six_corpus
+}
+
+write_new_law_embeddings() {
+  require_graph_writes
   if [[ "${WRITE_EMBEDDINGS}" == "1" ]]; then
     run_step embeddings_write_new_laws \
       python -m app embeddings write \
@@ -156,7 +162,10 @@ post_load() {
   else
     printf '\nSTEP: embeddings_write_new_laws skipped because WRITE_EMBEDDINGS=%s\n' "${WRITE_EMBEDDINGS}"
   fi
+}
 
+finalize_core_six_corpus() {
+  require_graph_writes
   run_step graph_verify_core_six_corpus \
     python -m app graph verify "${ACTIVE_LAW_ARGS[@]}"
   run_step relationships_quality_core_six_corpus \
@@ -174,9 +183,15 @@ post_load() {
     --output "${OUT_DIR}/active_corpus_snapshot.json"
 }
 
+resume_after_load() {
+  write_new_law_embeddings
+  finalize_core_six_corpus
+}
+
 write_run_manifest() {
   local graph_load_requested="0"
   local relationships_refresh_requested="0"
+  local embeddings_requested="0"
   local retrieval_artifacts_require_rebuild="0"
   case "${ACTION}" in
     load)
@@ -186,11 +201,23 @@ write_run_manifest() {
     post-load)
       relationships_refresh_requested="1"
       retrieval_artifacts_require_rebuild="1"
+      if [[ "${WRITE_EMBEDDINGS}" == "1" ]]; then
+        embeddings_requested="1"
+      fi
       ;;
     full)
       graph_load_requested="1"
       relationships_refresh_requested="1"
       retrieval_artifacts_require_rebuild="1"
+      if [[ "${WRITE_EMBEDDINGS}" == "1" ]]; then
+        embeddings_requested="1"
+      fi
+      ;;
+    resume-after-load)
+      retrieval_artifacts_require_rebuild="1"
+      if [[ "${WRITE_EMBEDDINGS}" == "1" ]]; then
+        embeddings_requested="1"
+      fi
       ;;
   esac
 
@@ -205,6 +232,7 @@ write_run_manifest() {
     --arg embedding_batch_size "${EMBEDDING_BATCH_SIZE}" \
     --arg graph_load_requested "${graph_load_requested}" \
     --arg relationships_refresh_requested "${relationships_refresh_requested}" \
+    --arg embeddings_requested "${embeddings_requested}" \
     --arg retrieval_artifacts_require_rebuild "${retrieval_artifacts_require_rebuild}" \
     --argjson active_law_codes "$(printf '%s\n' "${ACTIVE_LAW_CODES[@]}" | jq -R . | jq -s .)" \
     --argjson new_law_codes "$(printf '%s\n' "${NEW_LAW_CODES[@]}" | jq -R . | jq -s .)" \
@@ -221,7 +249,7 @@ write_run_manifest() {
       classifier_policy_version: $classifier_policy,
       graph_load_requested: ($graph_load_requested == "1"),
       relationships_refresh_requested: ($relationships_refresh_requested == "1"),
-      embeddings_requested: (($relationships_refresh_requested == "1") and ($write_embeddings == "1")),
+      embeddings_requested: ($embeddings_requested == "1"),
       embedding_batch_size: ($embedding_batch_size | tonumber),
       retrieval_artifacts_require_rebuild: ($retrieval_artifacts_require_rebuild == "1"),
       notes: (
@@ -255,6 +283,10 @@ case "${ACTION}" in
     post_load
     write_run_manifest
     ;;
+  resume-after-load)
+    resume_after_load
+    write_run_manifest
+    ;;
   full)
     preflight
     load_graph
@@ -262,7 +294,7 @@ case "${ACTION}" in
     write_run_manifest
     ;;
   *)
-    printf 'Usage: %s {preflight|load|post-load|full}\n' "$0" >&2
+    printf 'Usage: %s {preflight|load|post-load|resume-after-load|full}\n' "$0" >&2
     printf 'Example: ALLOW_GRAPH_WRITES=1 %s full\n' "$0" >&2
     exit 2
     ;;

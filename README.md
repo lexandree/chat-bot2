@@ -87,6 +87,14 @@ ALLOW_GRAPH_WRITES=1 ALLOW_PREFLIGHT_NEEDS_REVIEW=1 \
   bash scripts/legal_graph/load_core_six_law_corpus.sh full
 ```
 
+If the graph load and relationship refresh completed but the embedding stage
+timed out, resume without repeating relationship writes:
+
+```bash
+RUN_ID=core_six_law_20260618 ALLOW_GRAPH_WRITES=1 EMBEDDING_BATCH_SIZE=4 \
+  bash scripts/legal_graph/load_core_six_law_corpus.sh resume-after-load
+```
+
 See
 [`specs/004-corpus-boundary-status/new-law-operator-workflow.md`](specs/004-corpus-boundary-status/new-law-operator-workflow.md)
 for manifest, relationship-refresh, embedding, and artifact requirements.
