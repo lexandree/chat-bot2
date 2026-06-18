@@ -129,3 +129,18 @@ the previous `ua-section24-fiktionsbescheinigung` `AsylG` top-1 error remains.
 The expected route is still present in top-5 for every evaluated record, so
 this is evidence against trusting unrestricted semantic top-1 as route policy,
 not evidence that the expanded corpus is unusable.
+
+Route-union candidate-generation diagnostic:
+
+- policy: `top1_plus_first_recorded_candidate_per_plausible_route_law_v1`;
+- four-law expected-route hit: `1.000000`, expected-section hit: `0.400000`,
+  average candidate count: `1.700000`;
+- six-law expected-route hit: `1.000000`, expected-section hit: `0.400000`,
+  average candidate count: `2.000000`.
+
+This supports weak multi-route candidate generation for ambiguous
+refugee/asylum wording: keep both `AufenthG` and `AsylG` visible when material
+facts can change the route, and treat nationality, corpus prior, status
+history, and date as reviewable ranking evidence rather than hard route
+decisions. The route union is not answer support and does not prove that the
+exact expected legal section has been retrieved.

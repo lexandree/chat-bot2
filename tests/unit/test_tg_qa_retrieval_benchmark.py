@@ -785,6 +785,25 @@ def test_route_ambiguity_report_measures_route_visibility(tmp_path: Path) -> Non
     assert result["summary"]["metrics_by_k"]["at_1"]["wrong_route_only_rate"] == 0.5
     assert result["summary"]["metrics_by_k"]["at_2"]["expected_route_hit_rate"] == 1.0
     assert result["summary"]["metrics_by_k"]["at_2"]["both_aufenthg_asylg_recalled_rate"] == 1.0
+    assert result["summary"]["route_union_candidate_generation"]["expected_route_hit_rate"] == 1.0
+    assert result["summary"]["route_union_candidate_generation"]["expected_legal_section_hit_rate"] == 1.0
+    assert result["summary"]["route_union_candidate_generation"]["avg_candidate_count"] == 1.5
+
+    section24 = next(item for item in result["cases"] if item["benchmark_case_id"] == "case:section24")
+    assert section24["route_union_candidate_generation"] == {
+        "policy_version": "top1_plus_first_recorded_candidate_per_plausible_route_law_v1",
+        "base_unrestricted_k": 1,
+        "per_plausible_route_law_k": 1,
+        "candidate_count": 2,
+        "candidate_legal_section_ids": [
+            "legal-section:AsylG:13:current",
+            "legal-section:AufenthG:24:current",
+        ],
+        "candidate_law_codes": ["AsylG", "AufenthG"],
+        "expected_route_hit": True,
+        "expected_legal_section_hit": True,
+        "missing_plausible_route_law_codes": [],
+    }
 
 
 def _dataset_record(record_id: str, question: str) -> dict:

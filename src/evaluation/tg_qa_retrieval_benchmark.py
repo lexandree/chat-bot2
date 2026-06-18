@@ -22,7 +22,8 @@ CORPUS_BOUNDED_SEMANTIC_BATCH_POLICY_VERSION = "tg_qa_corpus_bounded_semantic_em
 CORPUS_BOUNDED_SEMANTIC_BENCHMARK_POLICY_VERSION = "tg_qa_corpus_bounded_semantic_retrieval_v1"
 RETRIEVAL_RELEVANCE_REVIEW_POLICY_VERSION = "tg_qa_retrieval_relevance_review_v1"
 RETRIEVAL_MECHANISM_REPORT_POLICY_VERSION = "tg_qa_retrieval_mechanism_report_v1"
-ROUTE_AMBIGUITY_REPORT_POLICY_VERSION = "tg_qa_route_ambiguity_report_v1"
+ROUTE_AMBIGUITY_REPORT_POLICY_VERSION = "tg_qa_route_ambiguity_report_v2"
+ROUTE_UNION_CANDIDATE_POLICY_VERSION = "top1_plus_first_recorded_candidate_per_plausible_route_law_v1"
 REFERENCE_REVIEW_DECISIONS = {"accept", "exclude", "uncertain"}
 RELEVANCE_REVIEW_STATUSES = {"reviewed", "uncertain", "skip"}
 EXPLICIT_REFERENCE_ROLES = {"answer_support", "status_context", "incorrect", "uncertain"}
@@ -1234,6 +1235,7 @@ def build_tg_qa_route_ambiguity_report(
             item for item in semantic_case.get("top_candidates", []) if isinstance(item, Mapping)
         ]
         top1_law_code = str(top_candidates[0].get("law_code", "")) if top_candidates else ""
+        expected_legal_section_id = str(reference.get("expected_legal_section_id", ""))
         route_at_k: dict[str, dict[str, Any]] = {}
         for k in ks:
             top_law_codes = [
@@ -1264,6 +1266,37 @@ def build_tg_qa_route_ambiguity_report(
                     else 0.0
                 ),
             }
+        route_union_candidates = _route_union_candidates(
+            top_candidates,
+            plausible_route_law_codes=plausible_route_law_codes,
+            base_unrestricted_k=1,
+        )
+        route_union_law_codes = [
+            str(item.get("law_code", ""))
+            for item in route_union_candidates
+            if item.get("law_code")
+        ]
+        route_union_law_code_set = set(route_union_law_codes)
+        route_union_section_ids = [
+            str(item.get("legal_section_id", ""))
+            for item in route_union_candidates
+            if item.get("legal_section_id")
+        ]
+        route_union_candidate_generation = {
+            "policy_version": ROUTE_UNION_CANDIDATE_POLICY_VERSION,
+            "base_unrestricted_k": 1,
+            "per_plausible_route_law_k": 1,
+            "candidate_count": len(route_union_candidates),
+            "candidate_legal_section_ids": route_union_section_ids,
+            "candidate_law_codes": sorted(route_union_law_code_set),
+            "expected_route_hit": bool(route_union_law_code_set.intersection(expected_route_law_codes)),
+            "expected_legal_section_hit": bool(
+                expected_legal_section_id and expected_legal_section_id in route_union_section_ids
+            ),
+            "missing_plausible_route_law_codes": sorted(
+                set(plausible_route_law_codes).difference(route_union_law_code_set)
+            ),
+        }
         record = {
             "artifact_type": "tg_qa_route_ambiguity_report_case",
             "benchmark_case_id": case_id,
@@ -1271,12 +1304,13 @@ def build_tg_qa_route_ambiguity_report(
             "route_class": route_class,
             "surface_group_id": str(reference.get("surface_group_id", "")),
             "canonical_question": str(reference.get("canonical_question", "")),
-            "expected_legal_section_id": str(reference.get("expected_legal_section_id", "")),
+            "expected_legal_section_id": expected_legal_section_id,
             "expected_route_law_codes": expected_route_law_codes,
             "plausible_route_law_codes": plausible_route_law_codes,
             "top1_law_code": top1_law_code,
             "top1_wrong_route": bool(expected_route_law_codes) and top1_law_code not in expected_route_law_codes,
             "route_at_k": route_at_k,
+            "route_union_candidate_generation": route_union_candidate_generation,
             "policy_version": ROUTE_AMBIGUITY_REPORT_POLICY_VERSION,
             "trust_boundary": "route_ambiguity_report_not_legal_answer_support",
         }
@@ -1336,6 +1370,11 @@ def build_tg_qa_route_ambiguity_report(
             ),
         }
 
+    route_union_records = [
+        item["route_union_candidate_generation"]
+        for item in evaluated_records
+        if isinstance(item.get("route_union_candidate_generation"), Mapping)
+    ]
     _write_jsonl(Path(output_path), records)
     summary = {
         "artifact_type": "tg_qa_route_ambiguity_report_summary",
@@ -1357,15 +1396,84 @@ def build_tg_qa_route_ambiguity_report(
             )
         ),
         "metrics_by_k": metrics_by_k,
+        "route_union_candidate_generation": {
+            "policy_version": ROUTE_UNION_CANDIDATE_POLICY_VERSION,
+            "base_unrestricted_k": 1,
+            "per_plausible_route_law_k": 1,
+            "expected_route_hit_rate": (
+                round(
+                    sum(bool(item["expected_route_hit"]) for item in route_union_records)
+                    / len(route_union_records),
+                    6,
+                )
+                if route_union_records
+                else 0.0
+            ),
+            "expected_legal_section_hit_rate": (
+                round(
+                    sum(bool(item["expected_legal_section_hit"]) for item in route_union_records)
+                    / len(route_union_records),
+                    6,
+                )
+                if route_union_records
+                else 0.0
+            ),
+            "avg_candidate_count": (
+                round(
+                    sum(int(item["candidate_count"]) for item in route_union_records)
+                    / len(route_union_records),
+                    6,
+                )
+                if route_union_records
+                else 0.0
+            ),
+            "cases_with_missing_plausible_route_law_count": sum(
+                bool(item["missing_plausible_route_law_codes"]) for item in route_union_records
+            ),
+            "diagnostic_scope": (
+                "recorded_top_candidates_only_not_a_production_reranker_or_trusted_route_decision"
+            ),
+        },
         "known_limitations": [
             "route metrics evaluate law-code visibility, not answer correctness",
             "unresolved route-clarification records are excluded from ordinary semantic query evaluation",
             "plausible route hints are review evidence and must not force a hard legal route",
+            "route-union candidate generation is diagnostic and uses recorded top candidates only",
         ],
         "trust_boundary": "route_ambiguity_report_does_not_create_trusted_answer_support",
     }
     _write_json(Path(summary_output_path), summary)
     return {"cases": records, "summary": summary}
+
+
+def _route_union_candidates(
+    top_candidates: Sequence[Mapping[str, Any]],
+    *,
+    plausible_route_law_codes: Sequence[str],
+    base_unrestricted_k: int,
+) -> list[Mapping[str, Any]]:
+    """Return a diagnostic route-union candidate set from recorded candidates."""
+
+    selected: list[Mapping[str, Any]] = []
+    seen_section_ids: set[str] = set()
+
+    def append(candidate: Mapping[str, Any]) -> None:
+        section_id = str(candidate.get("legal_section_id", ""))
+        if not section_id or section_id in seen_section_ids:
+            return
+        seen_section_ids.add(section_id)
+        selected.append(candidate)
+
+    for candidate in top_candidates[: max(base_unrestricted_k, 0)]:
+        append(candidate)
+
+    for law_code in plausible_route_law_codes:
+        for candidate in top_candidates:
+            if str(candidate.get("law_code", "")) == law_code:
+                append(candidate)
+                break
+
+    return selected
 
 
 def _reference_review_decisions(path: str | Path | None) -> dict[str, dict[str, str]]:

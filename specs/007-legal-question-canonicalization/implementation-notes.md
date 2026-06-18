@@ -304,3 +304,9 @@ APIs, network services, or remote notebooks.
   This confirms that unrestricted semantic top-1 must remain diagnostic only,
   and candidate-generation or route-hint changes require cumulative clean and
   route evidence before retention.
+- Added route report v2 with a diagnostic route-union candidate policy:
+  `top1_plus_first_recorded_candidate_per_plausible_route_law_v1`. On both the
+  four-law and six-law route baselines, expected-route hit becomes `1.000000`,
+  while expected-section hit remains `0.400000`. The retained interpretation is
+  weak multi-route candidate visibility for ambiguous refugee/asylum wording,
+  not a trusted route decision or answer-support policy.
