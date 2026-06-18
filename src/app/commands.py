@@ -62,6 +62,7 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_legal_intent_slot_comparator_decisions,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
+    build_tg_qa_temporal_currentness_review_queue,
     cluster_tg_qa_legal_issues,
     emit_tg_qa_canonical_embedding_batch,
     emit_tg_qa_canonicalization_batch,
@@ -567,6 +568,14 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_cluster_review_import_parser.add_argument("--decisions", required=True)
     tg_qa_cluster_review_import_parser.add_argument("--output", required=True)
     tg_qa_cluster_review_import_parser.add_argument("--summary-output", required=True)
+    tg_qa_temporal_review_queue_parser = evaluation_subparsers.add_parser(
+        "tg-qa-temporal-currentness-review-queue"
+    )
+    tg_qa_temporal_review_queue_parser.add_argument("--issue-clusters", required=True)
+    tg_qa_temporal_review_queue_parser.add_argument("--output", required=True)
+    tg_qa_temporal_review_queue_parser.add_argument("--summary-output", required=True)
+    tg_qa_temporal_review_queue_parser.add_argument("--evaluation-date", default="")
+    tg_qa_temporal_review_queue_parser.add_argument("--legal-corpus-as-of-date", default="")
     tg_qa_question_bank_parser = evaluation_subparsers.add_parser("tg-qa-question-bank-build")
     tg_qa_question_bank_parser.add_argument("--issue-clusters", required=True)
     tg_qa_question_bank_parser.add_argument("--review-decisions", required=True)
@@ -579,6 +588,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_issue_final_candidates_parser.add_argument("--output", required=True)
     tg_qa_issue_final_candidates_parser.add_argument("--summary-output", required=True)
     tg_qa_issue_final_candidates_parser.add_argument("--manifest-output", default="")
+    tg_qa_issue_final_candidates_parser.add_argument("--temporal-blocked-output", default="")
     tg_qa_reviewed_dataset_parser = evaluation_subparsers.add_parser("tg-qa-reviewed-evaluation-dataset-build")
     tg_qa_reviewed_dataset_parser.add_argument("--final-case-candidates", required=True)
     tg_qa_reviewed_dataset_parser.add_argument("--output", required=True)
@@ -1604,6 +1614,17 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
         payload = dict(result["summary"])
         payload["status"] = "completed"
         return 0, payload
+    if args.action == "tg-qa-temporal-currentness-review-queue":
+        result = build_tg_qa_temporal_currentness_review_queue(
+            issue_clusters_path=args.issue_clusters,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            evaluation_date=args.evaluation_date,
+            legal_corpus_as_of_date=args.legal_corpus_as_of_date,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
     if args.action == "tg-qa-issue-final-candidates":
         result = build_tg_qa_issue_final_case_candidates(
             question_bank_path=args.question_bank,
@@ -1611,6 +1632,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             output_path=args.output,
             summary_output_path=args.summary_output,
             manifest_output_path=args.manifest_output or None,
+            temporal_blocked_output_path=args.temporal_blocked_output or None,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed"

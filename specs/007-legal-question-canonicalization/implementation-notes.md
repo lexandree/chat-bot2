@@ -310,3 +310,15 @@ APIs, network services, or remote notebooks.
   while expected-section hit remains `0.400000`. The retained interpretation is
   weak multi-route candidate visibility for ambiguous refugee/asylum wording,
   not a trusted route decision or answer-support policy.
+- Added the Phase 14 temporal-currentness promotion gate. Canonicalizer,
+  verifier, adjudicator, legal-intent, retrieval-review, question-bank, and
+  promotion payloads preserve source question dates where available. A new
+  temporal-currentness review queue records source question date, evaluation
+  date, legal corpus as-of date, and review date separately. Current-default
+  promotion is allowed only for reviewed `current_reusable` and
+  `historical_but_generalizable` states; `transition_bound`,
+  `superseded_or_expired`, and `unresolved_currentness` records are retained in
+  temporal/historical artifacts instead of being deleted.
+- Verification after Phase 14: `python -m pytest -q` passed with 202 tests and
+  11 skipped; both `tg-qa-boundary-check` and
+  `tg-qa-canonical-boundary-check` passed; `git diff --check` passed.

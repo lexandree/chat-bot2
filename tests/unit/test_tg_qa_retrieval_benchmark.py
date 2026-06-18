@@ -245,6 +245,7 @@ def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path
             {
                 "dataset_record_id": "record:case:a1",
                 "source_question_text_redacted": "Question about section 1 without a law name.",
+                "question_date": "2024-02-03T00:00:00Z",
             },
             {
                 "dataset_record_id": "record:case:a2",
@@ -266,6 +267,7 @@ def test_retrieval_relevance_review_batch_import_and_report_are_bounded(tmp_path
         output_path=review_batch,
         summary_output_path=review_batch_summary,
     )
+    assert any(card["question_date"] == "2024-02-03T00:00:00Z" for card in batch_result["cards"])
     html_result = export_tg_qa_retrieval_relevance_review_html(
         review_batch_path=review_batch,
         output_path=review_html,

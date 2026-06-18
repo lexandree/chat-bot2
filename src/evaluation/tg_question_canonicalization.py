@@ -36,11 +36,12 @@ CANONICALIZATION_CONTRACT_VERSION = "tg_question_canonicalization_v1"
 CANONICAL_EMBEDDING_POLICY_VERSION = "tg_canonical_query_embedding_v1"
 ISSUE_CLUSTER_POLICY_VERSION = "tg_legal_issue_cluster_policy_v1"
 COVERAGE_ANALYSIS_VERSION = "tg_legal_issue_coverage_v1"
-CLUSTER_REVIEW_POLICY_VERSION = "tg_legal_issue_cluster_review_v1"
-QUESTION_BANK_POLICY_VERSION = "tg_legal_question_bank_v1"
-PROMOTION_POLICY_VERSION = "tg_legal_issue_final_case_promotion_v1"
+CLUSTER_REVIEW_POLICY_VERSION = "tg_legal_issue_cluster_review_v2"
+QUESTION_BANK_POLICY_VERSION = "tg_legal_question_bank_v2"
+PROMOTION_POLICY_VERSION = "tg_legal_issue_final_case_promotion_v2"
 REFERENCE_ANSWER_POLICY_VERSION = "reviewed_reference_answer_required_v1"
-REVIEWED_DATASET_POLICY_VERSION = "tg_reviewed_canonical_evaluation_dataset_v1"
+REVIEWED_DATASET_POLICY_VERSION = "tg_reviewed_canonical_evaluation_dataset_v2"
+TEMPORAL_CURRENTNESS_POLICY_VERSION = "tg_temporal_currentness_review_v1"
 LEGAL_INTENT_CANDIDATE_POLICY_VERSION = "tg_legal_intent_candidate_policy_v1"
 LEGAL_INTENT_PAIR_POLICY_VERSION = "tg_legal_intent_pair_policy_v1"
 LEGAL_INTENT_BENCHMARK_POLICY_VERSION = "tg_legal_intent_pair_benchmark_v1"
@@ -81,7 +82,21 @@ REFERENCE_ANSWER_ACTIONS = (
     "replace_manual",
     "needs_manual_answer",
 )
-PROMOTION_STATUSES = ("eligible", "blocked_missing_reference_answer", "rejected")
+TEMPORAL_RELEVANCE_STATES = (
+    "current_reusable",
+    "historical_but_generalizable",
+    "transition_bound",
+    "superseded_or_expired",
+    "unresolved_currentness",
+)
+CURRENT_DEFAULT_TEMPORAL_STATES = ("current_reusable", "historical_but_generalizable")
+TEMPORAL_BLOCKING_STATES = ("transition_bound", "superseded_or_expired", "unresolved_currentness")
+PROMOTION_STATUSES = (
+    "eligible",
+    "blocked_missing_reference_answer",
+    "blocked_temporal_currentness",
+    "rejected",
+)
 LEGAL_INTENT_REVIEW_STATUSES = (
     "candidate",
     "review_approved",
@@ -2064,6 +2079,7 @@ def compact_canonicalization_llm_payload(batch_item: Mapping[str, Any]) -> dict[
             "question_text_redacted": str(source_input.get("question_text_redacted", "")),
             "topic_labels": _as_string_list(source_input.get("topic_labels", [])),
             "law_code_candidates": _as_string_list(source_input.get("law_code_candidates", [])),
+            "question_date": str(source_input.get("question_date", "")),
             "answer_candidate_status": str(source_input.get("answer_candidate_status", "")),
             "quality_flags": _as_string_list(source_input.get("quality_flags", [])),
         },
@@ -2668,6 +2684,50 @@ def build_tg_qa_canonical_coverage_report(
     return {"records": records, "summary": summary}
 
 
+def build_tg_qa_temporal_currentness_review_queue(
+    *,
+    issue_clusters_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+    evaluation_date: str = "",
+    legal_corpus_as_of_date: str = "",
+) -> dict[str, Any]:
+    """Build a review queue for current-default temporal suitability."""
+
+    clusters = _read_jsonl(issue_clusters_path)
+    records = [
+        _temporal_currentness_review_record(
+            cluster,
+            evaluation_date=evaluation_date,
+            legal_corpus_as_of_date=legal_corpus_as_of_date,
+        )
+        for cluster in clusters
+    ]
+    _ensure_public_payload(records)
+    _write_jsonl(output_path, records)
+    summary = {
+        "artifact_type": "tg_qa_temporal_currentness_review_queue_summary",
+        "generated_at": _utc_timestamp(),
+        "source_issue_cluster_artifact_path": str(issue_clusters_path),
+        "output_path": str(output_path),
+        "processed_cluster_count": len(clusters),
+        "queue_record_count": len(records),
+        "counts_by_suggested_temporal_relevance_state": _counts(
+            str(item.get("suggested_temporal_relevance_state", "")) for item in records
+        ),
+        "counts_by_current_default_eligible": _counts(
+            str(item.get("current_default_eligible", False)).lower() for item in records
+        ),
+        "evaluation_date": evaluation_date,
+        "legal_corpus_as_of_date": legal_corpus_as_of_date,
+        "temporal_currentness_policy_version": TEMPORAL_CURRENTNESS_POLICY_VERSION,
+        "runtime_contour": "deterministic_file_artifact",
+        "trust_boundary": "temporal_currentness_queue_requires_human_review_before_current_default_promotion",
+    }
+    _write_json(summary_output_path, summary)
+    return {"records": records, "summary": summary}
+
+
 def import_tg_qa_cluster_review_decisions(
     *,
     issue_clusters_path: str | Path,
@@ -2774,8 +2834,14 @@ def build_tg_qa_question_bank(
         ),
         "counts_by_coverage_status": _counts(str(item.get("coverage_status", "")) for item in entries),
         "counts_by_reference_answer_status": _counts(str(item.get("reference_answer_status", "")) for item in entries),
+        "counts_by_temporal_relevance_state": _counts(str(item.get("temporal_relevance_state", "")) for item in entries),
+        "current_default_eligible_count": sum(1 for item in entries if item.get("current_default_eligible") is True),
+        "current_default_blocked_temporal_count": sum(
+            1 for item in entries if item.get("current_default_eligible") is not True
+        ),
         "review_policy_version": CLUSTER_REVIEW_POLICY_VERSION,
         "question_bank_policy_version": QUESTION_BANK_POLICY_VERSION,
+        "temporal_currentness_policy_version": TEMPORAL_CURRENTNESS_POLICY_VERSION,
         "runtime_contour": "deterministic_file_artifact",
     }
     manifest = {
@@ -2792,11 +2858,13 @@ def build_tg_qa_question_bank(
         },
         "review_policy_version": CLUSTER_REVIEW_POLICY_VERSION,
         "question_bank_policy_version": QUESTION_BANK_POLICY_VERSION,
+        "temporal_currentness_policy_version": TEMPORAL_CURRENTNESS_POLICY_VERSION,
         "known_limitations": ["question-bank approval does not imply a final reference answer exists"],
         "unresolved_backlog_counts": {
             "missing_reference_answer_count": summary["missing_reference_answer_count"],
             "needs_more_context_count": summary["needs_more_context_count"],
             "uncertain_count": summary["uncertain_count"],
+            "current_default_blocked_temporal_count": summary["current_default_blocked_temporal_count"],
         },
     }
     _write_json(summary_output_path, summary)
@@ -2812,6 +2880,7 @@ def build_tg_qa_issue_final_case_candidates(
     output_path: str | Path,
     summary_output_path: str | Path,
     manifest_output_path: str | Path | None = None,
+    temporal_blocked_output_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Gate final evaluation candidates on reviewed reference answer material."""
 
@@ -2822,8 +2891,14 @@ def build_tg_qa_issue_final_case_candidates(
         if str(item.get("status", "")) != "failed"
     }
     candidates = [_final_case_candidate(entry, decisions.get(str(entry.get("legal_issue_cluster_id", "")))) for entry in entries]
+    temporal_blocked_candidates = [
+        item for item in candidates if str(item.get("promotion_status", "")) == "blocked_temporal_currentness"
+    ]
     _ensure_public_payload(candidates)
+    _ensure_public_payload(temporal_blocked_candidates)
     _write_jsonl(output_path, candidates)
+    if temporal_blocked_output_path:
+        _write_jsonl(temporal_blocked_output_path, temporal_blocked_candidates)
     summary = {
         "artifact_type": "tg_qa_issue_final_case_candidate_summary",
         "generated_at": _utc_timestamp(),
@@ -2840,6 +2915,7 @@ def build_tg_qa_issue_final_case_candidates(
         "blocked_missing_reference_answer_count": sum(
             1 for item in candidates if item.get("promotion_status") == "blocked_missing_reference_answer"
         ),
+        "blocked_temporal_currentness_count": len(temporal_blocked_candidates),
         "rejected_count": sum(1 for item in candidates if item.get("promotion_status") == "rejected"),
         "llm_only_rejection_count": sum(1 for item in candidates if "llm_only" in item.get("promotion_reasons", [])),
         "manual_reference_answer_count": sum(
@@ -2852,8 +2928,10 @@ def build_tg_qa_issue_final_case_candidates(
         "counts_by_authority_context": _counts(
             value for item in candidates for value in _as_string_list(item.get("authority_context", []))
         ),
+        "counts_by_temporal_relevance_state": _counts(str(item.get("temporal_relevance_state", "")) for item in candidates),
         "promotion_policy_version": PROMOTION_POLICY_VERSION,
         "reference_answer_policy_version": REFERENCE_ANSWER_POLICY_VERSION,
+        "temporal_currentness_policy_version": TEMPORAL_CURRENTNESS_POLICY_VERSION,
         "runtime_contour": "deterministic_file_artifact",
     }
     manifest = {
@@ -2865,21 +2943,32 @@ def build_tg_qa_issue_final_case_candidates(
         },
         "output_artifact_paths": {
             "case_candidates": str(output_path),
+            "temporal_blocked_candidates": str(temporal_blocked_output_path or ""),
             "summary": str(summary_output_path),
             "manifest": str(manifest_output_path or ""),
         },
         "promotion_policy_version": PROMOTION_POLICY_VERSION,
         "reference_answer_policy_version": REFERENCE_ANSWER_POLICY_VERSION,
-        "known_limitations": ["only eligible candidates may enter reviewed final dataset artifacts"],
+        "temporal_currentness_policy_version": TEMPORAL_CURRENTNESS_POLICY_VERSION,
+        "known_limitations": [
+            "only eligible candidates may enter reviewed final dataset artifacts",
+            "temporal blocked records are retained for historical evaluation when an output path is provided",
+        ],
         "unresolved_backlog_counts": {
             "blocked_missing_reference_answer_count": summary["blocked_missing_reference_answer_count"],
+            "blocked_temporal_currentness_count": summary["blocked_temporal_currentness_count"],
             "rejected_count": summary["rejected_count"],
         },
     }
     _write_json(summary_output_path, summary)
     if manifest_output_path:
         _write_json(manifest_output_path, manifest)
-    return {"candidates": candidates, "summary": summary, "manifest": manifest}
+    return {
+        "candidates": candidates,
+        "temporal_blocked_candidates": temporal_blocked_candidates,
+        "summary": summary,
+        "manifest": manifest,
+    }
 
 
 def build_tg_qa_reviewed_evaluation_dataset(
@@ -2933,6 +3022,9 @@ def build_tg_qa_reviewed_evaluation_dataset(
             1 for item in candidates if item.get("promotion_status") == "blocked_missing_reference_answer"
         ),
         "llm_only_exclusion_count": sum(1 for item in candidates if "llm_only" in item.get("promotion_reasons", [])),
+        "temporal_currentness_exclusion_count": sum(
+            1 for item in candidates if item.get("promotion_status") == "blocked_temporal_currentness"
+        ),
         "duplicate_cluster_or_case_id_rejection_count": duplicate_rejection_count,
     }
     _write_json(manifest_output_path, manifest)
@@ -4080,6 +4172,7 @@ def _legal_intent_pair_side(evidence: Mapping[str, Any]) -> dict[str, Any]:
         "law_area": str(evidence.get("law_area", "")),
         "authority_context": _as_string_list(evidence.get("authority_context", [])),
         "quality_flags": _as_string_list(evidence.get("quality_flags", [])),
+        "question_date": str(evidence.get("question_date", "")),
         "confidence": str(evidence.get("confidence", "")),
     }
 
@@ -5524,6 +5617,7 @@ def _validate_canonicalization_result(
         "exclusion_reason": result.exclusion_reason,
         "confidence": result.confidence,
         "quality_flags": result.quality_flags,
+        "question_date": str(source_task.get("input", {}).get("question_date", "")),
         "source_question_text_redacted": str(source_task.get("input", {}).get("question_text_redacted", "")),
         "provenance": _canonicalization_provenance(source_task, raw_payload),
     }
@@ -5591,6 +5685,7 @@ def _failed_canonicalization_evidence(
         "exclusion_reason": "llm_failed" if status == "failed" else "malformed_input",
         "confidence": "low",
         "quality_flags": ["canonicalization_backlog"],
+        "question_date": str(source.get("input", {}).get("question_date", "")),
         "source_question_text_redacted": str(source.get("input", {}).get("question_text_redacted", "")),
         "provenance": _canonicalization_provenance(source, {}),
     }
@@ -5713,6 +5808,9 @@ def _legal_issue_cluster(
         "authority_context": authority_context,
         "candidate_ids": [str(item.get("candidate_id", "")) for item in sorted_records],
         "canonicalization_evidence_ids": [str(item.get("canonicalization_evidence_id", "")) for item in sorted_records],
+        "source_question_dates": sorted(
+            {str(item.get("question_date", "")) for item in sorted_records if str(item.get("question_date", ""))}
+        ),
         "representative_raw_questions": _representative_raw_questions(sorted_records),
         "cluster_size": len(sorted_records),
         "cluster_confidence": cluster_confidence,
@@ -5816,6 +5914,49 @@ def _coverage_record(
     }
 
 
+def _temporal_currentness_review_record(
+    cluster: Mapping[str, Any],
+    *,
+    evaluation_date: str,
+    legal_corpus_as_of_date: str,
+) -> dict[str, Any]:
+    cluster_id = str(cluster.get("legal_issue_cluster_id", ""))
+    source_dates = _source_question_dates(cluster)
+    suggested_state = _temporal_relevance_state(cluster)
+    return {
+        "temporal_currentness_review_id": _stable_id(
+            "tg-temporal-currentness-review", cluster_id, source_dates, evaluation_date, legal_corpus_as_of_date
+        ),
+        "legal_issue_cluster_id": cluster_id,
+        "legal_issue_frame_slug": str(cluster.get("legal_issue_frame_slug", "")),
+        "canonical_question_representative": _redact_private_text(
+            str(cluster.get("canonical_question_representative", ""))
+        ),
+        "law_area": str(cluster.get("law_area", "")),
+        "authority_context": _as_string_list(cluster.get("authority_context", [])),
+        "source_question_dates": source_dates,
+        "evaluation_date": evaluation_date,
+        "legal_corpus_as_of_date": legal_corpus_as_of_date,
+        "suggested_temporal_relevance_state": suggested_state,
+        "allowed_temporal_relevance_states": list(TEMPORAL_RELEVANCE_STATES),
+        "current_default_eligible": suggested_state in CURRENT_DEFAULT_TEMPORAL_STATES,
+        "review_instruction": (
+            "Set temporal_relevance_state before current-default question-bank or final evaluation promotion."
+        ),
+        "review_decision_template": {
+            "legal_issue_cluster_id": cluster_id,
+            "temporal_relevance_state": suggested_state,
+            "source_question_date": source_dates[0] if source_dates else "",
+            "evaluation_date": evaluation_date,
+            "legal_corpus_as_of_date": legal_corpus_as_of_date,
+            "temporal_review_date": "",
+            "temporal_review_reason": "",
+        },
+        "policy_version": TEMPORAL_CURRENTNESS_POLICY_VERSION,
+        "trust_boundary": "temporal_currentness_record_requires_human_review_before_current_default_promotion",
+    }
+
+
 def _review_decision_record(raw: Mapping[str, Any], *, clusters: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     cluster_id = str(raw.get("legal_issue_cluster_id", raw.get("cluster_id", "")))
     decision = str(raw.get("decision", ""))
@@ -5850,6 +5991,11 @@ def _review_decision_record(raw: Mapping[str, Any], *, clusters: Mapping[str, Ma
         "reviewer_hash": str(raw.get("reviewer_hash", "")),
         "reviewed_at": str(raw.get("reviewed_at", "")) or _utc_timestamp(),
         "decision_reason": str(raw.get("decision_reason", "")),
+        "temporal_relevance_state": _temporal_relevance_state(raw, clusters.get(cluster_id, {})),
+        "source_question_date": str(raw.get("source_question_date", "")),
+        "legal_corpus_as_of_date": str(raw.get("legal_corpus_as_of_date", "")),
+        "temporal_review_date": str(raw.get("temporal_review_date", "")) or _utc_timestamp(),
+        "temporal_review_reason": str(raw.get("temporal_review_reason", "")),
         "status": "failed" if failure_reason else "completed",
         "failure_reason": failure_reason,
         "review_policy_version": CLUSTER_REVIEW_POLICY_VERSION,
@@ -5859,6 +6005,7 @@ def _review_decision_record(raw: Mapping[str, Any], *, clusters: Mapping[str, Ma
 
 def _question_bank_entry(cluster: Mapping[str, Any], decision: Mapping[str, Any]) -> dict[str, Any]:
     cluster_id = str(cluster.get("legal_issue_cluster_id", ""))
+    temporal_state = _temporal_relevance_state(decision, cluster)
     reference_status = (
         "reviewed_reference_available"
         if _decision_reference_answer_text(decision) and _reference_answer_source(str(decision.get("reference_answer_action", "")), decision)
@@ -5876,6 +6023,10 @@ def _question_bank_entry(cluster: Mapping[str, Any], decision: Mapping[str, Any]
         "law_area": str(cluster.get("law_area", "")),
         "authority_context": _as_string_list(cluster.get("authority_context", [])),
         "representative_raw_questions": _as_string_list(cluster.get("representative_raw_questions", [])),
+        "source_question_dates": _source_question_dates(cluster),
+        "temporal_relevance_state": temporal_state,
+        "current_default_eligible": temporal_state in CURRENT_DEFAULT_TEMPORAL_STATES,
+        "temporal_currentness": _temporal_currentness_payload(decision, cluster, temporal_state=temporal_state),
         "coverage_status": str(cluster.get("coverage_status", "unmeasured")),
         "review_status": "approved_final_evaluation"
         if str(decision.get("decision", "")) == "approve_final_evaluation"
@@ -5897,6 +6048,7 @@ def _final_case_candidate(entry: Mapping[str, Any], decision: Mapping[str, Any] 
     reference_source = ""
     promotion_status = "rejected"
     review_status = str(entry.get("review_status", ""))
+    temporal_state = _temporal_relevance_state(entry, decision or {})
 
     if decision is None or str(decision.get("decision", "")) != "approve_final_evaluation":
         reasons.append("not_approved_for_final_evaluation")
@@ -5916,6 +6068,10 @@ def _final_case_candidate(entry: Mapping[str, Any], decision: Mapping[str, Any] 
             promotion_status = "blocked_missing_reference_answer"
             reasons.append("missing_reference_answer")
 
+    if promotion_status == "eligible" and temporal_state not in CURRENT_DEFAULT_TEMPORAL_STATES:
+        promotion_status = "blocked_temporal_currentness"
+        reasons.append(f"temporal_currentness:{temporal_state}")
+
     return {
         "case_candidate_id": _stable_id("tg-reviewed-case-candidate", cluster_id, entry.get("question_bank_entry_id", "")),
         "legal_issue_cluster_id": cluster_id,
@@ -5930,6 +6086,10 @@ def _final_case_candidate(entry: Mapping[str, Any], decision: Mapping[str, Any] 
         "promotion_reasons": reasons,
         "law_area": str(entry.get("law_area", "")),
         "authority_context": _as_string_list(entry.get("authority_context", [])),
+        "source_question_dates": _source_question_dates(entry),
+        "temporal_relevance_state": temporal_state,
+        "current_default_eligible": temporal_state in CURRENT_DEFAULT_TEMPORAL_STATES,
+        "temporal_currentness": _temporal_currentness_payload(entry, decision or {}, temporal_state=temporal_state),
         "legal_issue_frame_slug": str(entry.get("legal_issue_frame_slug", "")),
         "provenance": {
             "question_bank_entry_id": str(entry.get("question_bank_entry_id", "")),
@@ -5957,9 +6117,104 @@ def _reviewed_final_case(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "review_status": str(candidate.get("review_status", "")),
         "law_area": str(candidate.get("law_area", "")),
         "authority_context": _as_string_list(candidate.get("authority_context", [])),
+        "source_question_dates": _source_question_dates(candidate),
+        "temporal_relevance_state": str(candidate.get("temporal_relevance_state", "")),
+        "temporal_currentness": dict(candidate.get("temporal_currentness", {}))
+        if isinstance(candidate.get("temporal_currentness"), Mapping)
+        else {},
         "legal_issue_frame_slug": str(candidate.get("legal_issue_frame_slug", "")),
         "provenance": dict(candidate.get("provenance", {})) if isinstance(candidate.get("provenance"), Mapping) else {},
         "dataset_policy_version": REVIEWED_DATASET_POLICY_VERSION,
+    }
+
+
+def _temporal_relevance_state(*sources: Mapping[str, Any] | None) -> str:
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        value = str(source.get("temporal_relevance_state", "")).strip()
+        if value in TEMPORAL_RELEVANCE_STATES:
+            return value
+        currentness = source.get("temporal_currentness", {})
+        if isinstance(currentness, Mapping):
+            value = str(currentness.get("temporal_relevance_state", "")).strip()
+            if value in TEMPORAL_RELEVANCE_STATES:
+                return value
+    return "unresolved_currentness"
+
+
+def _source_question_dates(source: Mapping[str, Any]) -> list[str]:
+    dates = _as_string_list(source.get("source_question_dates", []))
+    for key in ("source_question_date", "question_date"):
+        value = str(source.get(key, ""))
+        if value:
+            dates.append(value)
+    return sorted({value for value in dates if value})
+
+
+def _temporal_currentness_payload(
+    primary: Mapping[str, Any],
+    fallback: Mapping[str, Any],
+    *,
+    temporal_state: str,
+) -> dict[str, Any]:
+    source_dates = _source_question_dates(primary) or _source_question_dates(fallback)
+    source_currentness = primary.get("temporal_currentness", {})
+    fallback_currentness = fallback.get("temporal_currentness", {})
+    if not isinstance(source_currentness, Mapping):
+        source_currentness = {}
+    if not isinstance(fallback_currentness, Mapping):
+        fallback_currentness = {}
+    source_question_date = str(
+        primary.get(
+            "source_question_date",
+            source_currentness.get(
+                "source_question_date",
+                fallback.get("source_question_date", fallback_currentness.get("source_question_date", "")),
+            ),
+        )
+    )
+    if not source_question_date and source_dates:
+        source_question_date = source_dates[0]
+    return {
+        "temporal_relevance_state": temporal_state,
+        "source_question_dates": source_dates,
+        "source_question_date": source_question_date,
+        "evaluation_date": str(
+            primary.get(
+                "evaluation_date",
+                source_currentness.get("evaluation_date", fallback_currentness.get("evaluation_date", "")),
+            )
+        ),
+        "legal_corpus_as_of_date": str(
+            primary.get(
+                "legal_corpus_as_of_date",
+                source_currentness.get(
+                    "legal_corpus_as_of_date",
+                    fallback.get("legal_corpus_as_of_date", fallback_currentness.get("legal_corpus_as_of_date", "")),
+                ),
+            )
+        ),
+        "temporal_review_date": str(
+            primary.get(
+                "temporal_review_date",
+                source_currentness.get(
+                    "temporal_review_date",
+                    fallback.get("temporal_review_date", fallback_currentness.get("temporal_review_date", "")),
+                ),
+            )
+        ),
+        "temporal_review_reason": str(
+            primary.get(
+                "temporal_review_reason",
+                source_currentness.get(
+                    "temporal_review_reason",
+                    fallback.get("temporal_review_reason", fallback_currentness.get("temporal_review_reason", "")),
+                ),
+            )
+        ),
+        "current_default_eligible": temporal_state in CURRENT_DEFAULT_TEMPORAL_STATES,
+        "policy_version": TEMPORAL_CURRENTNESS_POLICY_VERSION,
     }
 
 
@@ -6260,6 +6515,7 @@ def _adjudication_candidate_entry(candidate_key: str, payload: Mapping[str, Any]
         "exclusion_reason": str(payload.get("exclusion_reason", "")),
         "confidence": str(payload.get("confidence", "")),
         "quality_flags": _as_string_list(payload.get("quality_flags", [])),
+        "question_date": str(payload.get("question_date", "")),
     }
 
 
@@ -6408,6 +6664,7 @@ def _deepseek_adjudication_batch_item(
         "candidate_id": str(qwen_payload.get("candidate_id", "")) or str(source_task.get("candidate_id", "")),
         "adjudication_prompt_version": CANONICALIZATION_ADJUDICATOR_PROMPT_VERSION,
         "source_question_text_redacted": str(source_task.get("input", {}).get("question_text_redacted", "")),
+        "question_date": str(source_task.get("input", {}).get("question_date", "")),
         "candidates": [candidate_entry],
         "verifier_votes": verifier_votes,
         "consensus_summary": _adjudication_consensus_summary(
@@ -6457,6 +6714,7 @@ def _retry_qwen_batch_item(
             "exclusion_reason": str(qwen_payload.get("exclusion_reason", "")),
             "confidence": str(qwen_payload.get("confidence", "")),
             "quality_flags": _as_string_list(qwen_payload.get("quality_flags", [])),
+            "question_date": str(qwen_payload.get("question_date", source_task.get("input", {}).get("question_date", ""))),
         },
         "verifier_votes": [
             _adjudication_verifier_vote_entry("primary", "reviewer_1", verifier_payload)
@@ -7729,6 +7987,7 @@ def _compact_verifier_llm_payload(evidence: Mapping[str, Any]) -> dict[str, Any]
         "task_id": str(evidence.get("task_id", "")),
         "candidate_id": str(evidence.get("candidate_id", "")),
         "source_question_text_redacted": str(evidence.get("source_question_text_redacted", "")),
+        "question_date": str(evidence.get("question_date", "")),
         "qwen": {
             "canonical_question": qwen_payload["canonical_question"],
             "canonical_question_language": str(evidence.get("canonical_question_language", "")),
@@ -7780,6 +8039,7 @@ def _compact_adjudication_payload(batch_item: Mapping[str, Any]) -> dict[str, An
         "candidate_id": str(batch_item.get("candidate_id", "")),
         "adjudication_prompt_version": str(batch_item.get("adjudication_prompt_version", "")),
         "source_question_text_redacted": str(batch_item.get("source_question_text_redacted", "")),
+        "question_date": str(batch_item.get("question_date", "")),
         "candidates": [dict(item) for item in candidates if isinstance(item, Mapping)],
         "verifier_votes": [dict(item) for item in verifier_votes if isinstance(item, Mapping)],
         "field_scope_review": {

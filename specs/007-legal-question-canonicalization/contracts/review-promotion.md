@@ -45,6 +45,34 @@ Allowed `reference_answer_action` values:
 - `replace_manual`
 - `needs_manual_answer`
 
+Temporal-currentness review fields are required before current-default
+promotion:
+
+```json
+{
+  "temporal_relevance_state": "current_reusable",
+  "source_question_date": "2024-01-15T00:00:00Z",
+  "evaluation_date": "2026-06-18",
+  "legal_corpus_as_of_date": "2026-06-18",
+  "temporal_review_date": "2026-06-18T00:00:00Z",
+  "temporal_review_reason": "stable issue; old source date alone is not obsolete"
+}
+```
+
+Allowed `temporal_relevance_state` values:
+
+- `current_reusable`
+- `historical_but_generalizable`
+- `transition_bound`
+- `superseded_or_expired`
+- `unresolved_currentness`
+
+`current_reusable` and `historical_but_generalizable` may enter
+current-default question-bank and final evaluation promotion. `transition_bound`,
+`superseded_or_expired`, and `unresolved_currentness` must be blocked from
+current-default promotion and retained as historical/temporal evaluation
+artifacts instead of being deleted.
+
 ## Question Bank Entry Shape
 
 Each question-bank JSONL record must include:
@@ -58,6 +86,15 @@ Each question-bank JSONL record must include:
   "law_area": "migration_status",
   "authority_context": ["Buergeramt", "Auslaenderbehoerde"],
   "representative_raw_questions": [],
+  "source_question_dates": ["2024-01-15T00:00:00Z"],
+  "temporal_relevance_state": "current_reusable",
+  "current_default_eligible": true,
+  "temporal_currentness": {
+    "source_question_date": "2024-01-15T00:00:00Z",
+    "evaluation_date": "2026-06-18",
+    "legal_corpus_as_of_date": "2026-06-18",
+    "temporal_review_date": "2026-06-18T00:00:00Z"
+  },
   "coverage_status": "uncovered",
   "review_status": "approved_question_bank",
   "reference_answer_status": "missing_reference_answer",
@@ -94,8 +131,12 @@ The summary JSON must include:
 - counts by authority context
 - counts by coverage status
 - counts by reference answer status
+- counts by temporal relevance state
+- current-default eligible count
+- current-default temporal blocked count
 - review policy version
 - question-bank policy version
+- temporal-currentness policy version
 - runtime contour
 - generated timestamp
 
@@ -124,6 +165,8 @@ Each promoted case candidate must include:
   "reference_answer_role": "community_answer_for_graph_db_comparison_not_legal_truth",
   "review_status": "approved_final_evaluation",
   "promotion_status": "eligible",
+  "temporal_relevance_state": "current_reusable",
+  "current_default_eligible": true,
   "provenance": {
     "source_review_decision_artifact": "data/evaluation/..."
   }
@@ -134,6 +177,7 @@ Allowed `promotion_status` values:
 
 - `eligible`
 - `blocked_missing_reference_answer`
+- `blocked_temporal_currentness`
 - `rejected`
 
 ## Final Case Candidate Summary And Manifest Requirements
@@ -162,8 +206,10 @@ The summary JSON must include:
 - accepted Telegram reference answer count
 - counts by law area
 - counts by authority context
+- counts by temporal relevance state
 - promotion policy version
 - reference answer policy version
+- temporal-currentness policy version
 - runtime contour
 - generated timestamp
 
@@ -201,4 +247,9 @@ The export must:
 - `replace_manual` requires redacted manual reference answer text.
 - `needs_manual_answer` blocks final evaluation promotion.
 - LLM canonicalization evidence alone cannot set `promotion_status=eligible`.
+- `transition_bound`, `superseded_or_expired`, and
+  `unresolved_currentness` records cannot set `promotion_status=eligible`.
+- Absence of temporal review is treated as `unresolved_currentness`; age alone
+  is not proof of obsolescence, but it is also not proof of current-default
+  suitability.
 - Telegram reference answers remain evaluation material, not legal authority.

@@ -695,6 +695,7 @@ def build_tg_qa_retrieval_relevance_review_batch(
                 "dataset_record_id": str(case.get("dataset_record_id", "")),
                 "canonical_question": canonical_question,
                 "source_question_text_redacted": source_question,
+                "question_date": str(dataset_record.get("question_date", case.get("question_date", ""))),
                 "source_reference_diagnostics": source_reference_diagnostics,
                 "expected_legal_section_id": expected_section_id,
                 "target_evidence_type": target_evidence_type,

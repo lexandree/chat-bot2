@@ -134,7 +134,27 @@ Expected result:
 
 ## Review And Promotion
 
-Import reviewed cluster decisions before building the question bank:
+Build a temporal-currentness review queue before current-default promotion:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-temporal-currentness-review-queue \
+  --issue-clusters data/evaluation/tg_qa_issue_clusters/real_data_007_issue_clusters.jsonl \
+  --output data/evaluation/tg_qa_question_bank/real_data_007_temporal_currentness_review_queue.jsonl \
+  --summary-output data/evaluation/tg_qa_question_bank/real_data_007_temporal_currentness_review_queue_summary.json \
+  --evaluation-date 2026-06-18 \
+  --legal-corpus-as-of-date 2026-06-18
+```
+
+Expected result:
+
+- review cards preserve source question dates separately from the evaluation
+  date and legal corpus as-of date;
+- records default to `unresolved_currentness` until reviewed;
+- old source date alone does not prove obsolescence or current-default
+  suitability.
+
+Import reviewed cluster decisions before building the question bank. Temporal
+review fields may be included in the same reviewed decision artifact:
 
 ```bash
 PYTHONPATH=src python -m app evaluation tg-qa-cluster-review-import \
@@ -164,7 +184,8 @@ PYTHONPATH=src python -m app evaluation tg-qa-issue-final-candidates \
   --review-decisions data/evaluation/tg_qa_question_bank/real_data_007_cluster_review_decisions.jsonl \
   --output data/evaluation/tg_qa_question_bank/real_data_007_final_case_candidates.jsonl \
   --manifest-output data/evaluation/tg_qa_question_bank/real_data_007_final_case_candidates_manifest.json \
-  --summary-output data/evaluation/tg_qa_question_bank/real_data_007_final_case_candidates_summary.json
+  --summary-output data/evaluation/tg_qa_question_bank/real_data_007_final_case_candidates_summary.json \
+  --temporal-blocked-output data/evaluation/tg_qa_question_bank/real_data_007_temporal_blocked_final_case_candidates.jsonl
 ```
 
 Build the reviewed evaluation dataset from eligible promotion candidates:
@@ -181,6 +202,9 @@ Expected result:
 
 - answerless approved clusters remain in `question_bank`;
 - final case candidates without reviewed reference answers are blocked;
+- transition-bound, superseded/expired, and unresolved-currentness records are
+  blocked from current-default promotion and retained in the temporal blocked
+  artifact;
 - reviewed final cases include only eligible promoted cases with reviewed
   reference answer material;
 - Telegram answers remain evaluation material, not legal truth.

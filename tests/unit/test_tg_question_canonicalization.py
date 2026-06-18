@@ -36,6 +36,7 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_legal_intent_slot_comparator_decisions,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
+    build_tg_qa_temporal_currentness_review_queue,
     build_langchain_canonicalization_chain,
     build_langchain_deepseek_adjudication_chain,
     build_langchain_adjudication_chain,
@@ -252,6 +253,7 @@ def test_structured_models_and_compact_llm_payload_avoid_private_context(tmp_pat
     compact = compact_canonicalization_llm_payload(batch_item)
     serialized_compact = json.dumps(compact, ensure_ascii=False, sort_keys=True)
     assert compact["prompt_example_set_id"] == CANONICALIZATION_PROMPT_EXAMPLE_SET_ID
+    assert compact["input"]["question_date"] == "2026-01-01T00:00:00"
     assert "source_message_ids" not in serialized_compact
     assert "source_candidate_artifact" not in serialized_compact
     assert "selected_answer_metadata" not in serialized_compact
@@ -405,6 +407,7 @@ def test_review_llm_payload_repeats_candidate_field_scope_without_source_details
         "exclusion_reason": "none",
         "confidence": "high",
         "quality_flags": ["mixed_with_non_legal_query"],
+        "question_date": "2025-01-01T00:00:00Z",
     }
     evidence = {
         "task_id": "tg-question-canonicalization-task:education",
@@ -417,6 +420,7 @@ def test_review_llm_payload_repeats_candidate_field_scope_without_source_details
     verifier_scope = verifier_payload["field_scope_review"]["qwen"]
     assert "language requirements" in verifier_payload["qwen"]["facts"][0]
     assert "На каком языке" in verifier_payload["source_question_text_redacted"]
+    assert verifier_payload["question_date"] == "2025-01-01T00:00:00Z"
     assert "На каком языке" not in verifier_scope["canonical_question_under_review"]
     assert "Сколько лет" not in verifier_scope["canonical_question_under_review"]
     assert verifier_scope["canonical_question_under_review"] == candidate["canonical_question"]
@@ -427,6 +431,7 @@ def test_review_llm_payload_repeats_candidate_field_scope_without_source_details
             "task_id": "tg-question-canonicalization-task:education",
             "candidate_id": candidate["candidate_id"],
             "source_question_text_redacted": source_question,
+            "question_date": "2025-01-01T00:00:00Z",
             "candidates": [candidate],
             "verifier_votes": [
                 {
@@ -442,6 +447,7 @@ def test_review_llm_payload_repeats_candidate_field_scope_without_source_details
         }
     )
     adjudication_scope = adjudication_payload["field_scope_review"]["candidates"][0]
+    assert adjudication_payload["question_date"] == "2025-01-01T00:00:00Z"
     assert "source mentions language" in adjudication_payload["verifier_votes"][0]["short_reason"]
     assert "На каком языке" in adjudication_payload["source_question_text_redacted"]
     assert "На каком языке" not in adjudication_scope["canonical_question_under_review"]
@@ -2330,6 +2336,7 @@ def test_legal_intent_pair_benchmark_has_stable_order_independent_ids(tmp_path: 
     assert first["summary"]["pair_count"] == second["summary"]["pair_count"] == 2
     assert first["records"][0]["pair_id"] == canonicalization._legal_intent_pair_id("e1", "e2")
     assert first["records"][0]["pair_id"] == canonicalization._legal_intent_pair_id("e2", "e1")
+    assert first["records"][0]["left"]["question_date"] == "2024-01-01T00:00:00Z"
     assert "preserved_variant_candidate" in first["summary"]["counts_by_pair_source_reason"]
 
 
@@ -2995,9 +3002,118 @@ def test_review_promotion_gates_final_cases_and_redacts_manual_answers(tmp_path:
         "accepted_telegram_answer",
         "manual_review_override",
     }
+    assert {case["temporal_relevance_state"] for case in cases} == {"current_reusable"}
+    assert all(case["source_question_dates"] == ["2024-01-01T00:00:00Z"] for case in cases)
     assert _read_json(dataset_quality_path)["llm_only_exclusion_count"] == 1
     assert "reviewer@example.com" not in cases_path.read_text(encoding="utf-8")
     assert verify_tg_question_canonicalization_boundaries()["status"] == "passed"
+
+
+def test_temporal_currentness_fixture_covers_all_review_states() -> None:
+    fixture_path = (
+        Path("specs")
+        / "007-legal-question-canonicalization"
+        / "temporal-currentness-reference-cases.jsonl"
+    )
+    cases = _read_jsonl(fixture_path)
+    states = {case["expected_temporal_relevance_state"] for case in cases}
+
+    assert len(cases) == 5
+    assert len({case["benchmark_case_id"] for case in cases}) == len(cases)
+    assert states == {
+        "current_reusable",
+        "historical_but_generalizable",
+        "transition_bound",
+        "superseded_or_expired",
+        "unresolved_currentness",
+    }
+    assert all(case["evaluation_date"] and case["legal_corpus_as_of_date"] for case in cases)
+    assert all(case["trust_boundary"] == "temporal_fixture_not_legal_answer_support" for case in cases)
+
+
+def test_temporal_currentness_blocks_current_default_promotion_and_retains_history(tmp_path: Path) -> None:
+    clusters_path = tmp_path / "clusters.jsonl"
+    queue_path = tmp_path / "temporal_queue.jsonl"
+    queue_summary_path = tmp_path / "temporal_queue_summary.json"
+    decisions_input_path = tmp_path / "decisions_input.jsonl"
+    decisions_path = tmp_path / "decisions.jsonl"
+    decisions_summary_path = tmp_path / "decisions_summary.json"
+    question_bank_path = tmp_path / "question_bank.jsonl"
+    question_bank_summary_path = tmp_path / "question_bank_summary.json"
+    candidates_path = tmp_path / "final_candidates.jsonl"
+    candidates_summary_path = tmp_path / "final_candidates_summary.json"
+    temporal_blocked_path = tmp_path / "temporal_blocked.jsonl"
+
+    current = _cluster("current", "stable_registration_address_update")
+    expired = _cluster("expired", "expired_transition_document_extension_deadline")
+    _write_jsonl(clusters_path, [current, expired])
+
+    queue = build_tg_qa_temporal_currentness_review_queue(
+        issue_clusters_path=clusters_path,
+        output_path=queue_path,
+        summary_output_path=queue_summary_path,
+        evaluation_date="2026-06-18",
+        legal_corpus_as_of_date="2026-06-18",
+    )
+
+    assert queue["summary"]["queue_record_count"] == 2
+    assert queue["summary"]["counts_by_suggested_temporal_relevance_state"] == {
+        "unresolved_currentness": 2
+    }
+
+    _write_jsonl(
+        decisions_input_path,
+        [
+            _decision(
+                current,
+                "approve_final_evaluation",
+                "replace_manual",
+                manual_answer="Stable reviewed answer.",
+                temporal_state="historical_but_generalizable",
+            ),
+            _decision(
+                expired,
+                "approve_final_evaluation",
+                "replace_manual",
+                manual_answer="Expired reviewed answer retained for history.",
+                temporal_state="superseded_or_expired",
+            ),
+        ],
+    )
+    import_tg_qa_cluster_review_decisions(
+        issue_clusters_path=clusters_path,
+        decisions_path=decisions_input_path,
+        output_path=decisions_path,
+        summary_output_path=decisions_summary_path,
+    )
+    bank = build_tg_qa_question_bank(
+        issue_clusters_path=clusters_path,
+        review_decisions_path=decisions_path,
+        output_path=question_bank_path,
+        summary_output_path=question_bank_summary_path,
+    )
+    assert bank["summary"]["counts_by_temporal_relevance_state"] == {
+        "historical_but_generalizable": 1,
+        "superseded_or_expired": 1,
+    }
+    assert bank["summary"]["current_default_eligible_count"] == 1
+    assert bank["summary"]["current_default_blocked_temporal_count"] == 1
+
+    final = build_tg_qa_issue_final_case_candidates(
+        question_bank_path=question_bank_path,
+        review_decisions_path=decisions_path,
+        output_path=candidates_path,
+        summary_output_path=candidates_summary_path,
+        temporal_blocked_output_path=temporal_blocked_path,
+    )
+
+    assert final["summary"]["eligible_count"] == 1
+    assert final["summary"]["blocked_temporal_currentness_count"] == 1
+    blocked = _read_jsonl(temporal_blocked_path)
+    assert len(blocked) == 1
+    assert blocked[0]["promotion_status"] == "blocked_temporal_currentness"
+    assert blocked[0]["temporal_relevance_state"] == "superseded_or_expired"
+    assert "temporal_currentness:superseded_or_expired" in blocked[0]["promotion_reasons"]
 
 
 def _candidate(candidate_id: str, question: str, message_id: str) -> dict:
@@ -3232,6 +3348,7 @@ def _evidence(
         "exclusion_reason": exclusion_reason,
         "confidence": confidence,
         "quality_flags": [],
+        "question_date": "2024-01-01T00:00:00Z",
         "source_question_text_redacted": question,
         "provenance": {"source_message_ids": [candidate_id]},
     }
@@ -3252,6 +3369,7 @@ def _cluster(
         "authority_context": ["Buergeramt"],
         "candidate_ids": [f"candidate:{suffix}"],
         "canonicalization_evidence_ids": [f"evidence:{suffix}"],
+        "source_question_dates": ["2024-01-01T00:00:00Z"],
         "representative_raw_questions": [f"Raw question {suffix}"],
         "cluster_size": 1,
         "cluster_confidence": confidence,
@@ -3270,6 +3388,7 @@ def _decision(
     source: str = "",
     selected_answer: str = "",
     manual_answer: str = "",
+    temporal_state: str = "current_reusable",
 ) -> dict:
     return {
         "legal_issue_cluster_id": cluster["legal_issue_cluster_id"],
@@ -3280,6 +3399,11 @@ def _decision(
         "reviewed_legal_issue_frame_slug": cluster["legal_issue_frame_slug"],
         "selected_reference_answer_text_redacted": selected_answer,
         "manual_reference_answer_text_redacted": manual_answer,
+        "temporal_relevance_state": temporal_state,
+        "source_question_date": "2024-01-01T00:00:00Z",
+        "legal_corpus_as_of_date": "2026-06-18",
+        "temporal_review_date": "2026-06-18T00:00:00Z",
+        "temporal_review_reason": "fixture temporal review",
         "reviewer_hash": "reviewer:test",
         "decision_reason": "fixture decision",
     }

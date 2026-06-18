@@ -17,9 +17,9 @@ Required fields:
 - `expected_output_schema`
 
 Input must include redacted 006 candidate evidence only: source ids, redacted
-question text, topic labels, law-code candidates, dialogue flags, selected
-answer metadata when available, and source artifact references. Raw Telegram
-exports and unredacted text are forbidden.
+question text, source `question_date` when available, topic labels, law-code
+candidates, dialogue flags, selected answer metadata when available, and source
+artifact references. Raw Telegram exports and unredacted text are forbidden.
 
 ## CanonicalizationEvidence
 
@@ -52,6 +52,7 @@ Required fields:
 - `exclusion_reason`
 - `confidence`: `low`, `medium`, or `high`
 - `quality_flags`
+- `question_date` when present in source evidence
 - `provenance`
 
 Validation rules:
@@ -279,6 +280,7 @@ Required fields:
 - `authority_context`
 - `candidate_ids`
 - `canonicalization_evidence_ids`
+- `source_question_dates`
 - `representative_raw_questions`
 - `cluster_size`
 - `cluster_confidence`
@@ -368,12 +370,55 @@ Required fields:
 - `reviewer_hash`
 - `reviewed_at`
 - `decision_reason`
+- `temporal_relevance_state`
+- `source_question_date`
+- `evaluation_date`
+- `legal_corpus_as_of_date`
+- `temporal_review_date`
+- `temporal_review_reason`
+
+Allowed `temporal_relevance_state` values:
+
+- `current_reusable`
+- `historical_but_generalizable`
+- `transition_bound`
+- `superseded_or_expired`
+- `unresolved_currentness`
 
 Promotion rule:
 
 - `approve_question_bank` may create a question-bank entry without a reference
   answer.
 - `approve_final_evaluation` requires reviewed reference answer material.
+- Absence of a reviewed temporal state is treated as
+  `unresolved_currentness`.
+
+## TemporalCurrentnessReviewRecord
+
+Review queue record for deciding whether an issue cluster may enter
+current-default retrieval or must remain historical/temporal evidence.
+
+Required fields:
+
+- `temporal_currentness_review_id`
+- `legal_issue_cluster_id`
+- `canonical_question_representative`
+- `law_area`
+- `authority_context`
+- `source_question_dates`
+- `evaluation_date`
+- `legal_corpus_as_of_date`
+- `suggested_temporal_relevance_state`
+- `allowed_temporal_relevance_states`
+- `current_default_eligible`
+- `review_decision_template`
+- `policy_version`
+- `trust_boundary`
+
+`current_reusable` and `historical_but_generalizable` may enter
+current-default promotion after review. `transition_bound`,
+`superseded_or_expired`, and `unresolved_currentness` are retained for audit or
+temporal evaluation and blocked from current-default promotion.
 
 ## QuestionBankEntry
 
@@ -388,6 +433,10 @@ Required fields:
 - `law_area`
 - `authority_context`
 - `representative_raw_questions`
+- `source_question_dates`
+- `temporal_relevance_state`
+- `current_default_eligible`
+- `temporal_currentness`
 - `coverage_status`
 - `review_status`
 - `reference_answer_status`
@@ -415,8 +464,12 @@ Summary required fields:
 - counts by authority context
 - counts by coverage status
 - counts by reference answer status
+- counts by temporal relevance state
+- current-default eligible count
+- current-default blocked temporal count
 - review policy version
 - question-bank policy version
+- temporal-currentness policy version
 - runtime contour
 - generated timestamp
 
@@ -445,12 +498,16 @@ Required fields:
 - `reference_answer_source`
 - `reference_answer_role`
 - `review_status`
-- `promotion_status`: `eligible`, `blocked_missing_reference_answer`, or
-  `rejected`
+- `promotion_status`: `eligible`, `blocked_missing_reference_answer`,
+  `blocked_temporal_currentness`, or `rejected`
+- `source_question_dates`
+- `temporal_relevance_state`
+- `current_default_eligible`
+- `temporal_currentness`
 - `provenance`
 
-Only `eligible` records with reviewed reference answer material may enter a
-reviewed evaluation dataset.
+Only `eligible` records with reviewed reference answer material and a
+current-default-eligible temporal state may enter a reviewed evaluation dataset.
 
 ## FinalCaseCandidate Promotion Summary And Manifest
 
@@ -469,14 +526,17 @@ Summary required fields:
 - emitted candidate count
 - eligible count
 - blocked missing reference answer count
+- blocked temporal currentness count
 - rejected count
 - LLM-only rejection count
 - manual reference answer count
 - accepted Telegram reference answer count
 - counts by law area
 - counts by authority context
+- counts by temporal relevance state
 - promotion policy version
 - reference answer policy version
+- temporal-currentness policy version
 - runtime contour
 - generated timestamp
 
@@ -512,6 +572,9 @@ Each reviewed final case must include:
 - `reference_answer_source`
 - `reference_answer_role`
 - `review_status`
+- `source_question_dates`
+- `temporal_relevance_state`
+- `temporal_currentness`
 - `provenance`
 
 The manifest must include:
@@ -531,6 +594,7 @@ The quality summary must include:
 - exported case count
 - blocked/rejected excluded counts
 - missing reference answer exclusion count
+- temporal currentness exclusion count
 - LLM-only exclusion count
 - duplicate cluster or case id rejection count
 
@@ -541,6 +605,7 @@ The quality summary must include:
   `review_rejected`, `needs_split`, `needs_merge`, or `uncertain`.
 - Question-bank entry: `candidate` -> `approved` or `rejected`.
 - Evaluation promotion: `candidate` -> `eligible`,
-  `blocked_missing_reference_answer`, or `rejected`.
+  `blocked_missing_reference_answer`, `blocked_temporal_currentness`, or
+  `rejected`.
 - Reviewed evaluation dataset case: `eligible_candidate` -> `exported` or
   `excluded`.

@@ -268,14 +268,14 @@ or forcing every ambiguous question into one legal route.
 branches from silently entering current-default retrieval while retaining them
 for audit and temporal evaluation.
 
-- [ ] T108 Define a reviewable temporal-relevance contract with separate source-question date, evaluation date, legal-corpus as-of date, and review date
-- [ ] T109 Define bounded temporal-relevance states for current reusable, historical-but-generalizable, transition-bound, superseded-or-expired, and unresolved-currentness records
-- [ ] T110 Preserve `question_date` in compact canonicalizer, verifier, adjudicator, legal-intent, retrieval-review, and promotion payloads without treating age alone as proof of obsolescence
-- [ ] T111 Add a temporal-currentness review queue and report counts by temporal-relevance state before question-bank promotion
-- [ ] T112 Block transition-bound, superseded-or-expired, and unresolved-currentness records from current-default question-bank and retrieval promotion unless explicitly reviewed
-- [ ] T113 Retain blocked records in a separate historical/temporal evaluation artifact instead of deleting them
-- [ ] T114 Build a small temporal benchmark containing stable issues, expired transition questions, changed extension rules, and historically worded questions that can be safely generalized
-- [ ] T115 Require cumulative clean, route-ambiguity, and temporal benchmark evidence before retaining temporal routing or generalization changes
+- [X] T108 Define a reviewable temporal-relevance contract with separate source-question date, evaluation date, legal-corpus as-of date, and review date
+- [X] T109 Define bounded temporal-relevance states for current reusable, historical-but-generalizable, transition-bound, superseded-or-expired, and unresolved-currentness records
+- [X] T110 Preserve `question_date` in compact canonicalizer, verifier, adjudicator, legal-intent, retrieval-review, and promotion payloads without treating age alone as proof of obsolescence
+- [X] T111 Add a temporal-currentness review queue and report counts by temporal-relevance state before question-bank promotion
+- [X] T112 Block transition-bound, superseded-or-expired, and unresolved-currentness records from current-default question-bank and retrieval promotion unless explicitly reviewed
+- [X] T113 Retain blocked records in a separate historical/temporal evaluation artifact instead of deleting them
+- [X] T114 Build a small temporal benchmark containing stable issues, expired transition questions, changed extension rules, and historically worded questions that can be safely generalized
+- [X] T115 Require cumulative clean, route-ambiguity, and temporal benchmark evidence before retaining temporal routing or generalization changes
 
 ---
 

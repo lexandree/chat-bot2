@@ -848,6 +848,8 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
     reviewed_cases = tmp_path / "reviewed_cases.jsonl"
     coverage = tmp_path / "coverage.jsonl"
     coverage_summary = tmp_path / "coverage_summary.json"
+    temporal_queue = tmp_path / "temporal_currentness_queue.jsonl"
+    temporal_queue_summary = tmp_path / "temporal_currentness_queue_summary.json"
     review_input = tmp_path / "cluster_review_input.jsonl"
     review_decisions = tmp_path / "cluster_review_decisions.jsonl"
     review_summary = tmp_path / "cluster_review_summary.json"
@@ -857,6 +859,7 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
     case_candidates = tmp_path / "case_candidates.jsonl"
     case_candidate_summary = tmp_path / "case_candidate_summary.json"
     case_candidate_manifest = tmp_path / "case_candidate_manifest.json"
+    temporal_blocked_candidates = tmp_path / "temporal_blocked_candidates.jsonl"
     final_cases = tmp_path / "final_cases.jsonl"
     final_manifest = tmp_path / "final_manifest.json"
     final_quality = tmp_path / "final_quality.json"
@@ -1011,6 +1014,23 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
         ],
         settings=settings,
     )
+    temporal_queue_exit, temporal_queue_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-temporal-currentness-review-queue",
+            "--issue-clusters",
+            str(clusters),
+            "--output",
+            str(temporal_queue),
+            "--summary-output",
+            str(temporal_queue_summary),
+            "--evaluation-date",
+            "2026-06-18",
+            "--legal-corpus-as-of-date",
+            "2026-06-18",
+        ],
+        settings=settings,
+    )
 
     _write_jsonl(
         review_input,
@@ -1019,12 +1039,18 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
                 "legal_issue_cluster_id": cluster_items[0]["legal_issue_cluster_id"],
                 "decision": "approve_final_evaluation",
                 "reference_answer_action": "keep_selected_telegram_answer",
-                "selected_reference_answer_text_redacted": "Reviewed Telegram answer fixture.",
-                "reviewer_hash": "smoke-reviewer",
-                "decision_reason": "smoke promotion fixture",
-            }
-        ],
-    )
+                    "selected_reference_answer_text_redacted": "Reviewed Telegram answer fixture.",
+                    "reviewer_hash": "smoke-reviewer",
+                    "decision_reason": "smoke promotion fixture",
+                    "temporal_relevance_state": "current_reusable",
+                    "source_question_date": "2024-01-01T00:00:00Z",
+                    "evaluation_date": "2026-06-18",
+                    "legal_corpus_as_of_date": "2026-06-18",
+                    "temporal_review_date": "2026-06-18T00:00:00Z",
+                    "temporal_review_reason": "smoke fixture remains current reusable",
+                }
+            ],
+        )
     review_exit, review_payload = dispatch(
         [
             "evaluation",
@@ -1071,6 +1097,8 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
             str(case_candidate_summary),
             "--manifest-output",
             str(case_candidate_manifest),
+            "--temporal-blocked-output",
+            str(temporal_blocked_candidates),
         ],
         settings=settings,
     )
@@ -1092,7 +1120,7 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
     boundary_exit, boundary_payload = dispatch(["evaluation", "tg-qa-canonical-boundary-check"], settings=settings)
 
     assert batch_exit == sample_exit == review_cards_exit == import_exit == embed_batch_exit == embed_import_exit == 0
-    assert cluster_exit == coverage_exit == review_exit == bank_exit == candidate_exit == final_exit == boundary_exit == 0
+    assert cluster_exit == coverage_exit == temporal_queue_exit == review_exit == bank_exit == candidate_exit == final_exit == boundary_exit == 0
     assert batch_payload["emitted_task_count"] == 1
     assert sample_payload["emitted_sample_count"] == 1
     assert review_cards_payload["card_count"] == 1
@@ -1102,9 +1130,12 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
     assert embed_import_payload["completed_count"] == 2
     assert cluster_payload["emitted_cluster_count"] == 1
     assert coverage_payload["counts_by_coverage_status"] == {"covered": 1}
+    assert temporal_queue_payload["queue_record_count"] == 1
     assert review_payload["imported_count"] == 1
     assert bank_payload["completed_entry_count"] == 1
     assert candidate_payload["eligible_count"] == 1
+    assert candidate_payload["blocked_temporal_currentness_count"] == 0
+    assert temporal_blocked_candidates.read_text(encoding="utf-8") == ""
     assert final_payload["case_count"] == 1
     assert boundary_payload["status"] == "passed"
 
