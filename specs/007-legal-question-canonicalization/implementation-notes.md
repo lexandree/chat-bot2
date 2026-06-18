@@ -293,3 +293,14 @@ APIs, network services, or remote notebooks.
 - Clean curated and route ambiguity retrieval runners now support explicit
   `LAW_CODES` and `full-fresh` vectorization so expanded-corpus diagnostics do
   not reuse stale four-law document vectors.
+- The clean six-law retrieval baseline completed with 648/648 vectors and zero
+  failures. On the same 24 curated records, Recall@1 shifted from `0.666667`
+  to `0.625`, Recall@5 stayed `0.875`, Recall@10 stayed `0.916667`, and MRR
+  shifted from `0.745068` to `0.715972`.
+- The six-law route-ambiguity baseline completed with 10/10 query vectors and
+  zero failures. Expected-route hit@1 shifted from `0.900000` to `0.600000`,
+  while hit@5 and hit@10 stayed `1.000000`; top-1 wrong-route cases increased
+  from 1 to 4 because `AufenthV` competes with section-24 `AufenthG` records.
+  This confirms that unrestricted semantic top-1 must remain diagnostic only,
+  and candidate-generation or route-hint changes require cumulative clean and
+  route evidence before retention.

@@ -196,6 +196,15 @@ The initial local Jina retrieval result was:
 - Recall@10: `0.916667`;
 - MRR: `0.745068`.
 
+After expanding the active bounded corpus to six laws
+(`AufenthG`, `AsylG`, `BeschV`, `VwVfG`, `AsylbLG`, `AufenthV`) and rebuilding
+fresh query+document vectors, the same clean 24-case baseline produced:
+
+- Recall@1: `0.625`;
+- Recall@5: `0.875`;
+- Recall@10: `0.916667`;
+- MRR: `0.715972`.
+
 These metrics establish a clean retrieval baseline. They do not prove answer
 correctness or that the selected primary section is the only relevant section.
 Changes should be retained only when they improve cumulative clean and

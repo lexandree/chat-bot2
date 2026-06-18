@@ -260,7 +260,7 @@ or forcing every ambiguous question into one legal route.
 - [X] T104 Report the current unrestricted semantic baseline and early `law_code_candidates` hints on the route-ambiguity benchmark, including wrong-route-at-k and both-routes-recalled-at-k
 - [ ] T105 Evaluate multi-hypothesis candidate generation that unions unrestricted semantic candidates with bounded candidates from every plausible legal route, without changing trusted retrieval or answer policy
 - [ ] T106 Record whether ambiguous refugee/asylum keywords should produce both `AufenthG` and `AsylG` weak hints, retaining corpus prior and nationality only as reviewable ranking evidence rather than a hard route decision
-- [ ] T107 Require cumulative clean-baseline and route-ambiguity evidence before retaining any general candidate-generation or hint-policy change
+- [X] T107 Require cumulative clean-baseline and route-ambiguity evidence before retaining any general candidate-generation or hint-policy change
 
 ## Phase 14: Temporal Relevance And Current-Default Promotion
 

@@ -112,3 +112,20 @@ The single top-1 route error is
 unrestricted semantic top law is `AsylG` while the expected route is
 `AufenthG`. This is diagnostic evidence for multi-hypothesis route candidate
 generation, not a hard rule change.
+
+Current unrestricted six-law baseline after adding `AsylbLG` and `AufenthV`:
+
+- expected-route hit: `0.600000` at k=1, `1.000000` at k=5 and k=10;
+- top-1 wrong route count: `4/10`;
+- wrong-route-only rate: `0.000000` at k=1, k=5, and k=10;
+- both `AufenthG`/`AsylG` recalled: `0.000000` at k=1, `0.500000` at k=5,
+  `1.000000` at k=10;
+- ordinary expected-section Recall@1/5/10: `0.400000`, `0.500000`,
+  `0.600000`.
+
+The six-law expansion intentionally increased retrieval complexity. Three new
+top-1 route errors are `AufenthV` over `AufenthG` for section-24 questions, and
+the previous `ua-section24-fiktionsbescheinigung` `AsylG` top-1 error remains.
+The expected route is still present in top-5 for every evaluated record, so
+this is evidence against trusting unrestricted semantic top-1 as route policy,
+not evidence that the expanded corpus is unusable.
