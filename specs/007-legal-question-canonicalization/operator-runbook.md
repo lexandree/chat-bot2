@@ -90,6 +90,48 @@ The canonicalized dataset is a supporting evaluation artifact, not the primary
 product. Optimize for a sufficiently clean, auditable subset under a bounded
 operator budget. Completeness and perfect phrasing are explicitly not goals.
 
+Live operator runners should stop on repeated endpoint outages instead of
+marking the rest of a batch as failed. For long unattended runs, pass:
+
+```bash
+--stop-after-consecutive-provider-failures 3
+```
+
+This guard triggers only after a record has exhausted its provider retry budget.
+If `--provider-max-attempts 0` is used, provider retries are infinite and the
+guard cannot fire. Use a finite provider retry budget, for example
+`--provider-max-attempts 3 --provider-retry-delay-seconds 30`, when an
+unattended run should stop instead of waiting forever through an outage.
+
+The guard counts exhausted provider/transport failures such as HTTP 5xx,
+timeouts, tunnel failures, rate limits, and upstream service unavailability. It
+does not count local schema/output-parser failures, skipped records, or ordinary
+completed records. When triggered, the summary records
+`stopped_by_provider_failure_guard=true`,
+`provider_failure_guard_trigger`, `consecutive_provider_failure_count`, and
+`unprocessed_count_due_to_provider_failure_guard`; after the endpoint is healthy
+again, resume the original command for the untouched tail and retry the failed
+provider records separately.
+
+To isolate the failed provider records without also retrying schema/parser
+defects, build a retry batch from the original input batch and the partial
+results:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-provider-failure-retry-batch \
+  --batch data/evaluation/tg_qa_canonicalization/<prefix>_batch.jsonl \
+  --results data/evaluation/tg_qa_canonicalization/<prefix>_results.jsonl \
+  --output data/evaluation/tg_qa_canonicalization/<prefix>_provider_failed_retry_batch.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<prefix>_provider_failed_retry_summary.json
+```
+
+For pair-judge benchmark artifacts, pass `--batch-id-field pair_id
+--result-id-field task_id`. Use `--include-unprocessed` only when creating a new
+clean run batch that should contain both the exhausted provider failures and the
+untouched tail after a guard stop. Otherwise, restart the original command with
+resume enabled to process the untouched tail, then run the provider-failure
+retry batch separately.
+
 Classify defects before spending another prompt iteration:
 
 - **critical**: changes included/excluded routing, selects the wrong central

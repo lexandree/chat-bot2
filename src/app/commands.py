@@ -60,6 +60,7 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_legal_intent_pair_benchmark,
     build_tg_qa_legal_intent_similarity_baseline,
     build_tg_qa_legal_intent_slot_comparator_decisions,
+    build_tg_qa_operator_provider_failure_retry_batch,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
     build_tg_qa_temporal_currentness_review_queue,
@@ -359,6 +360,17 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_sample_parser.add_argument("--output", required=True)
     tg_qa_canonical_sample_parser.add_argument("--summary-output", required=True)
     tg_qa_canonical_sample_parser.add_argument("--sample-size", type=int, default=50)
+    tg_qa_provider_failure_retry_batch_parser = evaluation_subparsers.add_parser(
+        "tg-qa-provider-failure-retry-batch"
+    )
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--batch", required=True)
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--results", required=True)
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--output", required=True)
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--summary-output", required=True)
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--batch-id-field", default="task_id")
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--result-id-field", default="task_id")
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--include-unprocessed", action="store_true")
+    tg_qa_provider_failure_retry_batch_parser.add_argument("--max-items", type=int, default=0)
     tg_qa_canonical_review_cards_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-review-cards")
     tg_qa_canonical_review_cards_parser.add_argument("--batch", required=True)
     tg_qa_canonical_review_cards_parser.add_argument("--html-output", required=True)
@@ -389,6 +401,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_llm_run_parser.add_argument("--api-key-env", default="")
     tg_qa_canonical_llm_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
     tg_qa_canonical_llm_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_llm_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_llm_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_llm_run_parser.add_argument("--no-progress", action="store_true")
     tg_qa_canonical_verifier_run_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-verifier-run")
@@ -414,6 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_verifier_run_parser.add_argument("--api-key-env", default="")
     tg_qa_canonical_verifier_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
     tg_qa_canonical_verifier_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_verifier_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_verifier_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_verifier_run_parser.add_argument("--no-progress", action="store_true")
     tg_qa_canonical_adjudication_batch_parser = evaluation_subparsers.add_parser(
@@ -483,6 +497,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_adjudication_run_parser.add_argument("--provider", choices=["anthropic", "openai"], default="openai")
     tg_qa_canonical_adjudication_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
     tg_qa_canonical_adjudication_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_adjudication_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_adjudication_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_adjudication_run_parser.add_argument("--no-progress", action="store_true")
     tg_qa_canonical_deepseek_run_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-deepseek-run")
@@ -510,6 +525,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_deepseek_run_parser.add_argument("--api-key-env", default="")
     tg_qa_canonical_deepseek_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
     tg_qa_canonical_deepseek_run_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_canonical_deepseek_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_deepseek_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_deepseek_run_parser.add_argument("--no-progress", action="store_true")
     tg_qa_canonical_review_decisions_parser = evaluation_subparsers.add_parser(
@@ -629,6 +645,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_legal_intent_extractor_parser.add_argument("--api-key-env", default="")
     tg_qa_legal_intent_extractor_parser.add_argument("--provider-max-attempts", type=int, default=3)
     tg_qa_legal_intent_extractor_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_legal_intent_extractor_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_legal_intent_extractor_parser.add_argument("--no-resume", action="store_true")
     tg_qa_legal_intent_extractor_parser.add_argument("--no-progress", action="store_true")
     tg_qa_legal_intent_import_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-candidates-import")
@@ -680,6 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_legal_pair_judge_parser.add_argument("--api-key-env", default="")
     tg_qa_legal_pair_judge_parser.add_argument("--provider-max-attempts", type=int, default=3)
     tg_qa_legal_pair_judge_parser.add_argument("--provider-retry-delay-seconds", type=float, default=2.0)
+    tg_qa_legal_pair_judge_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_legal_pair_judge_parser.add_argument("--no-resume", action="store_true")
     tg_qa_legal_pair_judge_parser.add_argument("--no-progress", action="store_true")
     tg_qa_legal_pair_review_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-review-html")
@@ -1360,6 +1378,20 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
         payload = dict(result["summary"])
         payload["status"] = "completed"
         return 0, payload
+    if args.action == "tg-qa-provider-failure-retry-batch":
+        result = build_tg_qa_operator_provider_failure_retry_batch(
+            batch_path=args.batch,
+            results_path=args.results,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            batch_id_field=args.batch_id_field,
+            result_id_field=args.result_id_field,
+            include_unprocessed=args.include_unprocessed,
+            max_items=args.max_items,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed"
+        return 0, payload
     if args.action == "tg-qa-canonicalization-review-cards":
         result = export_tg_qa_canonicalization_review_cards(
             batch_path=args.batch,
@@ -1393,6 +1425,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             resume=not args.no_resume,
             provider_max_attempts=args.provider_max_attempts,
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
         )
         payload = dict(result["summary"])
@@ -1419,6 +1452,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             resume=not args.no_resume,
             provider_max_attempts=args.provider_max_attempts,
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
         )
         payload = dict(result["summary"])
@@ -1471,6 +1505,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             resume=not args.no_resume,
             provider_max_attempts=args.provider_max_attempts,
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
         )
         payload = dict(result["summary"])
@@ -1496,6 +1531,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             resume=not args.no_resume,
             provider_max_attempts=args.provider_max_attempts,
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
         )
         payload = dict(result["summary"])
@@ -1680,6 +1716,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             resume=not args.no_resume,
             provider_max_attempts=args.provider_max_attempts,
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
         )
         payload = dict(result["summary"])
@@ -1752,6 +1789,7 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             resume=not args.no_resume,
             provider_max_attempts=args.provider_max_attempts,
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
         )
         payload = dict(result["summary"])

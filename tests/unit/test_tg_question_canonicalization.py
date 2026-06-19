@@ -34,6 +34,7 @@ from evaluation.tg_question_canonicalization import (
     build_tg_qa_legal_intent_pair_benchmark,
     build_tg_qa_legal_intent_similarity_baseline,
     build_tg_qa_legal_intent_slot_comparator_decisions,
+    build_tg_qa_operator_provider_failure_retry_batch,
     build_tg_qa_question_bank,
     build_tg_qa_reviewed_evaluation_dataset,
     build_tg_qa_temporal_currentness_review_queue,
@@ -1380,6 +1381,122 @@ def test_live_runner_supports_infinite_transient_retries(tmp_path: Path) -> None
     assert result["summary"]["provider_retry_exhausted_count"] == 0
     assert result["summary"]["completed_count"] == 1
     assert records[0]["status"] == "completed"
+
+
+def test_live_runner_stops_after_consecutive_provider_failures(tmp_path: Path) -> None:
+    candidates_path = tmp_path / "candidates.jsonl"
+    batch_path = tmp_path / "batch.jsonl"
+    batch_summary_path = tmp_path / "batch_summary.json"
+    qwen_results_path = tmp_path / "qwen_results.jsonl"
+    qwen_summary_path = tmp_path / "qwen_summary.json"
+    _write_jsonl(
+        candidates_path,
+        [
+            _candidate(f"tg-qa-candidate:{index}", "Можно ли продлить ВНЖ после переезда?", f"m{index}")
+            for index in range(5)
+        ],
+    )
+    emit_tg_qa_canonicalization_batch(
+        candidates_path=candidates_path,
+        output_path=batch_path,
+        summary_output_path=batch_summary_path,
+        filter_mode="law_or_topic",
+    )
+    chain = _AlwaysFailingProviderCanonicalizationChain()
+
+    result = run_tg_qa_canonicalization_llm_batch(
+        batch_path=batch_path,
+        output_path=qwen_results_path,
+        summary_output_path=qwen_summary_path,
+        endpoint_url="https://redacted.test/v1/chat/completions",
+        model_id="fixture-qwen",
+        canonicalization_run_id="tg-question-canonicalization-run:fixture",
+        provider_max_attempts=1,
+        provider_retry_delay_seconds=0,
+        stop_after_consecutive_provider_failures=3,
+        chain=chain,
+    )
+
+    records = _read_jsonl(qwen_results_path)
+    assert chain.attempt_count == 3
+    assert len(records) == 3
+    assert all(record["status"] == "failed" for record in records)
+    assert result["summary"]["requested_item_count"] == 5
+    assert result["summary"]["processed_count"] == 3
+    assert result["summary"]["failed_count"] == 3
+    assert result["summary"]["provider_retry_exhausted_count"] == 3
+    assert result["summary"]["stop_after_consecutive_provider_failures"] == 3
+    assert result["summary"]["stopped_by_provider_failure_guard"] is True
+    assert result["summary"]["provider_failure_guard_trigger"] == "endpoint_error:InternalServerError:530"
+    assert result["summary"]["consecutive_provider_failure_count"] == 3
+    assert result["summary"]["unprocessed_count_due_to_provider_failure_guard"] == 2
+
+
+def test_provider_failure_retry_batch_selects_only_provider_failures(tmp_path: Path) -> None:
+    candidates_path = tmp_path / "candidates.jsonl"
+    batch_path = tmp_path / "batch.jsonl"
+    batch_summary_path = tmp_path / "batch_summary.json"
+    results_path = tmp_path / "results.jsonl"
+    retry_path = tmp_path / "retry.jsonl"
+    retry_summary_path = tmp_path / "retry_summary.json"
+    retry_with_tail_path = tmp_path / "retry_with_tail.jsonl"
+    retry_with_tail_summary_path = tmp_path / "retry_with_tail_summary.json"
+    _write_jsonl(
+        candidates_path,
+        [
+            _candidate(f"tg-qa-candidate:{index}", "Можно ли продлить ВНЖ после переезда?", f"m{index}")
+            for index in range(4)
+        ],
+    )
+    emit_tg_qa_canonicalization_batch(
+        candidates_path=candidates_path,
+        output_path=batch_path,
+        summary_output_path=batch_summary_path,
+        filter_mode="law_or_topic",
+    )
+    batch = _read_jsonl(batch_path)
+    _write_jsonl(
+        results_path,
+        [
+            _canonical_result(batch[0]),
+            {
+                "task_id": batch[1]["task_id"],
+                "candidate_id": batch[1]["candidate_id"],
+                "status": "failed",
+                "failure_reason": "endpoint_error:InternalServerError:Error code: 530 retry_attempts=1",
+            },
+            {
+                "task_id": batch[2]["task_id"],
+                "candidate_id": batch[2]["candidate_id"],
+                "status": "failed",
+                "failure_reason": "endpoint_error:ValidationError:1 validation error for payload",
+            },
+        ],
+    )
+
+    result = build_tg_qa_operator_provider_failure_retry_batch(
+        batch_path=batch_path,
+        results_path=results_path,
+        output_path=retry_path,
+        summary_output_path=retry_summary_path,
+    )
+    result_with_tail = build_tg_qa_operator_provider_failure_retry_batch(
+        batch_path=batch_path,
+        results_path=results_path,
+        output_path=retry_with_tail_path,
+        summary_output_path=retry_with_tail_summary_path,
+        include_unprocessed=True,
+    )
+
+    retry_items = _read_jsonl(retry_path)
+    retry_with_tail_items = _read_jsonl(retry_with_tail_path)
+    assert [item["task_id"] for item in retry_items] == [batch[1]["task_id"]]
+    assert [item["task_id"] for item in retry_with_tail_items] == [batch[1]["task_id"], batch[3]["task_id"]]
+    assert result["summary"]["provider_failed_result_count"] == 1
+    assert result["summary"]["non_provider_failed_result_count"] == 1
+    assert result["summary"]["unprocessed_batch_item_count"] == 1
+    assert result["summary"]["provider_failure_keys"] == {"endpoint_error:InternalServerError:530": 1}
+    assert result_with_tail["summary"]["selected_retry_item_count"] == 2
 
 
 def test_live_runner_honors_max_items_limit(tmp_path: Path) -> None:
@@ -3270,6 +3387,10 @@ class RateLimitError(Exception):
     pass
 
 
+class InternalServerError(Exception):
+    pass
+
+
 class _RetryingCanonicalizationChain:
     def __init__(self, batch_item: dict, *, fail_attempts: int) -> None:
         self.batch_item = batch_item
@@ -3282,6 +3403,16 @@ class _RetryingCanonicalizationChain:
         if self.attempt_count <= self.fail_attempts:
             raise RateLimitError("429 rate limit from upstream provider, try again later")
         return CanonicalizationResultPayload.model_validate(_canonical_result(self.batch_item))
+
+
+class _AlwaysFailingProviderCanonicalizationChain:
+    def __init__(self) -> None:
+        self.attempt_count = 0
+
+    def invoke(self, payload: dict) -> CanonicalizationResultPayload:
+        self.attempt_count += 1
+        assert "source_message_ids" not in payload["task_payload"]
+        raise InternalServerError("Error code: 530 - Cloudflare Tunnel error 1033")
 
 
 class _CjkThenValidCanonicalizationChain:

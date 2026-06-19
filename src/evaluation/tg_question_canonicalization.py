@@ -181,6 +181,9 @@ API_KEY_VALUE_RE = re.compile(r"\b(?:sk|pk|ak|rk)-[A-Za-z0-9_-]{10,}\b")
 CJK_RE = re.compile(
     r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u30FF\u31F0-\u31FF\uAC00-\uD7AF]"
 )
+PROVIDER_ERROR_CODE_RE = re.compile(
+    r"(?i)(?:error code|status|http|<)\s*['\"]?\s*[:=]?\s*['\"]?<?\s*(\d{3})\b"
+)
 OPERATOR_ERROR_REASON_LIMIT = 1000
 OPERATOR_PROGRESS_DETAIL_LIMIT = 280
 OPERATOR_OUTPUT_RETRY_MAX_ATTEMPTS = 3
@@ -812,6 +815,111 @@ def sample_tg_qa_canonicalization_batch(
     return {"records": selected, "summary": summary}
 
 
+def build_tg_qa_operator_provider_failure_retry_batch(
+    *,
+    batch_path: str | Path,
+    results_path: str | Path,
+    output_path: str | Path,
+    summary_output_path: str | Path,
+    batch_id_field: str = "task_id",
+    result_id_field: str = "task_id",
+    include_unprocessed: bool = False,
+    max_items: int = 0,
+) -> dict[str, Any]:
+    """Build a retry batch from exhausted provider/transport failures only."""
+
+    if max_items < 0:
+        raise ValueError("max_items must be non-negative")
+    if not batch_id_field:
+        raise ValueError("batch_id_field is required")
+    if not result_id_field:
+        raise ValueError("result_id_field is required")
+
+    batch_items = _read_jsonl(batch_path)
+    results = _read_jsonl(results_path)
+    batch_by_id: dict[str, dict[str, Any]] = {}
+    batch_order: list[str] = []
+    missing_batch_id_count = 0
+    duplicate_batch_id_count = 0
+    for item in batch_items:
+        item_id = str(item.get(batch_id_field, ""))
+        if not item_id:
+            missing_batch_id_count += 1
+            continue
+        if item_id in batch_by_id:
+            duplicate_batch_id_count += 1
+            continue
+        batch_by_id[item_id] = item
+        batch_order.append(item_id)
+
+    provider_failure_keys: Counter[str] = Counter()
+    provider_failed_ids: set[str] = set()
+    result_processed_ids: set[str] = set()
+    failed_result_count = 0
+    provider_failed_result_count = 0
+    non_provider_failed_result_count = 0
+    provider_failure_missing_id_count = 0
+    for result in results:
+        result_id = str(result.get(result_id_field, ""))
+        if result_id:
+            result_processed_ids.add(result_id)
+        if str(result.get("status", "")) != "failed":
+            continue
+        failed_result_count += 1
+        provider_failure_key = _operator_provider_failure_guard_key(result)
+        if not provider_failure_key:
+            non_provider_failed_result_count += 1
+            continue
+        provider_failed_result_count += 1
+        provider_failure_keys[provider_failure_key] += 1
+        if not result_id:
+            provider_failure_missing_id_count += 1
+            continue
+        provider_failed_ids.add(result_id)
+
+    missing_batch_item_for_provider_failure_count = len(provider_failed_ids - set(batch_by_id))
+    unprocessed_ids = [item_id for item_id in batch_order if item_id not in result_processed_ids]
+    retry_ids: list[str] = []
+    for item_id in batch_order:
+        if item_id in provider_failed_ids:
+            retry_ids.append(item_id)
+    if include_unprocessed:
+        selected_ids = set(retry_ids)
+        retry_ids.extend(item_id for item_id in unprocessed_ids if item_id not in selected_ids)
+    if max_items > 0:
+        retry_ids = retry_ids[:max_items]
+
+    retry_items = [batch_by_id[item_id] for item_id in retry_ids if item_id in batch_by_id]
+    output = _write_jsonl(output_path, retry_items)
+    summary = {
+        "artifact_type": "tg_qa_operator_provider_failure_retry_batch_summary",
+        "generated_at": _utc_timestamp(),
+        "batch_path": str(batch_path),
+        "results_path": str(results_path),
+        "output_path": str(output),
+        "summary_output_path": str(summary_output_path),
+        "batch_id_field": batch_id_field,
+        "result_id_field": result_id_field,
+        "include_unprocessed": include_unprocessed,
+        "max_items": max_items,
+        "batch_item_count": len(batch_items),
+        "result_count": len(results),
+        "failed_result_count": failed_result_count,
+        "provider_failed_result_count": provider_failed_result_count,
+        "provider_failed_unique_id_count": len(provider_failed_ids),
+        "non_provider_failed_result_count": non_provider_failed_result_count,
+        "provider_failure_missing_id_count": provider_failure_missing_id_count,
+        "missing_batch_id_count": missing_batch_id_count,
+        "duplicate_batch_id_count": duplicate_batch_id_count,
+        "missing_batch_item_for_provider_failure_count": missing_batch_item_for_provider_failure_count,
+        "unprocessed_batch_item_count": len(unprocessed_ids),
+        "selected_retry_item_count": len(retry_items),
+        "provider_failure_keys": dict(sorted(provider_failure_keys.items())),
+    }
+    _write_json(summary_output_path, summary)
+    return {"output_path": output, "summary_output_path": Path(summary_output_path), "summary": summary}
+
+
 def export_tg_qa_canonicalization_review_cards(
     *,
     batch_path: str | Path,
@@ -1367,6 +1475,7 @@ def run_tg_qa_canonicalization_llm_batch(
     resume: bool = True,
     provider_max_attempts: int = 3,
     provider_retry_delay_seconds: float = 2.0,
+    stop_after_consecutive_provider_failures: int = 0,
     progress: bool = False,
     chain: Any | None = None,
 ) -> dict[str, Any]:
@@ -1380,6 +1489,8 @@ def run_tg_qa_canonicalization_llm_batch(
         raise ValueError("provider_max_attempts must be non-negative")
     if provider_retry_delay_seconds < 0:
         raise ValueError("provider_retry_delay_seconds must be non-negative")
+    if stop_after_consecutive_provider_failures < 0:
+        raise ValueError("stop_after_consecutive_provider_failures must be non-negative")
     batch_items = _read_jsonl(batch_path)
     resume_state = _load_existing_operator_results(output_path, batch_items) if resume else _empty_operator_resume_state()
     remaining_items = [
@@ -1406,6 +1517,10 @@ def run_tg_qa_canonicalization_llm_batch(
         total=len(selected_items),
     )
     output_handle = _open_jsonl_stream(output_path, append=resume and bool(resume_state["processed_task_ids"]))
+    consecutive_provider_failure_key = ""
+    consecutive_provider_failure_count = 0
+    stopped_by_provider_failure_guard = False
+    provider_failure_guard_trigger = ""
     try:
         for item_index, item in enumerate(selected_items, start=1):
             progress_line.update(
@@ -1502,6 +1617,36 @@ def run_tg_qa_canonicalization_llm_batch(
                     failure_reason=str(record.get("failure_reason", "")),
                 ),
             )
+            provider_failure_key = _operator_provider_failure_guard_key(record)
+            if provider_failure_key:
+                if provider_failure_key == consecutive_provider_failure_key:
+                    consecutive_provider_failure_count += 1
+                else:
+                    consecutive_provider_failure_key = provider_failure_key
+                    consecutive_provider_failure_count = 1
+            else:
+                consecutive_provider_failure_key = ""
+                consecutive_provider_failure_count = 0
+            if (
+                stop_after_consecutive_provider_failures > 0
+                and consecutive_provider_failure_count >= stop_after_consecutive_provider_failures
+            ):
+                stopped_by_provider_failure_guard = True
+                provider_failure_guard_trigger = consecutive_provider_failure_key
+                progress_line.update(
+                    item_index,
+                    completed=counts.get("completed", 0),
+                    failed=counts.get("failed", 0),
+                    skipped=counts.get("skipped", 0),
+                    last_status="stopped",
+                    detail=(
+                        "provider_failure_guard "
+                        f"{consecutive_provider_failure_count}/"
+                        f"{stop_after_consecutive_provider_failures} "
+                        f"{provider_failure_guard_trigger}"
+                    ),
+                )
+                break
             if stop_on_failure and str(record.get("status", "")) == "failed":
                 break
     finally:
@@ -1532,6 +1677,13 @@ def run_tg_qa_canonicalization_llm_batch(
         "structured_output_method": structured_output_method,
         "extra_body_keys": sorted(extra_body.keys()) if isinstance(extra_body, Mapping) else [],
         "stop_on_failure": stop_on_failure,
+        "stop_after_consecutive_provider_failures": stop_after_consecutive_provider_failures,
+        "stopped_by_provider_failure_guard": stopped_by_provider_failure_guard,
+        "provider_failure_guard_trigger": provider_failure_guard_trigger,
+        "consecutive_provider_failure_count": consecutive_provider_failure_count,
+        "unprocessed_count_due_to_provider_failure_guard": (
+            len(selected_items) - counts.get("processed", 0) if stopped_by_provider_failure_guard else 0
+        ),
         "resume": resume,
         "progress": progress,
         "provider_max_attempts": provider_max_attempts,
@@ -1585,6 +1737,7 @@ def run_tg_qa_canonicalization_verifier_batch(
     resume: bool = True,
     provider_max_attempts: int = 3,
     provider_retry_delay_seconds: float = 2.0,
+    stop_after_consecutive_provider_failures: int = 0,
     progress: bool = False,
     chain: Any | None = None,
 ) -> dict[str, Any]:
@@ -1596,6 +1749,8 @@ def run_tg_qa_canonicalization_verifier_batch(
         raise ValueError("provider_max_attempts must be non-negative")
     if provider_retry_delay_seconds < 0:
         raise ValueError("provider_retry_delay_seconds must be non-negative")
+    if stop_after_consecutive_provider_failures < 0:
+        raise ValueError("stop_after_consecutive_provider_failures must be non-negative")
     evidence_records = _read_jsonl(evidence_path)
     resume_state = _load_existing_operator_results(output_path, evidence_records) if resume else _empty_operator_resume_state()
     remaining_records = [
@@ -1622,6 +1777,10 @@ def run_tg_qa_canonicalization_verifier_batch(
         total=len(selected_records),
     )
     output_handle = _open_jsonl_stream(output_path, append=resume and bool(resume_state["processed_task_ids"]))
+    consecutive_provider_failure_key = ""
+    consecutive_provider_failure_count = 0
+    stopped_by_provider_failure_guard = False
+    provider_failure_guard_trigger = ""
     try:
         for item_index, evidence in enumerate(selected_records, start=1):
             progress_line.update(
@@ -1730,6 +1889,36 @@ def run_tg_qa_canonicalization_verifier_batch(
                     failure_reason=str(record.get("failure_reason", "")),
                 ),
             )
+            provider_failure_key = _operator_provider_failure_guard_key(record)
+            if provider_failure_key:
+                if provider_failure_key == consecutive_provider_failure_key:
+                    consecutive_provider_failure_count += 1
+                else:
+                    consecutive_provider_failure_key = provider_failure_key
+                    consecutive_provider_failure_count = 1
+            else:
+                consecutive_provider_failure_key = ""
+                consecutive_provider_failure_count = 0
+            if (
+                stop_after_consecutive_provider_failures > 0
+                and consecutive_provider_failure_count >= stop_after_consecutive_provider_failures
+            ):
+                stopped_by_provider_failure_guard = True
+                provider_failure_guard_trigger = consecutive_provider_failure_key
+                progress_line.update(
+                    item_index,
+                    completed=counts.get("completed", 0),
+                    failed=counts.get("failed", 0),
+                    skipped=counts.get("skipped", 0),
+                    last_status="stopped",
+                    detail=(
+                        "provider_failure_guard "
+                        f"{consecutive_provider_failure_count}/"
+                        f"{stop_after_consecutive_provider_failures} "
+                        f"{provider_failure_guard_trigger}"
+                    ),
+                )
+                break
             if stop_on_failure and str(record.get("status", "")) == "failed":
                 break
     finally:
@@ -1760,6 +1949,13 @@ def run_tg_qa_canonicalization_verifier_batch(
         "structured_output_method": structured_output_method,
         "extra_body_keys": sorted(extra_body.keys()) if isinstance(extra_body, Mapping) else [],
         "stop_on_failure": stop_on_failure,
+        "stop_after_consecutive_provider_failures": stop_after_consecutive_provider_failures,
+        "stopped_by_provider_failure_guard": stopped_by_provider_failure_guard,
+        "provider_failure_guard_trigger": provider_failure_guard_trigger,
+        "consecutive_provider_failure_count": consecutive_provider_failure_count,
+        "unprocessed_count_due_to_provider_failure_guard": (
+            len(selected_records) - counts.get("processed", 0) if stopped_by_provider_failure_guard else 0
+        ),
         "resume": resume,
         "progress": progress,
         "provider_max_attempts": provider_max_attempts,
@@ -1811,6 +2007,7 @@ def run_tg_qa_canonicalization_adjudication_batch(
     resume: bool = True,
     provider_max_attempts: int = 3,
     provider_retry_delay_seconds: float = 2.0,
+    stop_after_consecutive_provider_failures: int = 0,
     progress: bool = False,
     chain: Any | None = None,
 ) -> dict[str, Any]:
@@ -1824,6 +2021,8 @@ def run_tg_qa_canonicalization_adjudication_batch(
         raise ValueError("provider_max_attempts must be non-negative")
     if provider_retry_delay_seconds < 0:
         raise ValueError("provider_retry_delay_seconds must be non-negative")
+    if stop_after_consecutive_provider_failures < 0:
+        raise ValueError("stop_after_consecutive_provider_failures must be non-negative")
     batch_items = _read_jsonl(batch_path)
     resume_state = _load_existing_operator_results(output_path, batch_items) if resume else _empty_operator_resume_state()
     remaining_items = [
@@ -1850,6 +2049,10 @@ def run_tg_qa_canonicalization_adjudication_batch(
         total=len(selected_items),
     )
     output_handle = _open_jsonl_stream(output_path, append=resume and bool(resume_state["processed_task_ids"]))
+    consecutive_provider_failure_key = ""
+    consecutive_provider_failure_count = 0
+    stopped_by_provider_failure_guard = False
+    provider_failure_guard_trigger = ""
     try:
         for item_index, item in enumerate(selected_items, start=1):
             progress_line.update(
@@ -1939,6 +2142,36 @@ def run_tg_qa_canonicalization_adjudication_batch(
                     failure_reason=str(record.get("failure_reason", "")),
                 ),
             )
+            provider_failure_key = _operator_provider_failure_guard_key(record)
+            if provider_failure_key:
+                if provider_failure_key == consecutive_provider_failure_key:
+                    consecutive_provider_failure_count += 1
+                else:
+                    consecutive_provider_failure_key = provider_failure_key
+                    consecutive_provider_failure_count = 1
+            else:
+                consecutive_provider_failure_key = ""
+                consecutive_provider_failure_count = 0
+            if (
+                stop_after_consecutive_provider_failures > 0
+                and consecutive_provider_failure_count >= stop_after_consecutive_provider_failures
+            ):
+                stopped_by_provider_failure_guard = True
+                provider_failure_guard_trigger = consecutive_provider_failure_key
+                progress_line.update(
+                    item_index,
+                    completed=counts.get("completed", 0),
+                    failed=counts.get("failed", 0),
+                    skipped=counts.get("skipped", 0),
+                    last_status="stopped",
+                    detail=(
+                        "provider_failure_guard "
+                        f"{consecutive_provider_failure_count}/"
+                        f"{stop_after_consecutive_provider_failures} "
+                        f"{provider_failure_guard_trigger}"
+                    ),
+                )
+                break
             if stop_on_failure and str(record.get("status", "")) == "failed":
                 break
     finally:
@@ -1969,6 +2202,13 @@ def run_tg_qa_canonicalization_adjudication_batch(
         "structured_output_method": structured_output_method,
         "extra_body_keys": sorted(extra_body.keys()) if isinstance(extra_body, Mapping) else [],
         "stop_on_failure": stop_on_failure,
+        "stop_after_consecutive_provider_failures": stop_after_consecutive_provider_failures,
+        "stopped_by_provider_failure_guard": stopped_by_provider_failure_guard,
+        "provider_failure_guard_trigger": provider_failure_guard_trigger,
+        "consecutive_provider_failure_count": consecutive_provider_failure_count,
+        "unprocessed_count_due_to_provider_failure_guard": (
+            len(selected_items) - counts.get("processed", 0) if stopped_by_provider_failure_guard else 0
+        ),
         "resume": resume,
         "progress": progress,
         "provider_max_attempts": provider_max_attempts,
@@ -2019,6 +2259,7 @@ def run_tg_qa_canonicalization_deepseek_batch(
     resume: bool = True,
     provider_max_attempts: int = 3,
     provider_retry_delay_seconds: float = 2.0,
+    stop_after_consecutive_provider_failures: int = 0,
     progress: bool = False,
     chain: Any | None = None,
 ) -> dict[str, Any]:
@@ -2043,6 +2284,7 @@ def run_tg_qa_canonicalization_deepseek_batch(
         resume=resume,
         provider_max_attempts=provider_max_attempts,
         provider_retry_delay_seconds=provider_retry_delay_seconds,
+        stop_after_consecutive_provider_failures=stop_after_consecutive_provider_failures,
         progress=progress,
         chain=chain,
     )
@@ -3163,6 +3405,7 @@ def run_tg_qa_legal_intent_candidate_extractor_batch(
     resume: bool = True,
     provider_max_attempts: int = 3,
     provider_retry_delay_seconds: float = 2.0,
+    stop_after_consecutive_provider_failures: int = 0,
     progress: bool = False,
     chain: Any | None = None,
 ) -> dict[str, Any]:
@@ -3176,6 +3419,8 @@ def run_tg_qa_legal_intent_candidate_extractor_batch(
         raise ValueError("provider_max_attempts must be non-negative")
     if provider_retry_delay_seconds < 0:
         raise ValueError("provider_retry_delay_seconds must be non-negative")
+    if stop_after_consecutive_provider_failures < 0:
+        raise ValueError("stop_after_consecutive_provider_failures must be non-negative")
 
     all_evidence = [
         _legal_intent_source_evidence_record(item)
@@ -3229,6 +3474,10 @@ def run_tg_qa_legal_intent_candidate_extractor_batch(
         total=len(selected_evidence),
     )
     output_handle = _open_jsonl_stream(output_path, append=resume and bool(resume_state["processed_task_ids"]))
+    consecutive_provider_failure_key = ""
+    consecutive_provider_failure_count = 0
+    stopped_by_provider_failure_guard = False
+    provider_failure_guard_trigger = ""
     try:
         for item_index, source_evidence in enumerate(selected_evidence, start=1):
             operator_item = _legal_intent_candidate_operator_item(source_evidence)
@@ -3317,6 +3566,36 @@ def run_tg_qa_legal_intent_candidate_extractor_batch(
                     failure_reason=str(record.get("failure_reason", "")),
                 ),
             )
+            provider_failure_key = _operator_provider_failure_guard_key(record)
+            if provider_failure_key:
+                if provider_failure_key == consecutive_provider_failure_key:
+                    consecutive_provider_failure_count += 1
+                else:
+                    consecutive_provider_failure_key = provider_failure_key
+                    consecutive_provider_failure_count = 1
+            else:
+                consecutive_provider_failure_key = ""
+                consecutive_provider_failure_count = 0
+            if (
+                stop_after_consecutive_provider_failures > 0
+                and consecutive_provider_failure_count >= stop_after_consecutive_provider_failures
+            ):
+                stopped_by_provider_failure_guard = True
+                provider_failure_guard_trigger = consecutive_provider_failure_key
+                progress_line.update(
+                    item_index,
+                    completed=counts.get("completed", 0),
+                    failed=counts.get("failed", 0),
+                    skipped=counts.get("skipped", 0),
+                    last_status="stopped",
+                    detail=(
+                        "provider_failure_guard "
+                        f"{consecutive_provider_failure_count}/"
+                        f"{stop_after_consecutive_provider_failures} "
+                        f"{provider_failure_guard_trigger}"
+                    ),
+                )
+                break
             if stop_on_failure and str(record.get("status", "")) == "failed":
                 break
     finally:
@@ -3348,6 +3627,13 @@ def run_tg_qa_legal_intent_candidate_extractor_batch(
         "structured_output_method": structured_output_method,
         "extra_body_keys": sorted(extra_body.keys()) if isinstance(extra_body, Mapping) else [],
         "stop_on_failure": stop_on_failure,
+        "stop_after_consecutive_provider_failures": stop_after_consecutive_provider_failures,
+        "stopped_by_provider_failure_guard": stopped_by_provider_failure_guard,
+        "provider_failure_guard_trigger": provider_failure_guard_trigger,
+        "consecutive_provider_failure_count": consecutive_provider_failure_count,
+        "unprocessed_count_due_to_provider_failure_guard": (
+            len(selected_evidence) - counts.get("processed", 0) if stopped_by_provider_failure_guard else 0
+        ),
         "resume": resume,
         "progress": progress,
         "provider_max_attempts": provider_max_attempts,
@@ -3626,6 +3912,7 @@ def run_tg_qa_legal_intent_pair_judge_batch(
     resume: bool = True,
     provider_max_attempts: int = 3,
     provider_retry_delay_seconds: float = 2.0,
+    stop_after_consecutive_provider_failures: int = 0,
     progress: bool = False,
     chain: Any | None = None,
 ) -> dict[str, Any]:
@@ -3639,6 +3926,8 @@ def run_tg_qa_legal_intent_pair_judge_batch(
         raise ValueError("provider_max_attempts must be non-negative")
     if provider_retry_delay_seconds < 0:
         raise ValueError("provider_retry_delay_seconds must be non-negative")
+    if stop_after_consecutive_provider_failures < 0:
+        raise ValueError("stop_after_consecutive_provider_failures must be non-negative")
 
     pairs = _read_jsonl(pair_benchmark_path)
     candidates_by_evidence_id = _legal_intent_candidates_by_evidence_id(legal_intent_candidates_path)
@@ -3668,6 +3957,10 @@ def run_tg_qa_legal_intent_pair_judge_batch(
         total=len(selected_pairs),
     )
     output_handle = _open_jsonl_stream(output_path, append=resume and bool(resume_state["processed_task_ids"]))
+    consecutive_provider_failure_key = ""
+    consecutive_provider_failure_count = 0
+    stopped_by_provider_failure_guard = False
+    provider_failure_guard_trigger = ""
     try:
         for item_index, pair in enumerate(selected_pairs, start=1):
             operator_item = _legal_intent_pair_operator_item(pair)
@@ -3761,6 +4054,36 @@ def run_tg_qa_legal_intent_pair_judge_batch(
                     failure_reason=str(record.get("failure_reason", "")),
                 ),
             )
+            provider_failure_key = _operator_provider_failure_guard_key(record)
+            if provider_failure_key:
+                if provider_failure_key == consecutive_provider_failure_key:
+                    consecutive_provider_failure_count += 1
+                else:
+                    consecutive_provider_failure_key = provider_failure_key
+                    consecutive_provider_failure_count = 1
+            else:
+                consecutive_provider_failure_key = ""
+                consecutive_provider_failure_count = 0
+            if (
+                stop_after_consecutive_provider_failures > 0
+                and consecutive_provider_failure_count >= stop_after_consecutive_provider_failures
+            ):
+                stopped_by_provider_failure_guard = True
+                provider_failure_guard_trigger = consecutive_provider_failure_key
+                progress_line.update(
+                    item_index,
+                    completed=counts.get("completed", 0),
+                    failed=counts.get("failed", 0),
+                    skipped=counts.get("skipped", 0),
+                    last_status="stopped",
+                    detail=(
+                        "provider_failure_guard "
+                        f"{consecutive_provider_failure_count}/"
+                        f"{stop_after_consecutive_provider_failures} "
+                        f"{provider_failure_guard_trigger}"
+                    ),
+                )
+                break
             if stop_on_failure and str(record.get("status", "")) == "failed":
                 break
     finally:
@@ -3792,6 +4115,13 @@ def run_tg_qa_legal_intent_pair_judge_batch(
         "structured_output_method": structured_output_method,
         "extra_body_keys": sorted(extra_body.keys()) if isinstance(extra_body, Mapping) else [],
         "stop_on_failure": stop_on_failure,
+        "stop_after_consecutive_provider_failures": stop_after_consecutive_provider_failures,
+        "stopped_by_provider_failure_guard": stopped_by_provider_failure_guard,
+        "provider_failure_guard_trigger": provider_failure_guard_trigger,
+        "consecutive_provider_failure_count": consecutive_provider_failure_count,
+        "unprocessed_count_due_to_provider_failure_guard": (
+            len(selected_pairs) - counts.get("processed", 0) if stopped_by_provider_failure_guard else 0
+        ),
         "resume": resume,
         "progress": progress,
         "provider_max_attempts": provider_max_attempts,
@@ -8344,6 +8674,35 @@ def _operator_retry_limit_for_exception(exc: Exception, provider_max_attempts: i
 
 def _operator_retry_limit_label(provider_max_attempts: int) -> str:
     return "inf" if provider_max_attempts == 0 else str(provider_max_attempts)
+
+
+def _operator_provider_failure_guard_key(record: Mapping[str, Any]) -> str:
+    """Return a stable outage key for exhausted provider failures, or empty."""
+
+    if str(record.get("status", "")) != "failed":
+        return ""
+    failure_reason = str(record.get("failure_reason", ""))
+    if not failure_reason.startswith("endpoint_error:"):
+        return ""
+    lowered = failure_reason.lower()
+    if any(
+        token in lowered
+        for token in (
+            "outputparserexception",
+            "retryableoperatoroutputerror",
+            "validationerror",
+            "invalid json",
+            "output parser",
+            "schema",
+        )
+    ):
+        return ""
+    parts = failure_reason.split(":", 2)
+    error_type = parts[1] if len(parts) > 1 and parts[1] else "unknown"
+    code_match = PROVIDER_ERROR_CODE_RE.search(failure_reason)
+    if code_match:
+        return f"endpoint_error:{error_type}:{code_match.group(1)}"
+    return f"endpoint_error:{error_type}"
 
 
 def _empty_operator_resume_state() -> dict[str, Any]:
