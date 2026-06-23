@@ -165,8 +165,54 @@ Questions outside the current legal state should remain auditable and may be
 useful for temporal evaluation, but they should not enter current-default
 question-bank or answer-planning branches without explicit review.
 
-**Current implementation gap**: `question_date` is preserved in the extracted
-candidate and canonicalization batch, but the compact canonicalization LLM
-payload currently omits it. Question-bank promotion also has no independent
-temporal-currentness gate. These gaps must be resolved only together with a
-reviewable temporal-routing contract; adding the date alone is insufficient.
+**Current implementation note**: `question_date` is preserved through the
+canonicalization batch and compact evaluation payloads. Question-bank promotion
+still depends on the reviewable temporal-currentness gate, because the date is
+only source metadata. Age alone must not prove that a question is obsolete, and
+recent date alone must not prove current reusable status.
+
+## FIQ-005: Agentic Research Should Support Short Human Route Corrections
+
+**Observed pattern**: Manual review often does not require a full legal answer
+from scratch. A model or retrieval step may choose the wrong sense of an
+ambiguous word, route, or legal object, while the human correction is short and
+cheap. Example: a source contains the Russian word `права`; a model may
+interpret it as human/legal rights and drift into irrelevant reasoning, while a
+human can quickly correct the route to "driver's license". After this
+correction, retrieval or an agent can continue productively.
+
+**Problem**: A plain manual review queue forces the reviewer to do the whole
+research task. A fully autonomous agent risks trusting its first wrong route.
+Both are inefficient. The useful middle ground is an agentic pre-research loop
+with a minimal human intervention point.
+
+**Future requirement**: Research and answer planning should support a
+reviewable `route_correction` interaction:
+
+- agent proposes the initial interpretation, legal route, sources, and open
+  assumptions;
+- reviewer can provide a short correction such as `права = driver's license`,
+  `Asyl here likely means §24 temporary protection`, or `this is telecom
+  consumer contract law, not migration law`;
+- agent reruns retrieval/reasoning with the correction as explicit context;
+- the final research dossier preserves both the failed initial route and the
+  human correction.
+
+**Artifact contract idea**:
+
+```json
+{
+  "cluster_id": "tg-legal-issue-cluster:...",
+  "initial_agent_route": "human/legal rights",
+  "route_correction": "driver's license",
+  "corrected_agent_route": "driving licence / vehicle administration",
+  "sources": [],
+  "open_assumptions": [],
+  "trust_boundary": "agentic_research_evidence_not_final_legal_decision"
+}
+```
+
+**Trust boundary**: The agent may prepare research evidence and reusable
+lessons, but it must not directly approve question-bank entries, mutate the
+legal graph, or promote final evaluation cases. Human review remains the
+boundary for dataset decisions.

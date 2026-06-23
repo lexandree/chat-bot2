@@ -703,6 +703,12 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_legal_pair_review_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-review-html")
     tg_qa_legal_pair_review_parser.add_argument("--pair-benchmark", required=True)
     tg_qa_legal_pair_review_parser.add_argument("--pair-decisions", default="")
+    tg_qa_legal_pair_review_parser.add_argument("--review-labels", default="")
+    tg_qa_legal_pair_review_parser.add_argument(
+        "--review-filter",
+        choices=["all", "unreviewed", "reviewed"],
+        default="all",
+    )
     tg_qa_legal_pair_review_parser.add_argument("--output", required=True)
     tg_qa_legal_pair_review_parser.add_argument("--summary-output", required=True)
     tg_qa_legal_pair_label_import_parser = evaluation_subparsers.add_parser("tg-qa-legal-intent-pair-labels-import")
@@ -1799,6 +1805,8 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
         result = export_tg_qa_legal_intent_pair_review_html(
             pair_benchmark_path=args.pair_benchmark,
             pair_decisions_path=args.pair_decisions or None,
+            review_labels_path=args.review_labels or None,
+            review_filter=args.review_filter,
             output_path=args.output,
             summary_output_path=args.summary_output,
         )

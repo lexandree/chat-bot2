@@ -20,9 +20,19 @@ Legal-intent pair review labels are explained in
 `specs/007-legal-question-canonicalization/legal-intent-pair-review-guide.ru.md`
 and
 `specs/007-legal-question-canonicalization/legal-intent-pair-review-guide.en.md`.
+Before any new legal-intent pair review, import the latest exported labels and
+build a delta review surface with `--review-labels ... --review-filter
+unreviewed`. Already reviewed pair ids must not be presented again as new
+manual work. LLM pair-judge runs use
+`TG_LEGAL_INTENT_PAIR_JUDGE_PROMPT_VERSION=tg_legal_intent_pair_judge_v2_positive`
+unless intentionally replaying a historical prompt.
 Private dataset snapshot and first corpus-bounded exact-reference retrieval
 commands are defined in
 `specs/007-legal-question-canonicalization/contracts/private-snapshot-reference-benchmark.md`.
+The current operator status snapshot is tracked in
+`specs/007-legal-question-canonicalization/current-state.md`, and aggregate
+retrieval findings are tracked in
+`specs/007-legal-question-canonicalization/retrieval-diagnostics-summary.md`.
 
 ## Cumulative Prompt-Regression Gate
 

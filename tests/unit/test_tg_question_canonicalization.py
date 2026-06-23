@@ -2457,6 +2457,44 @@ def test_legal_intent_pair_benchmark_has_stable_order_independent_ids(tmp_path: 
     assert "preserved_variant_candidate" in first["summary"]["counts_by_pair_source_reason"]
 
 
+def test_legal_intent_pair_benchmark_balances_random_negative_anchors(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "evidence.jsonl"
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_summary_path = tmp_path / "pairs_summary.json"
+    evidence = []
+    for index in range(12):
+        law_area = "migration_status" if index % 2 == 0 else "social_benefits"
+        evidence.append(
+            _evidence(
+                f"e{index:02d}",
+                f"tg-qa-candidate:{index:02d}",
+                f"Fixture legal question {index}",
+                slug=f"fixture_issue_{index:02d}",
+                law_area=law_area,
+            )
+        )
+    _write_jsonl(evidence_path, evidence)
+
+    result = build_tg_qa_legal_intent_pair_benchmark(
+        canonicalization_evidence_path=evidence_path,
+        output_path=pairs_path,
+        summary_output_path=pairs_summary_path,
+        max_random_negatives=6,
+    )
+
+    random_negative_pairs = [
+        item
+        for item in result["records"]
+        if "random_negative" in item.get("pair_source_reasons", [])
+    ]
+    left_candidate_ids = {item["left_candidate_id"] for item in random_negative_pairs}
+    right_candidate_ids = {item["right_candidate_id"] for item in random_negative_pairs}
+    assert len(random_negative_pairs) == 6
+    assert len(left_candidate_ids) > 1
+    assert result["summary"]["random_negative_unique_left_candidate_count"] == len(left_candidate_ids)
+    assert result["summary"]["random_negative_unique_right_candidate_count"] == len(right_candidate_ids)
+
+
 def test_legal_intent_pair_benchmark_accepts_dataset_record_ids_and_task_similarity_pairs(tmp_path: Path) -> None:
     evidence_path = tmp_path / "dataset_records.jsonl"
     similarity_pairs_path = tmp_path / "similarity_pairs.jsonl"
@@ -2819,6 +2857,7 @@ def test_legal_intent_pair_judge_runner_streams_review_evidence(tmp_path: Path) 
 def test_legal_intent_pair_review_html_has_priority_filters(tmp_path: Path) -> None:
     pairs_path = tmp_path / "pairs.jsonl"
     decisions_path = tmp_path / "decisions.jsonl"
+    labels_path = tmp_path / "labels.jsonl"
     html_path = tmp_path / "review.html"
     summary_path = tmp_path / "review_summary.json"
     _write_jsonl(
@@ -2854,6 +2893,21 @@ def test_legal_intent_pair_review_html_has_priority_filters(tmp_path: Path) -> N
             }
         ],
     )
+    _write_jsonl(
+        labels_path,
+        [
+            {
+                "pair_id": "pair:hard",
+                "status": "completed",
+                "pair_class": "same_topic_different_issue",
+                "answer_equivalence": "not_safe_to_share_answer",
+                "canonical_question_equivalence": "not_safe_to_share_question",
+                "allowed_downstream_actions": [],
+                "decision_reason": "Already reviewed fixture.",
+                "reviewed_at": "2026-06-10T00:00:00Z",
+            }
+        ],
+    )
 
     result = export_tg_qa_legal_intent_pair_review_html(
         pair_benchmark_path=pairs_path,
@@ -2869,6 +2923,24 @@ def test_legal_intent_pair_review_html_has_priority_filters(tmp_path: Path) -> N
     assert '<option value="random-control">random control</option>' in html
     assert "v.includes('negative')" not in html
     assert "v !== 'random_negative'" in html
+    assert "applyPairClassDefaults" in html
+    assert "answerEq').value = 'not_safe_to_share_answer'" in html
+    assert "questionEq').value = 'not_safe_to_share_question'" in html
+
+    unreviewed_result = export_tg_qa_legal_intent_pair_review_html(
+        pair_benchmark_path=pairs_path,
+        pair_decisions_path=decisions_path,
+        review_labels_path=labels_path,
+        review_filter="unreviewed",
+        output_path=html_path,
+        summary_output_path=summary_path,
+    )
+    unreviewed_html = html_path.read_text(encoding="utf-8")
+    assert unreviewed_result["summary"]["card_count"] == 1
+    assert unreviewed_result["summary"]["available_reviewed_label_count"] == 1
+    assert unreviewed_result["summary"]["excluded_reviewed_label_count"] == 1
+    assert "pair:hard" not in unreviewed_html
+    assert "pair:random" in unreviewed_html
 
 
 def test_legal_intent_review_labels_and_evaluation_report_flag_hard_negatives(tmp_path: Path) -> None:

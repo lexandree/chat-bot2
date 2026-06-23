@@ -3344,20 +3344,12 @@ def build_tg_qa_legal_intent_pair_benchmark(
             )
 
     if max_random_negatives > 0:
-        emitted = 0
-        for left, right in _all_pairs(sorted(evidence_records, key=lambda item: str(item.get("canonicalization_evidence_id", "")))):
-            if emitted >= max_random_negatives:
-                break
-            if str(left.get("legal_issue_frame_slug", "")) == str(right.get("legal_issue_frame_slug", "")):
-                continue
-            if str(left.get("law_area", "")) == str(right.get("law_area", "")):
-                continue
-            pair = _legal_intent_pair_record(left, right, pair_source_reasons=["random_negative"])
-            pair_id = str(pair.get("pair_id", ""))
-            if pair_id in pairs:
-                continue
+        for pair in _balanced_legal_intent_random_negative_pairs(
+            evidence_records,
+            existing_pair_ids=set(pairs),
+            max_pairs=max_random_negatives,
+        ):
             _merge_legal_intent_pair(pairs, pair)
-            emitted += 1
 
     records = sorted(pairs.values(), key=lambda item: str(item.get("pair_id", "")))
     _ensure_public_payload(records)
@@ -3374,6 +3366,20 @@ def build_tg_qa_legal_intent_pair_benchmark(
         "max_random_negatives": max_random_negatives,
         "counts_by_pair_source_reason": _counts(
             reason for item in records for reason in _as_string_list(item.get("pair_source_reasons", []))
+        ),
+        "random_negative_unique_left_candidate_count": len(
+            {
+                str(item.get("left_candidate_id", ""))
+                for item in records
+                if "random_negative" in _as_string_list(item.get("pair_source_reasons", []))
+            }
+        ),
+        "random_negative_unique_right_candidate_count": len(
+            {
+                str(item.get("right_candidate_id", ""))
+                for item in records
+                if "random_negative" in _as_string_list(item.get("pair_source_reasons", []))
+            }
         ),
         "counts_by_benchmark_status": _counts(str(item.get("benchmark_status", "")) for item in records),
         "artifact_directory": "data/evaluation/tg_qa_legal_intent_equivalence/",
@@ -4160,25 +4166,65 @@ def export_tg_qa_legal_intent_pair_review_html(
     output_path: str | Path,
     summary_output_path: str | Path,
     pair_decisions_path: str | Path | None = None,
+    review_labels_path: str | Path | None = None,
+    review_filter: str = "all",
 ) -> dict[str, Any]:
     """Export dependency-free HTML for manual pair review."""
 
+    if review_filter not in {"all", "unreviewed", "reviewed"}:
+        raise ValueError(f"invalid_review_filter:{review_filter}")
+
     pairs = _read_jsonl(pair_benchmark_path)
     decisions = _read_jsonl(pair_decisions_path) if pair_decisions_path else []
+    review_labels = _read_jsonl(review_labels_path) if review_labels_path else []
+    labels_by_pair: dict[str, dict[str, Any]] = {}
+    for label in review_labels:
+        if str(label.get("status", "")) != "completed":
+            continue
+        pair_id = str(label.get("pair_id", ""))
+        if pair_id and pair_id not in labels_by_pair:
+            labels_by_pair[pair_id] = label
+
     decisions_by_pair: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for decision in decisions:
         if str(decision.get("status", "")) == "failed":
             continue
         decisions_by_pair[str(decision.get("pair_id", ""))].append(decision)
-    cards = [_legal_intent_review_card(pair, decisions_by_pair.get(str(pair.get("pair_id", "")), [])) for pair in pairs]
+    selected_pairs = []
+    for pair in pairs:
+        pair_id = str(pair.get("pair_id", ""))
+        is_reviewed = pair_id in labels_by_pair
+        if review_filter == "unreviewed" and is_reviewed:
+            continue
+        if review_filter == "reviewed" and not is_reviewed:
+            continue
+        selected_pairs.append(pair)
+
+    cards = [
+        _legal_intent_review_card(
+            pair,
+            decisions_by_pair.get(str(pair.get("pair_id", "")), []),
+            review_label=labels_by_pair.get(str(pair.get("pair_id", ""))),
+        )
+        for pair in selected_pairs
+    ]
     _write_text(output_path, _legal_intent_review_html(cards))
     summary = {
         "artifact_type": "tg_qa_legal_intent_pair_review_html_summary",
         "generated_at": _utc_timestamp(),
         "pair_benchmark_path": str(pair_benchmark_path),
         "pair_decisions_path": str(pair_decisions_path or ""),
+        "review_labels_path": str(review_labels_path or ""),
+        "review_filter": review_filter,
         "html_output_path": str(output_path),
         "card_count": len(cards),
+        "available_pair_count": len(pairs),
+        "available_reviewed_label_count": len(labels_by_pair),
+        "included_reviewed_label_count": sum(1 for item in cards if item.get("review_label")),
+        "excluded_reviewed_label_count": sum(
+            1 for item in pairs if str(item.get("pair_id", "")) in labels_by_pair
+        )
+        - sum(1 for item in cards if item.get("review_label")),
         "cards_with_decisions_count": sum(1 for item in cards if item.get("decisions")),
         "review_ui_mode": "static_html_with_client_side_jsonl_export",
         "trust_boundary": "pair_review_labels_require_human_export_and_import",
@@ -4419,6 +4465,65 @@ def _all_pairs(records: Sequence[Mapping[str, Any]]) -> Iterable[tuple[dict[str,
     for left_index in range(len(items)):
         for right_index in range(left_index + 1, len(items)):
             yield items[left_index], items[right_index]
+
+
+def _balanced_legal_intent_random_negative_pairs(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    existing_pair_ids: set[str],
+    max_pairs: int,
+) -> list[dict[str, Any]]:
+    """Select deterministic negative controls without pinning one anchor record."""
+
+    if max_pairs <= 0:
+        return []
+    items = sorted(
+        [dict(item) for item in records],
+        key=lambda item: str(item.get("canonicalization_evidence_id", "")),
+    )
+    if len(items) < 2:
+        return []
+
+    emitted: list[dict[str, Any]] = []
+    emitted_pair_ids: set[str] = set()
+    degree_by_evidence_id: Counter[str] = Counter()
+    item_count = len(items)
+    degree_cap = max(1, (max_pairs * 2 + item_count - 1) // item_count)
+
+    while len(emitted) < max_pairs and degree_cap <= max(max_pairs, item_count):
+        added_this_round = False
+        for offset in range(1, item_count):
+            for left_index, left in enumerate(items):
+                if len(emitted) >= max_pairs:
+                    return emitted
+                right = items[(left_index + offset) % item_count]
+                left_id = str(left.get("canonicalization_evidence_id", ""))
+                right_id = str(right.get("canonicalization_evidence_id", ""))
+                if not left_id or not right_id or left_id == right_id:
+                    continue
+                if degree_by_evidence_id[left_id] >= degree_cap:
+                    continue
+                if degree_by_evidence_id[right_id] >= degree_cap:
+                    continue
+                if str(left.get("legal_issue_frame_slug", "")) == str(right.get("legal_issue_frame_slug", "")):
+                    continue
+                if str(left.get("law_area", "")) == str(right.get("law_area", "")):
+                    continue
+                pair = _legal_intent_pair_record(left, right, pair_source_reasons=["random_negative"])
+                pair_id = str(pair.get("pair_id", ""))
+                if pair_id in existing_pair_ids or pair_id in emitted_pair_ids:
+                    continue
+                emitted.append(pair)
+                emitted_pair_ids.add(pair_id)
+                degree_by_evidence_id[left_id] += 1
+                degree_by_evidence_id[right_id] += 1
+                added_this_round = True
+            if len(emitted) >= max_pairs:
+                return emitted
+        if not added_this_round and degree_cap >= max(max_pairs, item_count):
+            break
+        degree_cap += 1
+    return emitted
 
 
 def _legal_intent_pair_id(left_evidence_id: str, right_evidence_id: str) -> str:
@@ -5419,7 +5524,22 @@ def _failed_legal_intent_pair_judge_record(
     return record
 
 
-def _legal_intent_review_card(pair: Mapping[str, Any], decisions: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def _legal_intent_review_card(
+    pair: Mapping[str, Any],
+    decisions: Sequence[Mapping[str, Any]],
+    *,
+    review_label: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    label_payload: dict[str, Any] = {}
+    if review_label:
+        label_payload = {
+            "pair_class": str(review_label.get("pair_class", "")),
+            "answer_equivalence": str(review_label.get("answer_equivalence", "")),
+            "canonical_question_equivalence": str(review_label.get("canonical_question_equivalence", "")),
+            "allowed_downstream_actions": _as_string_list(review_label.get("allowed_downstream_actions", [])),
+            "decision_reason": str(review_label.get("decision_reason", "")),
+            "reviewed_at": str(review_label.get("reviewed_at", "")),
+        }
     return {
         "pair_id": str(pair.get("pair_id", "")),
         "pair_source_reasons": _as_string_list(pair.get("pair_source_reasons", [])),
@@ -5427,6 +5547,7 @@ def _legal_intent_review_card(pair: Mapping[str, Any], decisions: Sequence[Mappi
         "similarity_evidence": dict(pair.get("similarity_evidence", {})) if isinstance(pair.get("similarity_evidence"), Mapping) else {},
         "left": dict(pair.get("left", {})) if isinstance(pair.get("left"), Mapping) else {},
         "right": dict(pair.get("right", {})) if isinstance(pair.get("right"), Mapping) else {},
+        "review_label": label_payload,
         "decisions": [
             {
                 "decision_source": str(item.get("decision_source", "")),
@@ -5485,6 +5606,8 @@ def _legal_intent_review_html(cards: Sequence[Mapping[str, Any]]) -> str:
   <select id="filter">
     <option value="all">all</option>
     <option value="undecided">undecided</option>
+    <option value="unreviewed">unreviewed</option>
+    <option value="reviewed">reviewed</option>
     <option value="source-hard">source hard pairs</option>
     <option value="not-different">not different</option>
     <option value="same-or-duplicate">same/duplicate</option>
@@ -5505,10 +5628,13 @@ function chips(values) {{
 function filtered() {{
   return cards.filter(card => {{
     const current = decisions.get(card.pair_id);
+    const reviewed = Boolean(card.review_label && card.review_label.pair_class);
     const reasons = (card.pair_source_reasons || []).map(v => String(v));
     const modelClasses = (card.decisions || []).map(d => String(d.pair_class || '')).filter(Boolean);
     const visibleClasses = current && current.pair_class ? [current.pair_class] : modelClasses;
-    if (filter === 'undecided') return !current || !current.pair_class;
+    if (filter === 'undecided') return (!current || !current.pair_class) && !reviewed;
+    if (filter === 'unreviewed') return !reviewed;
+    if (filter === 'reviewed') return reviewed;
     if (filter === 'source-hard') return reasons.some(v => v !== 'random_negative');
     if (filter === 'not-different') return visibleClasses.some(v => v && v !== 'different');
     if (filter === 'same-or-duplicate') return visibleClasses.some(v => ['exact_duplicate', 'same_legal_intent'].includes(v));
@@ -5530,11 +5656,13 @@ function render() {{
   index = Math.max(0, Math.min(index, list.length - 1));
   const card = list[index];
   const existing = decisions.get(card.pair_id) || {{}};
+  const label = card.review_label || {{}};
   document.getElementById('counter').textContent = `${{index + 1}}/${{list.length}}`;
   document.getElementById('app').innerHTML = `<article class="card">
     <div><strong>${{card.pair_id}}</strong><div class="muted">${{(card.pair_source_reasons || []).join(', ')}}</div></div>
     <div class="grid">${{renderSide('left', card.left || {{}})}}${{renderSide('right', card.right || {{}})}}</div>
     <section class="box"><div class="label">similarity</div><pre>${{JSON.stringify(card.similarity_evidence || {{}}, null, 2)}}</pre></section>
+    ${{label.pair_class ? `<section class="box"><div class="label">existing human label</div><p><strong>${{label.pair_class}}</strong>: ${{label.answer_equivalence || ''}} / ${{label.canonical_question_equivalence || ''}}</p><div class="value">${{label.decision_reason || ''}}</div><div class="muted">${{label.reviewed_at || ''}}</div></section>` : ''}}
     <section class="box"><div class="label">model decisions</div>${{(card.decisions || []).map(d => `<p><strong>${{d.decision_source}}</strong>: ${{d.pair_class}} / ${{d.answer_equivalence}} / ${{d.canonical_question_equivalence}}<br>${{d.short_reason || ''}}</p>`).join('') || '<span class="muted">none</span>'}}</section>
     <section class="decision">
       <select id="pairClass">
@@ -5549,8 +5677,18 @@ function render() {{
       <textarea id="reason" placeholder="decision_reason">${{existing.decision_reason || ''}}</textarea>
     </section>
   </article>`;
-  for (const id of ['pairClass','answerEq','questionEq','reason']) {{
+  document.getElementById('pairClass').oninput = () => {{
+    applyPairClassDefaults();
+    save();
+  }};
+  for (const id of ['answerEq','questionEq','reason']) {{
     document.getElementById(id).oninput = save;
+  }}
+  function applyPairClassDefaults() {{
+    if (document.getElementById('pairClass').value === 'different') {{
+      document.getElementById('answerEq').value = 'not_safe_to_share_answer';
+      document.getElementById('questionEq').value = 'not_safe_to_share_question';
+    }}
   }}
   function save() {{
     decisions.set(card.pair_id, {{
