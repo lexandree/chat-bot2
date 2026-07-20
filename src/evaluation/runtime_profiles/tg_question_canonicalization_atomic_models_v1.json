@@ -1,0 +1,740 @@
+{
+  "artifact_type": "tg_qa_canonicalization_atomic_runtime_profile_registry",
+  "generated_at": "2026-07-16T00:00:00Z",
+  "profile_set_version": "tg_question_canonicalization_atomic_models_v1",
+  "profiles": {
+    "opencode_go_deepseek_v4_flash_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "deepseek-v4-flash",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.14,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 0.28,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_deepseek_v4_flash_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Conformance passed, but the verifier rejected the supported activity-registration gate on target 20338f on 2026-07-16.",
+      "qualification_status": "target_quality_failed",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "json_mode"
+    },
+    "opencode_go_deepseek_v4_pro_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "deepseek-v4-pro",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 1.74,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 3.48,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_deepseek_v4_pro_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Conformance passed, but the verifier rejected the supported activity-registration gate on target 20338f on 2026-07-16.",
+      "qualification_status": "target_quality_failed",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "json_mode"
+    },
+    "opencode_go_glm5_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "glm-5",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "note": "Model ID is returned by the API but is absent from the current Go pricing table.",
+        "observed_at": "2026-07-16",
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_glm5_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Candidate legacy GLM deployment; native JSON Schema and thinking probe passed.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "json_schema"
+    },
+    "opencode_go_glm52_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "glm-5.2",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 1.4,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 4.4,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_glm52_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Control profile for the accepted two-target atomic diagnostics.",
+      "qualification_status": "baseline",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "json_schema"
+    },
+    "opencode_go_kimi_k25_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "kimi-k2.5",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "note": "Model ID is returned by the API but is absent from the current Go pricing table.",
+        "observed_at": "2026-07-16",
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_kimi_k25_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Candidate legacy Kimi deployment; default reasoning and native JSON Schema probe passed.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {},
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {},
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {},
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "json_schema"
+    },
+    "opencode_go_kimi_k26_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "kimi-k2.6",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.95,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 4.0,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_kimi_k26_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Three-claim conformance passed; a 20-plus-claim verifier exceeded 420 seconds on 2026-07-16.",
+      "qualification_status": "operationally_unqualified",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "reasoning": {
+              "enabled": true
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "reasoning": {
+              "enabled": true
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "reasoning": {
+              "enabled": true
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "json_mode"
+    },
+    "opencode_go_kimi_k27_code_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "kimi-k2.7-code",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.95,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 4.0,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_kimi_k27_code_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Candidate requires omitted temperature and prompt-requested JSON; response_format and forced tools are rejected upstream.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {},
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {},
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {},
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_minimax_m25_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "minimax-m2.5",
+      "parameter_transport": "anthropic_constructor",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.3,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 1.2,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_minimax_m25_reasoning_v1",
+      "provider": "anthropic",
+      "qualification_note": "Candidate reasoning deployment using prompt-requested JSON and strict local validation.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 8192,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_minimax_m27_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "minimax-m2.7",
+      "parameter_transport": "anthropic_constructor",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.3,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 1.2,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_minimax_m27_reasoning_v1",
+      "provider": "anthropic",
+      "qualification_note": "Candidate reasoning deployment using prompt-requested JSON and strict local validation.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 8192,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_minimax_m3_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "minimax-m3",
+      "parameter_transport": "anthropic_constructor",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.3,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 1.2,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_minimax_m3_reasoning_v1",
+      "provider": "anthropic",
+      "qualification_note": "Candidate reasoning deployment using prompt-requested JSON and strict local validation.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 8192,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_mimo_v25_pro_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "mimo-v2.5-pro",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 1.74,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 3.48,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_mimo_v25_pro_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Candidate reasoning deployment; response_format aborts, so output uses prompt-requested JSON with strict local validation.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_mimo_v25_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "mimo-v2.5",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.14,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 0.28,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_mimo_v25_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Candidate reasoning deployment using prompt-requested JSON and strict local validation.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_qwen35_plus_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "qwen3.5-plus",
+      "parameter_transport": "anthropic_constructor",
+      "pricing_snapshot": {
+        "note": "Model ID is returned by the API but is absent from the current Go pricing table.",
+        "observed_at": "2026-07-16",
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_qwen35_plus_reasoning_v1",
+      "provider": "anthropic",
+      "qualification_note": "Candidate legacy Qwen deployment using reasoning, prompt-requested JSON, and strict local validation.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 8192,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_qwen36_plus_structured_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "qwen3.6-plus",
+      "parameter_transport": "anthropic_constructor",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.5,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 3.0,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_qwen36_plus_structured_v1",
+      "provider": "anthropic",
+      "qualification_note": "Tiny conformance passed, but target-scale verifier output echoed forbidden ledger fields and critic output omitted verdicts.",
+      "qualification_status": "target_quality_failed",
+      "stages": {
+        "critic": {
+          "max_tokens": 8192,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "timeout_seconds": 180
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "timeout_seconds": 180
+        },
+        "verifier": {
+          "max_tokens": 8192,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "timeout_seconds": 180
+        }
+      },
+      "structured_output_method": "function_calling"
+    },
+    "opencode_go_qwen37_max_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "qwen3.7-max",
+      "parameter_transport": "anthropic_constructor",
+      "pricing_snapshot": {
+        "input_usd_per_million": 2.5,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 7.5,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_qwen37_max_reasoning_v1",
+      "provider": "anthropic",
+      "qualification_note": "Quality-ceiling candidate only; price excludes bulk use even if target quality passes.",
+      "qualification_status": "candidate",
+      "stages": {
+        "critic": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 8192,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        },
+        "verifier": {
+          "max_tokens": 32768,
+          "request_parameters": {
+            "thinking": {
+              "budget_tokens": 16384,
+              "type": "enabled"
+            }
+          },
+          "timeout_seconds": 420
+        }
+      },
+      "structured_output_method": "prompt_json"
+    },
+    "opencode_go_qwen37_plus_structured_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "qwen3.7-plus",
+      "parameter_transport": "anthropic_constructor",
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.4,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 1.6,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_qwen37_plus_structured_v1",
+      "provider": "anthropic",
+      "qualification_note": "Direct function-calling emitted forbidden claim_text fields on the three-claim conformance case.",
+      "qualification_status": "conformance_failed",
+      "stages": {
+        "critic": {
+          "max_tokens": 8192,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "timeout_seconds": 180
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "timeout_seconds": 180
+        },
+        "verifier": {
+          "max_tokens": 8192,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "timeout_seconds": 180
+        }
+      },
+      "structured_output_method": "function_calling"
+    }
+  },
+  "trust_boundary": "runtime_profiles_contain_no_secrets_or_private_inputs"
+}

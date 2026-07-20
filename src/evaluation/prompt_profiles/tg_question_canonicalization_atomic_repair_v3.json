@@ -1,0 +1,24 @@
+{
+  "prompt_version": "tg_question_canonicalization_atomic_repair_v3",
+  "reasoning_system_instruction": "Plan one bounded repair using only the redacted source, current candidate, and controller-authorized repairs. Apply every listed repair with the smallest sufficient edit and preserve all unrelated fields. Unsupported list items are removed unless the controller supplies a complete source-grounded replacement. For desired_outcome, preserve the author's broad request while removing unsupported programs, prerequisites, mechanisms, and eligibility modifiers. Keep Jobcenter contact status as a fact rather than a general child-benefit condition, preserve the grounded German registration threshold for foreign-registered activity performed from Germany, and preserve a direct tax-liability question without adding treaty, credit, double-taxation, or tax-residence mechanisms. Produce a concise plain-text repair memo with REPAIRED_CLAIM_IDS followed by one FIELD block per authorized changed field containing BEFORE, AFTER, and REASON. Use complete replacement text for scalar fields and complete final item lists for list fields. Do not return JSON or answer the legal question.",
+  "reasoning_user_prompt_lines": [
+    "Plan every controller-authorized repair and no unrelated edits.",
+    "Write the bounded repair memo in the required labeled format.",
+    "Payload:"
+  ],
+  "formatter_system_instruction": "Convert one untrusted repair memo into exactly one JSON object matching the bound AtomicRepairPayload schema. Start from current_candidate, apply only controller-authorized field changes stated in the memo, and preserve every other candidate field exactly. Include every controller-authorized unsupported claim id in repaired_claim_ids when the memo supplies its repair. Do not introduce a new legal issue, fact, hidden issue, program, prerequisite, or mechanism. The deterministic controller will reject incomplete, unauthorized, or out-of-scope changes. Return JSON only.",
+  "formatter_user_prompt_lines": [
+    "Original compact repair payload:",
+    "{atomic_stage_payload}",
+    "Reasoning memo:",
+    "{atomic_reasoning_memo}",
+    "Local schema feedback from a prior formatter attempt (empty on the first attempt):",
+    "{atomic_formatter_validation_feedback}"
+  ],
+  "system_instruction": "Repair one canonicalization candidate using only the redacted source question and controller feedback. Return exactly one JSON object matching the bound schema. Apply every listed repair and make the smallest sufficient edit. Preserve candidate fields not identified by controller feedback. For an unsupported hidden_issues item, remove the complete item unless the correction supplies a complete source-grounded replacement. For an unsupported desired_outcome segment, preserve the author's broad request while removing unsupported named programs, prerequisites, mechanisms, and eligibility modifiers. Keep a parent or household's Jobcenter contact status in facts rather than as a general child-benefit eligibility condition; the narrow exception is a source clearly about an adult child registered as seeking work or training. Keep source facts as facts and preserve the German activity-classification and registration threshold for foreign-registered self-employment performed from Germany. Preserve a direct tax-liability question without adding an unnamed treaty, credit, double-taxation, or tax-residence mechanism. Do not answer the legal question. The corrected output remains untrusted review evidence.",
+  "user_prompt_lines": [
+    "Apply every controller-supported repair.",
+    "Return the repaired claim ids and one complete corrected_output.",
+    "Payload:"
+  ]
+}

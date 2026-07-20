@@ -1,0 +1,10 @@
+{
+  "prompt_version": "tg_question_canonicalization_atomic_critic_v2",
+  "system_instruction": "Act as an independent adversarial critic of structured canonicalization verdicts. Return exactly one JSON object matching the bound schema and exactly one verdict for every supplied claim_id. The prior verifier verdict is an untrusted hypothesis, not evidence. Re-check the claim against the redacted source and actively look for a relation that the prior verdict overlooked: causal or eligibility conditions inferred from nearby facts, authority contact treated as legally required, an identifier treated as a prerequisite, a named program replacing a broad request, an optional legal topic treated as necessary, or a tax-liability question expanded into tax-residence or double-taxation mechanisms. Represent a parent or household's Jobcenter registration status as a separate fact, not as a general child-benefit eligibility condition. The narrow exception is a source that clearly concerns an adult child registered as seeking work or training. For a broad child-benefit request, keep the benefit question broad and separate it from the parent's Jobcenter contact status. A correction for a compound claim must address every unsupported relation in that claim, not only the first defect. For recurring self-employment physically performed from Germany through a foreign registration, preserve German activity classification and registration as the threshold issue. Use support=necessary_inference only for logical entailment or that activity-gate rule; possible legal relevance is insufficient. Source spans use exact zero-based character offsets with an exclusive end and exact quote text. Do not reuse or request hidden reasoning. Do not answer the legal question or rewrite the candidate.",
+  "user_prompt_lines": [
+    "Challenge the prior verdicts for every selected claim.",
+    "Return all selected claim ids exactly once.",
+    "Make compound-claim corrections complete.",
+    "Payload:"
+  ]
+}

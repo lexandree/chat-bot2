@@ -33,6 +33,8 @@ The current operator status snapshot is tracked in
 `specs/007-legal-question-canonicalization/current-state.md`, and aggregate
 retrieval findings are tracked in
 `specs/007-legal-question-canonicalization/retrieval-diagnostics-summary.md`.
+Identity, review-admission, finalization, and reproducibility rules are defined
+in `specs/007-legal-question-canonicalization/canonicalization-trust-hardening.md`.
 
 ## Cumulative Prompt-Regression Gate
 
@@ -56,17 +58,17 @@ baseline without an explicit new baseline.
 Prepare the complete canonicalizer regression batch without making live calls:
 
 ```bash
-PREFIX=real_data_007_prompt_regression_v11_positive_qwen36 \
-PROMPT_VERSION=tg_question_canonicalizer_v11_positive \
-bash tmp/run_007_cumulative_prompt_regression.sh prepare
+PREFIX=real_data_007_prompt_regression_v22_positive_qwen36 \
+PROMPT_VERSION=tg_question_canonicalizer_v22_positive \
+bash scripts/evaluation/run_007_cumulative_prompt_regression.sh prepare
 ```
 
 Run and compare a candidate prompt:
 
 ```bash
-PREFIX=real_data_007_prompt_regression_v11_positive_qwen36 \
-PROMPT_VERSION=tg_question_canonicalizer_v11_positive \
-bash tmp/run_007_cumulative_prompt_regression.sh full
+PREFIX=real_data_007_prompt_regression_v22_positive_qwen36 \
+PROMPT_VERSION=tg_question_canonicalizer_v22_positive \
+bash scripts/evaluation/run_007_cumulative_prompt_regression.sh full
 ```
 
 The generated review HTML shows the accepted baseline and current output side
@@ -78,9 +80,10 @@ meaning may be preserved correctly in `hidden_issues`. After the cumulative set
 passes the promotion gate, promote it explicitly:
 
 ```bash
-PREFIX=real_data_007_prompt_regression_v11_positive_qwen36 \
+PREFIX=real_data_007_prompt_regression_v22_positive_qwen36 \
+REVIEW_DECISIONS=data/evaluation/tg_qa_canonicalization/real_data_007_prompt_regression_v22_positive_qwen36_review_decisions.jsonl \
 CONFIRM_PROMOTE=1 \
-bash tmp/run_007_cumulative_prompt_regression.sh promote-baseline
+bash scripts/evaluation/run_007_cumulative_prompt_regression.sh promote-baseline
 ```
 
 When manual review discovers a new generalizable prompt failure:
@@ -92,7 +95,10 @@ When manual review discovers a new generalizable prompt failure:
 4. Rerun the complete accumulated set only for a candidate that passed its
    bounded smoke tests.
 5. Promote a new baseline only after reviewing all automatic failures and the
-   bounded semantic-change sample required below.
+   bounded semantic-change sample required below. Every report row with
+   `manual_review_required=true` needs an accepted decision in
+   `REVIEW_DECISIONS`; the promotion script enforces this and copies the sidecar
+   with the baseline.
 
 ## Cost And Stopping Policy
 
@@ -193,19 +199,218 @@ the accepted Qwen3.6 baseline and is frozen for this optimization cycle. Do not
 revise it for isolated wording defects; route those records to residual review
 or omit them from dataset promotion.
 
-Verifier and adjudicator regressions require stable review-stage inputs, not
-only the original source task. Until each such real input is captured, the
-field-scope fixtures retained in the registry are exercised with:
+The frozen prompt profile does not prescribe the inference model. For a bounded
+calibration, review, retry, or adjudication batch of at most 100 records, use
+`glm-5.2` through OpenCode Go as the current best available direct model. Do not
+use a Kimi or Hermes agent wrapper as a substitute for a stronger base model.
+Record the exact model id and runtime profile in the run bundle. Bulk model and
+cost policy remains a separate decision and must not rewrite historical runs.
+
+### Optional Atomic Verify And Repair
+
+Use this contour only on already imported canonicalization evidence. It runs an
+independent claim verifier, can add an adversarial structured critic, permits
+at most one minimal repair, and re-verifies the rebuilt claim ledger. Generator
+reasoning is deliberately absent from verifier and critic context.
+
+Prefer the tracked model-native registry for new experiments. Registry v2 can
+bind a semantic reasoning profile and a separate no-reasoning formatter on
+each stage. CLI endpoint/model/`extra_body` fields remain only for replaying
+historical direct-structured runs.
 
 ```bash
-PREFIX=real_data_007_field_scope_<model> JUDGE=<model> \
-bash tmp/run_007_field_scope_smoke.sh run-both
+PYTHONPATH=src python -m app evaluation \
+  tg-qa-canonicalization-atomic-verify-repair-run \
+  --evidence data/evaluation/tg_qa_canonicalization/<prefix>_evidence.jsonl \
+  --output data/evaluation/tg_qa_canonicalization/<prefix>_atomic_results.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<prefix>_atomic_summary.json \
+  --atomic-run-id tg-question-canonicalization-atomic-run:<name> \
+  --runtime-profile-registry src/evaluation/runtime_profiles/tg_question_canonicalization_atomic_models_v2.json \
+  --verifier-runtime-profile-id opencode_go_glm52_reasoning_v1 \
+  --verifier-formatter-runtime-profile-id opencode_go_deepseek_v4_flash_formatter_v1 \
+  --critic-runtime-profile-id opencode_go_glm52_reasoning_v1 \
+  --critic-formatter-runtime-profile-id opencode_go_deepseek_v4_flash_formatter_v1 \
+  --repair-runtime-profile-id opencode_go_deepseek_v4_flash_formatter_v1 \
+  --api-key-env OPENCODE_API_KEY \
+  --max-items 1 \
+  --max-repairs 1 \
+  --enable-critic \
+  --critic-policy before_pass
 ```
+
+This is a bounded diagnostic contour, not a deployment or bulk default.
+GLM-5.2 performs both semantic audits, while DeepSeek V4 Flash formats each memo
+and performs the controller-bounded repair without reasoning. Atomic verifier
+and critic v6 passed both reviewed activity-gate directions with GLM-5.2 in both
+roles. Controller v5 additionally blocks known compound relation conflicts.
+This evidence still does not authorize automatic acceptance or bulk execution.
+MiniMax M3, Qwen3.7 Plus, and the other tested reasoners remain diagnostic-only.
+Formatter profile ids
+never inherit: specify them only on semantic stages that need conversion. When
+only `--verifier-runtime-profile-id` is supplied, critic and repair semantic
+profiles still inherit it. `before_pass` challenges every potential pass and
+post-repair pass while skipping critic calls after an already non-passing
+primary route. Such a skip produces `hold` or repair evidence, never automatic
+record rejection.
+
+The 2026-07-16 model sweep tested direct reasoning-to-JSON calls. Its JSON,
+span, and timeout failures do not qualify the same model as a reasoning half of
+the two-step contour. Retest the tiny schema case, both activity-gate targets,
+and a bounded holdout before changing the final critic boundary.
+
+Split known relation risks before a mass canary:
+
+```bash
+PYTHONPATH=src python -m app evaluation \
+  tg-qa-canonicalization-atomic-risk-split \
+  --evidence data/evaluation/tg_qa_canonicalization/<evidence>.jsonl \
+  --risk-evidence-output data/evaluation/tg_qa_canonicalization/<prefix>_risk.jsonl \
+  --low-risk-evidence-output data/evaluation/tg_qa_canonicalization/<prefix>_low_risk.jsonl \
+  --diagnostics-output data/evaluation/tg_qa_canonicalization/<prefix>_risk_diagnostics.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<prefix>_risk_summary.json
+```
+
+The two evidence queues preserve their input records unchanged. Send the risk
+queue to reasoning or human review. A low-risk record has only avoided the four
+known guards; it has not passed semantic verification.
+
+The splitter accepts canonicalization evidence, not dataset or clustering
+derivatives. Every input record must contain non-empty string `task_id`,
+`candidate_id`, `canonicalization_evidence_hash`, and
+`source_question_text_redacted`; the hash must match the canonical payload.
+Invalid input fails before queue files are written. In particular, a filename
+containing `evidence` does not establish this contract.
+
+The current 985-record legacy diagnostic selected 18 records. A three-record
+matched run showed that reasoning only repeated the non-pass decision at much
+higher cost and latency; route known-risk records directly to human review.
+The full no-reasoning run emitted ten model passes among those 18 records; the
+controller blocked all ten and no critic was called. Do not infer that the
+other 967 records are semantically correct.
+
+```bash
+PYTHONPATH=src python -m app evaluation \
+  tg-qa-canonicalization-atomic-verify-repair-run \
+  --evidence data/evaluation/tg_qa_canonicalization/<prefix>_evidence.jsonl \
+  --output data/evaluation/tg_qa_canonicalization/<prefix>_atomic_results.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<prefix>_atomic_summary.json \
+  --endpoint-url "$OPENCODE_CHAT_COMPLETIONS_URL" \
+  --api-key-env OPENCODE_API_KEY \
+  --model-id glm-5.2 \
+  --atomic-run-id tg-question-canonicalization-atomic-run:<name> \
+  --provider openai \
+  --structured-output-method json_schema \
+  --verifier-max-tokens 32768 \
+  --critic-max-tokens 32768 \
+  --repair-max-tokens 16384 \
+  --max-repairs 1 \
+  --enable-critic \
+  --extra-body-json '{"thinking":{"type":"enabled"}}'
+```
+
+Review all `hold` records and a bounded sample of `pass`/`pass_repaired`.
+Repaired candidates remain inside the sidecar and are not imported
+automatically. Use the existing review/retry path for any selected correction.
+For reasoning-enabled GLM-5.2, keep the verifier budget at 32768 unless a
+measured smaller profile completes the full claim ledger without a length
+finish. Every failed provider or schema attempt is recorded in `stage_runtime`;
+do not infer zero cost from a failed record whose provider omitted usage data.
+Do not infer zero cost from an unpriced model either: new summaries emit
+`estimated_uncached_cost_usd=null` and `cost_estimate_complete=false` when a
+rate or usage record is missing. A mixed-model total may include priced stages
+while remaining explicitly incomplete.
+The derived `*_stage_checkpoint.json` persists `initial_verified` and
+`repair_completed` states plus `final_primary_verified` when critic mode is
+enabled. Re-run with the same evidence, atomic run id, runtime profile, output
+paths, and default resume behavior to continue from the last completed
+semantic stage after an interruption. A mismatched checkpoint identity fails
+closed.
+
+Use `--enable-critic` for small disputed or high-risk records, not as the bulk
+default. On the measured 26-claim GLM-5.2 target, verifier plus critic used
+28,020 to 45,907 total tokens across repeated runs. A five-stage run used
+60,281 tokens before controller-v4 normalization. Keep the single verifier
+contour available for cheaper diagnostics, but do not treat its pass as a
+substitute for the critic on known relationship-overreach cases.
+The longer second target used 51,205 tokens and 403.707 seconds for verifier
+plus critic alone. Wrap ad hoc live probes in an operator-managed wall-clock
+limit and rely on stage checkpoints for multi-stage resume.
+
+The 2026-07-17 v6 no-reasoning GLM-5.2 canary used the isolated
+`tg_question_canonicalization_atomic_no_reasoning_candidates_v1` registry. On
+12 v22 evidence records it completed 12/12 in 302.916 seconds, used 66,873
+tokens, and cost an estimated $0.1767462 uncached. Six records passed and six
+held; manual review found one disputable central-question selection among the
+passes. Use this profile to prioritize review only. Do not promote its `pass`
+route or replace the reasoning boundary from this canary.
+
+Compact-memo verifier v7/v8 profiles are inactive diagnostics. V8 plus
+no-reasoning GLM-5.2 and the Flash formatter was 29-37% cheaper on the two
+activity-gate records, but the repeated 12-record holdout completed 11/12,
+routed only one record to pass, and that pass was the same disputable record.
+Qwen3.7 Plus in the same role completed only one target and confused candidate
+wording with source evidence. Do not use these profiles for a bulk run or
+change the active v6 environment default.
+
+Future two-step summaries include token usage from both plain semantic
+`AIMessage` responses and structured formatter wrappers. A missing historical
+semantic usage record remains incomplete; memo character count is not a token
+or billing estimate.
+
+For atomic runs, top-level count, token, duration, and cost fields cover only
+the current invocation. Read `cumulative_output_metrics` for the complete
+current result JSONL after resume. A zero-work resume therefore has
+`processed_count=0` and may have a non-zero cumulative cost.
+
+Do not train or qualify a cheap router from decision-ledger rows whose
+`decision_source` is `implicit_*` or `explicit_first_pass_*`; those values
+encode generator routing rather than independent human truth. Router and NLI
+benchmarks require imported manual decisions bound to the exact rendered
+review payload, task, candidate, canonicalization evidence hash,
+prompt/runtime/controller identity, and a frozen split selected independently
+of model pass/fail output. Until that benchmark exists, a cheap model or
+classifier may prioritize review but cannot approve records.
+
+`tg_question_canonicalizer_v23_positive` and v24 are rejected private
+experiments and must not return to tracked prompt data. Profiles v25-v41 are
+immutable diagnostics for the recorded prompt and routing experiments; v22
+remains the ordinary accepted baseline. A future candidate must first pass a
+bounded smoke, then the complete tracked cumulative regression runner and
+identity-bound human review. Do not revive an old pair-specific scratch runner.
+
+For a new source batch, split the sparse explicit foreign-registered activity
+cases before ordinary canonicalization:
+
+```bash
+PYTHONPATH=src python -m app evaluation \
+  tg-qa-canonicalization-foreign-activity-split \
+  --batch data/evaluation/tg_qa_canonicalization/<source>_batch.jsonl \
+  --foreign-activity-output data/evaluation/tg_qa_canonicalization/<source>_foreign_activity_batch.jsonl \
+  --ordinary-output data/evaluation/tg_qa_canonicalization/<source>_ordinary_batch.jsonl \
+  --diagnostics-output data/evaluation/tg_qa_canonicalization/<source>_foreign_activity_diagnostics.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<source>_foreign_activity_summary.json
+```
+
+The default selected profile is
+`tg_question_canonicalizer_v41_foreign_activity_selected_field_ownership`.
+Run its selected queue with GLM-5.2 and the ordinary queue with the qualified
+ordinary model/profile. The selector requires an actor-action-location link;
+a foreign account mentioned only as possible proof remains ordinary. Both
+outputs are derived batches with new identity and preserved root source
+identity. Review and verification boundaries remain unchanged.
+
+Verifier and adjudicator regressions require stable review-stage inputs, not
+only the original source task. Until each such real input is captured, use the
+tracked offline field-scope fixtures and tests; the old live scratch runner is
+not part of the supported interface.
 
 ## Providers And Budget Assumptions
 
-- OpenCode Go is used for Qwen3.6 Plus normalization and DeepSeek V4 Pro
-  adjudication.
+- OpenCode Go `glm-5.2` is the default for bounded canonicalization and review
+  work of at most 100 records. The dedicated 50-record v22 calibration runner
+  is `scripts/evaluation/run_007_v22_glm52_calibration_50.sh`.
+- OpenCode Go Qwen3.6 Plus normalization and DeepSeek V4 Pro adjudication are
+  historical/bulk contours, not the default for a small high-value batch.
 - MiniMax.io pay-as-you-go credits are used for MiniMax-M2.7 verification.
 - MiniMax-M2.7 is preferred over MiniMax-M2.5 because direct MiniMax.io pricing
   is the same for this verifier workload and M2.7 is the newer model.
@@ -267,13 +472,11 @@ Qwen normalization receives only:
 - `answer_candidate_status`;
 - compact `quality_flags`;
 - canonicalization output schema and enum rules;
-- the versioned few-shot example set `tg_question_canonicalizer_examples_v1`.
+- the versioned few-shot example set and its `prompt_profile_hash`.
 
-The prompt must include the active three examples before the current task:
-
-- a standalone residence-permit address update question;
-- a standalone Blue Card employer-change question;
-- a short dialogue fragment that is excluded as `not_standalone_question`.
+The runner loads the complete active profile associated with the emitted batch.
+Do not duplicate an assumed example count into shell glue or use a prompt
+version different from the batch without re-emitting a new batch.
 
 Do not include source artifact paths, source message ids, answer text, or review
 decisions in the LLM payload. The examples are generic and must not contain
@@ -362,6 +565,26 @@ PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-sample \
   --sample-size 50
 ```
 
+The default `balanced` policy is for defect discovery and prompt calibration.
+For a qualification sample, declare a seed and use stable hash ordering before
+running the frozen model contour:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-sample \
+  --batch data/evaluation/tg_qa_canonicalization/<frozen>_batch.jsonl \
+  --output data/evaluation/tg_qa_canonicalization/<frozen>_qualification_batch.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<frozen>_qualification_summary.json \
+  --sample-size 300 \
+  --sampling-policy stable_hash \
+  --sample-seed <predeclared-seed>
+```
+
+The sample size is not the number of reviewed potential passes. Report the
+conditional false-pass bound only from records the frozen contour routed to a
+potential `pass` and a human then reviewed against the hash-bound card. Extend
+the predeclared population if fewer than the required number of pass labels is
+observed; never replace failed examples after seeing their labels.
+
 Create the first review-card UI:
 
 ```bash
@@ -387,10 +610,28 @@ but it must present one record as a review card with:
 Required human decision fields:
 
 - `decision`: `accept`, `reject`, `retry_qwen`, `send_deepseek`, or `hold`;
-- `reviewer_hash`;
 - `decision_reason`;
 - optional corrected canonicalization fields for cases where the operator
   chooses manual correction rather than retry.
+
+`reviewer_hash` may remain in existing exports for compatibility, but it is
+optional and ignored as a trust condition. In the single-reviewer workflow,
+supplying the decision file to the explicit import command is the operator's
+confirmation that the included decisions were reviewed manually.
+
+Current review cards also write `review_payload_version` and
+`review_payload_hash` when a decision is edited. They bind the displayed
+source, exact candidate evidence identity, verifier payload, and retry context.
+Import fails a missing/unsupported version or non-matching hash. Older decision
+files without the hash remain valid manual-review inputs but are reported as
+`legacy_unverified` and cannot serve as a model/router benchmark.
+
+Atomic result JSONL may be supplied through `--verifier-results`. The card maps
+the terminal atomic route into the existing compact verifier view, lists fields
+identified by controller feedback, and shows final values for repaired fields.
+Use the same atomic result path when importing the exported decisions; the
+review hash binds the complete atomic record even though the card displays a
+compact view.
 
 Preferred first implementation:
 
@@ -513,48 +754,60 @@ result, verifier vote, the previous candidate, and the human reason as
 corrective context. An empty human reason is acceptable when the retained judge
 reasons already explain the retry.
 
-## Strict Verifier Consensus Queues
+## Routing, Finalization, And Snapshot
 
-After a retry candidate is verified by two or more models, split the completed
-records by exact verifier consensus:
+Every route reconciles the complete batch. `hold` is the default for a missing
+or unreviewed decision; use `first_pass` only for a non-promotable diagnostic.
+Verifier consensus and adjudication are review inputs, not final acceptance.
+Material adjudicator conflict goes to human review.
 
-- `unanimous_pass`: every completed verifier returns `pass`; retain as accepted
-  review evidence;
-- `unanimous_nonpass`: every completed verifier returns `fail` or `uncertain`;
-  retry the generator with all verifier reasons;
-- `non_unanimous`: at least one verifier returns `pass` and at least one returns
-  `fail` or `uncertain`; send to adjudication;
-- `incomplete`: any candidate or verifier result is missing or failed; keep in
-  the operational backlog.
-
-Use `tmp/split_007_verifier_consensus_queues.py` with repeated
-`--verifier name=path` arguments. The generated unanimous-nonpass retry batch
-preserves the previous candidate and every verifier vote as corrective context.
-The splitter supports a variable verifier count and does not assume a specific
-model ensemble.
-
-## Final Merge
-
-Only records with final decision `accept` enter:
-
-```text
-data/evaluation/tg_qa_canonicalization/real_data_007_canonicalization_results.jsonl
-```
-
-Records marked `reject`, `retry_qwen`, or `hold` remain visible in decision and
-backlog artifacts. The final merge must preserve provenance, model ids,
-provider names, prompt/tool versions, validation status, verifier verdicts, and
-human decisions.
-
-## Existing Import Command
-
-After final merge:
+Import human decisions, then route only reviewed acceptance:
 
 ```bash
-PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-import \
-  --batch data/evaluation/tg_qa_canonicalization/real_data_007_canonicalization_batch.jsonl \
-  --results data/evaluation/tg_qa_canonicalization/real_data_007_canonicalization_results.jsonl \
-  --output data/evaluation/tg_qa_canonicalization/real_data_007_canonicalization_evidence.jsonl \
-  --manifest-output data/evaluation/tg_qa_canonicalization/real_data_007_canonicalization_manifest.json \
-  --canonicalization-run-id tg-question-canonicalization-run:real-data-007
+PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-review-decisions-import \
+  --batch data/evaluation/tg_qa_canonicalization/<prefix>_batch.jsonl \
+  --qwen-results data/evaluation/tg_qa_canonicalization/<prefix>_results.jsonl \
+  --decisions data/evaluation/tg_qa_canonicalization/<prefix>_review_decisions.jsonl \
+  --output data/evaluation/tg_qa_canonicalization/<prefix>_review_decisions_imported.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<prefix>_review_decisions_summary.json
+
+PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-routing \
+  --batch data/evaluation/tg_qa_canonicalization/<prefix>_batch.jsonl \
+  --qwen-results data/evaluation/tg_qa_canonicalization/<prefix>_results.jsonl \
+  --review-decisions data/evaluation/tg_qa_canonicalization/<prefix>_review_decisions_imported.jsonl \
+  --output data/evaluation/tg_qa_canonicalization/<prefix>_accepted_reviewed_results.jsonl \
+  --summary-output data/evaluation/tg_qa_canonicalization/<prefix>_routing_summary.json \
+  --decision-ledger-output data/evaluation/tg_qa_canonicalization/<prefix>_decision_ledger.jsonl \
+  --backlog-output data/evaluation/tg_qa_canonicalization/<prefix>_routing_backlog.jsonl \
+  --unreviewed-policy hold
 ```
+
+Finalize a base batch and a reviewed retry without rewriting either source run
+id. Each replacement result has to be paired with the retry batch that produced
+its identity:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-finalize \
+  --batch data/evaluation/tg_qa_canonicalization/<base>_batch.jsonl \
+  --base-accepted-results data/evaluation/tg_qa_canonicalization/<base>_accepted_reviewed_results.jsonl \
+  --replacement-accepted-results retry=data/evaluation/tg_qa_canonicalization/<retry>_accepted_reviewed_results.jsonl \
+  --replacement-batch retry=data/evaluation/tg_qa_canonicalization/<retry>_batch.jsonl \
+  --output data/evaluation/tg_qa_canonicalization/<final>_reviewed_results.jsonl \
+  --manifest-output data/evaluation/tg_qa_canonicalization/<final>_finalization_manifest.json \
+  --backlog-output data/evaluation/tg_qa_canonicalization/<final>_finalization_backlog.jsonl
+```
+
+Build a private snapshot only from finalized, human-accepted evidence:
+
+```bash
+PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-snapshot \
+  --evidence reviewed=silver=data/evaluation/tg_qa_canonicalization/<final>_reviewed_results.jsonl \
+  --snapshot-name <private_snapshot_name> \
+  --output data/evaluation/tg_qa_canonicalization/<final>_snapshot.jsonl \
+  --manifest-output data/evaluation/tg_qa_canonicalization/<final>_snapshot_manifest.json \
+  --quality-output data/evaluation/tg_qa_canonicalization/<final>_snapshot_quality.json \
+  --backlog-output data/evaluation/tg_qa_canonicalization/<final>_snapshot_backlog.jsonl
+```
+
+Use `--allow-legacy-identity` only to inspect historical artifacts. It does not
+make them eligible for a strict final snapshot.

@@ -102,21 +102,6 @@ reasons and move durable lessons into the correct tracked memory file:
 Keep raw corpus text out of tracked notes. Use task ids plus generalized
 summaries.
 
-## MRN-006: Partial Retry Review Must Hold Unreviewed Records
-
-Review convention: When a retry review batch is too large to finish in one
-session, do not route the partial browser export through the default
-canonicalization routing policy directly. The default policy accepts completed
-included records that have no explicit review decision, which is unsafe for a
-partially reviewed retry batch.
-
-Use `tmp/run_007_retry_78_partial_review.sh` for the current 78-record retry
-batch. It creates a strict decisions overlay where all tasks absent from the
-browser export become `hold`, then imports and routes that strict decision set.
-
-Only after the batch is fully reviewed should its accepted retry results be
-merged into the broader canonicalization artifact.
-
 ## MRN-007: Dataset Acceptance Does Not Mean Current Retrieval Eligibility
 
 Review convention: A historically meaningful legal question may remain accepted
@@ -129,3 +114,21 @@ Route questions involving transitional rules, temporary extensions, expired
 deadlines, or superseded procedures to temporal-currentness review. Preserve
 the source question date and distinguish current reuse from historical
 evaluation.
+
+## MRN-008: Review Cards Must Show The Source Question Date
+
+Evidence:
+
+- `tg-question-canonicalization-task:700115861f464091317b`
+- `real_data_007_fresh_qualification_50_v1`
+
+Review convention: Display `question_date` beside the candidate identity in
+every canonicalization review card. Do not require the operator to infer it
+from legal history or confuse it with the review/export date.
+
+The first fresh 50-record qualification review was operationally light: the
+operator needed external research only a few times. This is evidence that the
+contour is useful as review support, not evidence that its outputs can bypass
+manual acceptance. One rejection in that run cited a missing question date even
+though the batch contained it; retain the decision as supplied, but exclude it
+from model-error conclusions unless it is reviewed again with the date visible.

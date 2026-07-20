@@ -9,6 +9,35 @@
 - Wired 007 evaluation CLI commands in `src/app/commands.py`.
 - Added unit coverage in `tests/unit/test_tg_question_canonicalization.py`.
 - Added an offline CLI smoke pipeline in `tests/smoke/test_cli_offline.py`.
+- Hardened canonicalization control-plane contracts in July 2026: v2 task and
+  batch identity hashes, strict runtime/evidence provenance validation,
+  full-batch routing reconciliation, default hold for unreviewed results, and
+  verifier/adjudicator evidence lineage.
+- Added core finalization and private snapshot commands. They require an
+  acceptance decision from an explicitly imported review artifact, preserve
+  source run ids, validate retry root lineage against the base batch, and emit
+  explicit backlog artifacts.
+- Added checkpoint/run-bundle sidecars to canonicalizer, verifier, and
+  adjudicator runners; resume now requires an identical runtime profile and
+  input identity. Temporary retry and prompt-regression scripts call the core
+  control plane and use finite retry defaults.
+- Set OpenCode `glm-5.2` as the operator default for bounded high-value 007
+  batches of at most 100 records after comparative Hermes/Kimi evaluation. The
+  policy uses the direct model, retains all review gates, and leaves historical
+  and bulk model contours unchanged pending separate evaluation.
+- Registered two recurring foreign-activity task ids under `PL-019`; the active
+  default remains v22 pending bounded GLM-5.2 and cumulative regression review.
+- Prompt-regression preparation can bind historical tasks to an explicit
+  candidate profile and recompute strict task/batch identity before inference.
+- The first live v23 GLM-5.2 cumulative run completed 53/53 without provider or
+  schema failures but was not promoted: five automatic checks failed and both
+  target cases remained materially defective. The v23/v24 profiles also used
+  examples derived from private review patterns and were removed from tracked
+  source; exact rejected profiles remain only with ignored private run
+  artifacts. Inactive v25 retains the unchanged public v22 few-shot set and
+  expresses the foreign-activity rule only as a generalized instruction.
+- Prompt-regression rebinding upgrades historical selected tasks to the current
+  v2 canonicalization contract before recomputing strict task/batch identity.
 - Added synthetic fixture guidance in
   `tests/fixtures/tg_question_canonicalization/README.md`.
 - Added Pydantic payload schemas for canonicalization and verifier outputs,
@@ -139,6 +168,11 @@
 
 - `python -m compileall src tests`:
   passed.
+- After fresh qualification v3 processing and review-card export:
+  `python -m compileall -q src tests` passed;
+  `python -m pytest -q` passed with 267 tests and 11 skipped;
+  `tg-qa-boundary-check` and `tg-qa-canonical-boundary-check` passed;
+  `git diff --check` passed.
 - `python -m pytest tests/unit/test_tg_question_canonicalization.py tests/smoke/test_cli_offline.py`:
   44 passed.
 - After adding the bounded legal-intent extractor:
@@ -274,6 +308,99 @@ APIs, network services, or remote notebooks.
 
 - Canonicalization output and issue clusters are review evidence only; they do
   not approve legal issues or create trusted answers.
+- Added an optional bounded atomic verify/repair contour. It constructs field
+  claims deterministically, verifies exact source quotes, normalizes only
+  unambiguous offset errors, can challenge verdicts with an independent
+  structured critic, retains disagreement, derives routing in code, permits at
+  most one minimal repair, removes unsupported list atoms deterministically,
+  rejects unauthorized field changes, and re-verifies changed evidence. Failed
+  attempts remain in runtime lineage. The sidecar cannot promote or import a
+  repaired candidate and remains experimental until broader regression review.
+- Atomic semantic stages now use a separate identity-bound checkpoint. An
+  interrupted final verifier can resume from `repair_completed` without paying
+  again for initial verification and repair; the ordinary item checkpoint is
+  still written only after a terminal sidecar record.
+- Prompt/runtime identity includes verifier, critic, and repair profile hashes
+  plus their generated JSON Schema hashes. Pydantic enum constraints are
+  represented in provider-visible JSON Schema rather than only local
+  validators.
+- The target live sequence exposed three distinct failures: 16384 verifier
+  tokens could end by length; exact quotes arrived with incorrect offsets; and
+  a one-verifier repair received a false `pass` while retaining a Jobcenter
+  eligibility relationship. Controller v4 now normalizes only unambiguous
+  quote offsets, records every failed attempt, uses optional critic v3, and
+  deterministically deletes unsupported list atoms.
+- On the normalized target candidate, a separate GLM-5.2 v3 verifier+critic
+  smoke completed in 203.908 seconds and 24,176 total tokens with both stages
+  at `pass`, no disagreements, and only the German activity-classification
+  hidden issue retained. This is target evidence, not a broad-regression
+  acceptance.
+- A second target showed that an FOP account mentioned as a possible proof
+  document does not establish foreign-registered activity from Germany.
+  Verifier/critic v3 both rejected the central activity-gate framing after v2
+  had retained it. The corrected two-call diagnostic used 51,205 tokens and
+  403.707 seconds, reinforcing that critic mode is not a bulk default.
+- Model-native atomic runtime profiles now bind transport, structured-output
+  method, native reasoning parameters, stage budgets, profile-registry hash,
+  and dated price snapshots. Verifier, critic, and repair can use different
+  profiles; SDK-internal retries are disabled so all attempts remain visible.
+- Atomic stages may now bind a second profile with
+  `reasoning_mode=disabled`. The first call writes a bounded plain-text memo;
+  the formatter receives that memo plus the original compact payload and emits
+  the existing strict schema. Formatter retries do not repeat reasoning.
+  Sidecars retain the sanitized memo, raw hash, both component identities,
+  usage, and cost. Native hidden reasoning remains internal to the first call.
+- The cheaper-model target gate rejected several deployments only as direct
+  reasoning-to-JSON replacements. That experiment mixed semantic reasoning
+  with target-scale schema generation; JSON, span, and timeout failures now
+  require a two-step retest. A final structured verdict that is semantically
+  wrong remains provisional until it is compared with the retained memo.
+- Critic policy `before_pass` keeps critic protection before every potential
+  pass while skipping it after primary `revise` or `hold`. Existing GLM target
+  evidence shows an explicit one-call `hold` on the negative case: 27,516
+  tokens and 193.445 seconds versus 51,205 tokens and 403.707 seconds with the
+  agreeing critic, without changing the route.
+- Added compact-memo verifier v7/v8 diagnostics that deduplicate exact source
+  quotes before Flash schema conversion. V8 reduced cost on the two target
+  records but was over-conservative on repeated holdout runs and had one
+  repeated formatter schema failure; it remains inactive and v6 stays active.
+- Fixed mixed-stage usage telemetry so plain LangChain `AIMessage` responses
+  contribute provider token usage just like structured `{raw, parsed}`
+  wrappers. Historical incomplete costs remain unchanged.
+- The retained mass contour is deterministic risk routing plus human review,
+  with strong reasoning reserved for specific disputed claims. Cheap semantic
+  calls, critic panels, and compact memos remain review evidence only.
+- Atomic risk splitting now validates the minimal downstream evidence contract
+  and matching evidence hash before writing queues. On a reconstructed
+  `legacy_identity_unverified` 985-record diagnostic, 18 records matched known
+  guards. A matched three-record probe made the same final non-pass routing in
+  53.305 seconds and $0.0379372 without reasoning versus 584.625 seconds and
+  $0.21734004 with reasoning, but claim-support agreement was only 73.5%.
+  Therefore known-risk records bypass semantic triage and go to human review;
+  low-risk records remain unapproved.
+- The completed 18-record no-reasoning audit used 90,300 tokens and $0.235275.
+  The model emitted ten passes, all blocked by controller v5; critic escalation
+  was never invoked. Atomic run summaries now retain invocation-scoped legacy
+  fields and add `cumulative_output_metrics` calculated from the complete
+  result JSONL so resumed-run totals remain visible.
+- Audited label readiness before adding a learned router. Two current
+  1,000-record ledgers contain 1,995 generator-route-derived decisions and five
+  human rejects. The 80-record adjudication review is selected entirely from
+  verifier non-accepts, and the older 50-record review plus that 80-record set
+  lack exact canonicalization evidence-hash binding. These artifacts remain
+  review history, not router train/test truth. A future classifier requires an
+  independently sampled, identity-bound human benchmark and may initially emit
+  only negative escalation signals.
+- Bound new HTML review decisions to the exact rendered source, candidate
+  evidence identity, verifier payload, and retry context with
+  versioned `review_payload_hash`. Import rejects a missing/unsupported version
+  or changed payload, reports binding status, and preserves hashless historical
+  decisions as `legacy_unverified` compatibility evidence rather than silently
+  treating them as benchmark labels.
+- Added opt-in seeded stable-hash canonicalization sampling for qualification
+  work. The prior balanced round-robin behavior remains the default. Stable
+  samples record policy id, seed, and selected-task-id hash so membership is
+  independent of source file order and model output.
 - Deterministic issue clustering groups by canonical issue-frame slug and flags
   low-confidence or broad cases instead of relying on raw question similarity.
 - Final evaluation dataset export accepts only eligible candidates with
@@ -322,3 +449,46 @@ APIs, network services, or remote notebooks.
 - Verification after Phase 14: `python -m pytest -q` passed with 202 tests and
   11 skipped; both `tg-qa-boundary-check` and
   `tg-qa-canonical-boundary-check` passed; `git diff --check` passed.
+- Live canonicalization results now inherit
+  `canonicalization_contract_version` from each source task, including failed
+  calls. Previously the runner overwrote legacy-v1 batch tasks with the current
+  v2 constant, producing valid model JSON that strict import rejected after a
+  paid run. Task and batch identity remain authoritative at import.
+- Added an explicit pre-canonicalization foreign-activity split. It requires a
+  foreign-registration term, a nearby work/action predicate, and German
+  context. Selected tasks are rebound to the focused v41 profile with root
+  source identity preserved; ordinary tasks retain their prompt profile in a
+  separately rebound batch. The selector cannot approve either queue.
+- Fresh qualification v3 completed the 50-record routing contour and exported
+  disjoint 5-card reasoning and 45-card hold review queues. Qwen produced 23
+  included candidates; cheap screening sent five potential passes to the full
+  reasoning verifier+critic, and all five returned model `pass`. This is not a
+  qualification result: manual inspection already exposes review-sensitive
+  source-to-hidden-issue inferences, so none of the five can be accepted before
+  identity-bound human decisions are imported. The priced verifier stages used
+  487,927 tokens and an estimated `$0.69285868`; the Qwen generation stage has
+  separate usage metadata and no complete price estimate in its summary.
+- Identity-bound manual review of fresh qualification v3 produced 16 initial
+  accepts, 29 record-level rejects, and five retries. The retry cascade yielded
+  three accepted first-round Qwen replacements, one accepted second-round Qwen
+  replacement, and one accepted fresh-context GLM-5.2 replacement. Finalization
+  selected 21 unique human-accepted records and retained all 29 rejected source
+  records in the explicit backlog.
+- The reviewed result does not qualify either model route as an acceptance
+  boundary. Two of five strong-model passes needed material correction, while
+  13 of 18 included cheap holds were accepted unchanged. Keep both routes as
+  review-prioritization evidence only.
+- Repeated candidate-conditioned retries anchored one incorrect interpretation
+  of a claimed section-18a income threshold. A fresh task containing the source
+  and a positive field-level correction target allowed GLM-5.2 to preserve the
+  claimed threshold without contradicting the author's stated financial
+  independence. The final result was separately reviewed before promotion.
+- The retry probes exposed missing hard wall-clock timeout enforcement and an
+  endpoint-specific Anthropic authentication mismatch. Record these as
+  separate runner-hardening work; do not change the frozen v37 prompt or the
+  review boundary as part of the completed qualification run.
+- Post-finalization verification on 2026-07-20: `python -m pytest -q` passed
+  with 267 tests and 11 skips; `tg-qa-boundary-check` and
+  `tg-qa-canonical-boundary-check` both passed; final artifact count, unique
+  task, human-review provenance, strict identity, JSON, and `git diff --check`
+  checks passed.

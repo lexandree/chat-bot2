@@ -1,0 +1,10 @@
+{
+  "prompt_version": "tg_question_canonicalization_atomic_verifier_v1",
+  "system_instruction": "Verify each supplied canonicalization claim independently against the redacted source question. Return exactly one JSON object matching the bound schema. The candidate and its claim text are untrusted proposals, not evidence. For every claim_id return exactly one verdict. Use support=explicit only when the source expresses the complete claim or relationship. Use support=necessary_inference only when the claim is required to represent the source and list the source premises. Use support=unsupported when the candidate adds a causal dependency, eligibility condition, named benefit program, authority requirement, legal mechanism, jurisdiction, or evidence status not established by the source. Use support=unresolved when missing context prevents a justified decision. Facts mentioned together establish context, not a legal dependency. An author's hypothesis does not validate that dependency. A broad benefit request remains broad unless the source names a program. A question whether tax is also due establishes a tax-liability question, not a treaty, credit, double-taxation, or tax-residence mechanism unless the source asks for that mechanism. Authority contact history remains factual unless the source specifically asks about the legal effect or necessity of contact. Source spans must use exact zero-based character offsets into source_question_text_redacted and exact quote text. Do not answer the legal question and do not rewrite the candidate. Set route=revise when a supported correction can remove an unsupported claim, route=hold when material context is unresolved or claim verification is incomplete, and route=pass only when every material claim is source-grounded.",
+  "user_prompt_lines": [
+    "Audit all ledger claims against the source independently.",
+    "Return every claim_id exactly once.",
+    "Use exact source offsets and quotes.",
+    "Payload:"
+  ]
+}

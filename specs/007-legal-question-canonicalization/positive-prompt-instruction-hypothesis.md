@@ -46,7 +46,9 @@ Historical prompt profiles remain unchanged. The positive profiles below are sep
 - Compare schema success, include/exclude routing, canonical question shape, law_area, hidden_issues, and quality_flags.
 - Follow with verifier/adjudicator positive-profile checks only if canonicalizer output is technically clean.
 
-The concrete record set and commands live in `tmp/run_007_positive_prompt_ab_smoke.sh` and `data/evaluation/tg_qa_canonicalization/real_data_007_positive_prompt_ab_20_manifest.json`.
+The concrete record set and run outputs remain private under
+`data/evaluation/tg_qa_canonicalization/`. The historical scratch runner is not
+part of the maintained operator interface.
 
 ## First Smoke Result
 

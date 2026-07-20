@@ -1038,6 +1038,261 @@
       ],
       "source_kind": "real_task",
       "task_id": "tg-question-canonicalization-task:2ba9156e4de45257e559"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_evidence_terms": [
+          "residence status under §78"
+        ],
+        "required_all_evidence_terms": [
+          "minor child",
+          "registration",
+          "residence status"
+        ],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-061-canonicalizer-document-section-not-status-basis",
+      "expected_focus": "Treat a document-issuance provision as document context rather than inventing it as the child's substantive residence-status basis; preserve the minor-child registration and status issue.",
+      "lesson_ids": [
+        "PL-018"
+      ],
+      "prompt_families": [
+        "canonicalizer"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:5b80007c046785dceec8"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_authority_context_terms": [
+          "Jobcenter"
+        ],
+        "forbidden_evidence_terms": [
+          "double taxation",
+          "двойное налогообложение"
+        ],
+        "forbidden_hidden_issue_term_pairs": [
+          [
+            "Kindergeld",
+            "Jobcenter"
+          ]
+        ],
+        "required_all_evidence_term_groups": [
+          [
+            "German",
+            "немецк"
+          ],
+          [
+            "registration",
+            "регистрац"
+          ],
+          [
+            "self-employment",
+            "самозанят",
+            "предпринимательск"
+          ]
+        ],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-062-canonicalizer-foreign-fop-kindergeld-registration-gate",
+      "expected_focus": "Keep the Kindergeld request reusable while preserving German classification and registration of foreign self-employment as a material hidden issue; do not invent a double-taxation dispute or a Jobcenter eligibility condition.",
+      "lesson_ids": [
+        "PL-019",
+        "PL-020",
+        "PL-021",
+        "PL-023",
+        "PL-024",
+        "PL-027"
+      ],
+      "prompt_families": [
+        "canonicalizer",
+        "atomic_verifier",
+        "atomic_critic"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:20338f0eb2122742b0ae"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_evidence_terms": [
+          "double taxation",
+          "German registration duties",
+          "foreign-registered sole-proprietor activity"
+        ],
+        "required_any_canonical_question_terms": [
+          "страхов",
+          "налог",
+          "доход"
+        ],
+        "forbidden_canonical_question_terms": [
+          "регистрац",
+          "предпринимательск"
+        ],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-063-canonicalizer-foreign-fop-health-insurance-registration-gate",
+      "expected_focus": "Preserve the health-insurance, German-tax-liability, timing, and proof-of-income questions. A possible FOP-account document does not establish foreign-registered activity, so do not introduce German activity registration or classification.",
+      "lesson_ids": [
+        "PL-019",
+        "PL-020",
+        "PL-022",
+        "PL-023",
+        "PL-024",
+        "PL-027"
+      ],
+      "prompt_families": [
+        "canonicalizer",
+        "atomic_verifier",
+        "atomic_critic"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:2ec442161386f8e093f5"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_evidence_terms": [
+          "AsylG",
+          "BeschV"
+        ],
+        "required_any_canonical_question_terms": [
+          "пособ",
+          "доход",
+          "зарплат"
+        ],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-064-canonicalizer-untrusted-law-hint-independence",
+      "expected_focus": "Canonicalize the benefit-retention question from the source without copying law-code routing hints into any output field.",
+      "lesson_ids": [
+        "PL-025"
+      ],
+      "prompt_families": [
+        "canonicalizer",
+        "atomic_verifier"
+      ],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:de8172b5f0f694eca3cf"
+    },
+    {
+      "automatic_checks": {
+        "required_any_canonical_question_terms": ["закры", "прекрат", "отказ"],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-065-status-termination-with-operational-obstacles",
+      "expected_focus": "Keep termination of section-24 residence status as the legal procedure; unavailable email, appointment, and online channels are secondary operational facts.",
+      "lesson_ids": ["PL-026"],
+      "prompt_families": ["canonicalizer"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:3cdfe5efd90835b24c2a"
+    },
+    {
+      "automatic_checks": {
+        "required_any_canonical_question_terms": ["выбор", "выбрать", "распредел", "мест"],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-066-allocation-location-choice-not-generic-filing",
+      "expected_focus": "Frame whether a desired allocation location can be chosen or obtained under EASY rather than replacing the request with generic asylum filing steps.",
+      "lesson_ids": ["PL-026"],
+      "prompt_families": ["canonicalizer"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:2afcd40df8ef111856cf"
+    },
+    {
+      "automatic_checks": {
+        "required_any_canonical_question_terms": ["Reiseausweis", "сер", "проезд"],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-067-gray-passport-is-travel-document",
+      "expected_focus": "Resolve gray German passport as Reiseausweis fuer Auslaender and keep the residence-title date as context rather than turning the object into a residence card.",
+      "lesson_ids": ["PL-026"],
+      "prompt_families": ["canonicalizer"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:69254584bd1687cedfb5"
+    },
+    {
+      "automatic_checks": {
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-068-foreign-salary-activity-classification",
+      "expected_focus": "Keep children's support central while preserving German classification, work authorization, tax treatment, and social-insurance treatment of ongoing Ukrainian earnings as unresolved issues.",
+      "lesson_ids": ["PL-026"],
+      "prompt_families": ["canonicalizer"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:fbcfbabb9c5e0fb28c6b"
+    },
+    {
+      "automatic_checks": {
+        "required_any_canonical_question_terms": ["работодател", "подтвержд", "справ", "разреш"],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-069-date-aware-employer-status-proof",
+      "expected_focus": "Frame whether existing residence and work-status proof suffices for an employer and whether separate authority confirmation may be required without assigning an unstated status from hints.",
+      "lesson_ids": ["PL-026"],
+      "prompt_families": ["canonicalizer"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:fcb96bbbd524d99891c9"
+    },
+    {
+      "automatic_checks": {
+        "status": "completed"
+      },
+      "case_id": "pr-070-later-question-resolves-foreign-jurisdiction",
+      "expected_focus": "Use the later question to identify the Ukrainian border actor and foreign-law target instead of rewriting the dispute as German re-entry; record-level scope rejection remains manual.",
+      "lesson_ids": ["PL-026"],
+      "prompt_families": ["canonicalizer", "atomic_verifier"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:383f700150474369ee31"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_evidence_terms": [
+          "доход ниже порога для самостоятельного обеспечения",
+          "доходе ниже порога для самостоятельного содержания",
+          "не обеспечивает самостоятельное содержание"
+        ],
+        "required_all_evidence_term_groups": [
+          ["18a"],
+          ["минималь", "порог"],
+          ["доход"]
+        ],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-071-section-18a-income-premise-not-self-sufficiency",
+      "expected_focus": "Preserve financial independence as a fact and the alleged minimum annual-income condition as a section-18a premise to verify; do not recast the premise as inability to support oneself.",
+      "lesson_ids": ["PL-028"],
+      "prompt_families": ["canonicalizer", "atomic_verifier"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:1ea088739220a823f65e"
+    },
+    {
+      "automatic_checks": {
+        "forbidden_authority_context_terms": ["Finanzamt"],
+        "forbidden_canonical_question_terms": ["IdNr", "фамил", "почтов"],
+        "required_all_evidence_terms": ["IdNr"],
+        "required_all_quality_flags": [
+          "multiple_legal_questions",
+          "mixed_with_non_legal_query"
+        ],
+        "required_any_canonical_question_terms": ["PIN", "eAT"],
+        "routing": "included",
+        "status": "completed"
+      },
+      "case_id": "pr-072-eat-pin-with-idnr-and-mailbox-context",
+      "expected_focus": "Keep the child's separate eAT PIN letter as the single canonical proposition, preserve IdNr notification as a separate legal issue, and retain the different-surname mailbox problem as non-legal source composition context.",
+      "lesson_ids": ["PL-029"],
+      "prompt_families": ["canonicalizer", "atomic_verifier"],
+      "source_kind": "real_task",
+      "task_id": "tg-question-canonicalization-task:df479089ebc29ee5fd16"
     }
   ],
   "registry_version": "007-prompt-regression-v1",

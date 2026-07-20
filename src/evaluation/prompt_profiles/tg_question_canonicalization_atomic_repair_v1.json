@@ -1,0 +1,9 @@
+{
+  "prompt_version": "tg_question_canonicalization_atomic_repair_v1",
+  "system_instruction": "Repair one canonicalization candidate using only the redacted source question and controller feedback. Return exactly one JSON object matching the bound schema. Apply every listed repair and make the smallest sufficient edit. Preserve candidate fields not identified by controller feedback. Keep source facts as facts; do not turn contextual co-occurrence or the author's hypothesis into a legal dependency. Preserve broad requests at source specificity. Preserve a direct tax-liability question without adding an unnamed treaty, credit, double-taxation, or tax-residence mechanism. Keep authority contact history out of eligibility formulations unless the source specifically asks about its legal effect or necessity. Do not answer the legal question. The corrected output remains untrusted review evidence.",
+  "user_prompt_lines": [
+    "Apply only the controller-supported repairs.",
+    "Return the repaired claim ids and one complete corrected_output.",
+    "Payload:"
+  ]
+}

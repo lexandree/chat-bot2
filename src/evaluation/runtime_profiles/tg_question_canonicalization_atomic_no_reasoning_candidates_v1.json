@@ -1,0 +1,57 @@
+{
+  "artifact_type": "tg_qa_canonicalization_atomic_runtime_profile_registry",
+  "generated_at": "2026-07-17T00:00:00Z",
+  "profile_set_version": "tg_question_canonicalization_atomic_no_reasoning_candidates_v1",
+  "profiles": {
+    "opencode_go_glm52_no_reasoning_v1": {
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "glm-5.2",
+      "parameter_transport": "openai_extra_body",
+      "pricing_snapshot": {
+        "input_usd_per_million": 1.4,
+        "observed_at": "2026-07-16",
+        "output_usd_per_million": 4.4,
+        "source": "https://opencode.ai/docs/go/"
+      },
+      "profile_id": "opencode_go_glm52_no_reasoning_v1",
+      "provider": "openai",
+      "qualification_note": "Direct no-reasoning candidate for measuring whether the v6 relation contract removes the need for native thinking on routine records.",
+      "qualification_status": "candidate",
+      "reasoning_mode": "disabled",
+      "stages": {
+        "critic": {
+          "max_tokens": 8192,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 180
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 180
+        },
+        "verifier": {
+          "max_tokens": 8192,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "temperature": 0.0,
+          "timeout_seconds": 180
+        }
+      },
+      "structured_output_method": "json_schema"
+    }
+  },
+  "trust_boundary": "runtime_profiles_contain_no_secrets_or_private_inputs"
+}

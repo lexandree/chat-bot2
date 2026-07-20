@@ -1,0 +1,155 @@
+{
+  "artifact_type": "tg_qa_canonicalization_atomic_runtime_profile_registry",
+  "profile_set_version": "tg_question_canonicalization_atomic_qwen_two_step_models_v1",
+  "generated_at": "2026-07-17",
+  "profiles": {
+    "opencode_go_qwen37_plus_reasoning_two_step_v1": {
+      "profile_id": "opencode_go_qwen37_plus_reasoning_two_step_v1",
+      "provider": "anthropic",
+      "parameter_transport": "anthropic_constructor",
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "qwen3.7-plus",
+      "reasoning_mode": "enabled",
+      "structured_output_method": "prompt_json",
+      "qualification_status": "candidate",
+      "qualification_note": "Two-step reasoning candidate; the earlier direct structured-output profile failed schema conformance before semantic qualification.",
+      "stages": {
+        "verifier": {
+          "max_tokens": 32768,
+          "timeout_seconds": 420,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled",
+              "budget_tokens": 16384
+            }
+          }
+        },
+        "critic": {
+          "max_tokens": 32768,
+          "timeout_seconds": 420,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled",
+              "budget_tokens": 16384
+            }
+          }
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "timeout_seconds": 420,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled",
+              "budget_tokens": 8192
+            }
+          }
+        }
+      },
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.4,
+        "output_usd_per_million": 1.6,
+        "observed_at": "2026-07-16",
+        "source": "https://opencode.ai/docs/go/"
+      }
+    },
+    "opencode_go_qwen36_plus_reasoning_two_step_v1": {
+      "profile_id": "opencode_go_qwen36_plus_reasoning_two_step_v1",
+      "provider": "anthropic",
+      "parameter_transport": "anthropic_constructor",
+      "endpoint_url": "https://opencode.ai/zen/go/v1/messages",
+      "model_id": "qwen3.6-plus",
+      "reasoning_mode": "enabled",
+      "structured_output_method": "prompt_json",
+      "qualification_status": "candidate",
+      "qualification_note": "Fallback two-step reasoning candidate; the earlier direct profile reached target scale but failed final schema conformance.",
+      "stages": {
+        "verifier": {
+          "max_tokens": 32768,
+          "timeout_seconds": 420,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled",
+              "budget_tokens": 16384
+            }
+          }
+        },
+        "critic": {
+          "max_tokens": 32768,
+          "timeout_seconds": 420,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled",
+              "budget_tokens": 16384
+            }
+          }
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "timeout_seconds": 420,
+          "request_parameters": {
+            "thinking": {
+              "type": "enabled",
+              "budget_tokens": 8192
+            }
+          }
+        }
+      },
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.5,
+        "output_usd_per_million": 3.0,
+        "observed_at": "2026-07-16",
+        "source": "https://opencode.ai/docs/go/"
+      }
+    },
+    "opencode_go_deepseek_v4_flash_formatter_v1": {
+      "profile_id": "opencode_go_deepseek_v4_flash_formatter_v1",
+      "provider": "openai",
+      "parameter_transport": "openai_extra_body",
+      "endpoint_url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "model_id": "deepseek-v4-flash",
+      "reasoning_mode": "disabled",
+      "structured_output_method": "json_mode",
+      "qualification_status": "candidate",
+      "qualification_note": "No-reasoning formatter candidate with successful target-scale two-step observations.",
+      "stages": {
+        "verifier": {
+          "max_tokens": 8192,
+          "timeout_seconds": 180,
+          "temperature": 0.0,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          }
+        },
+        "critic": {
+          "max_tokens": 8192,
+          "timeout_seconds": 180,
+          "temperature": 0.0,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          }
+        },
+        "repair": {
+          "max_tokens": 16384,
+          "timeout_seconds": 180,
+          "temperature": 0.0,
+          "request_parameters": {
+            "thinking": {
+              "type": "disabled"
+            }
+          }
+        }
+      },
+      "pricing_snapshot": {
+        "input_usd_per_million": 0.14,
+        "output_usd_per_million": 0.28,
+        "observed_at": "2026-07-16",
+        "source": "https://opencode.ai/docs/go/"
+      }
+    }
+  },
+  "trust_boundary": "runtime_profiles_contain_no_secrets_or_private_inputs"
+}

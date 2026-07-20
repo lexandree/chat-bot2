@@ -53,6 +53,7 @@ from evaluation.tg_qa_retrieval_benchmark import (
 from evaluation.tg_question_canonicalization import (
     build_tg_qa_canonicalization_adjudication_batch,
     build_tg_qa_canonicalization_retry_batch_from_adjudication,
+    build_tg_qa_canonicalization_snapshot,
     build_tg_qa_canonical_coverage_report,
     build_tg_qa_canonicalization_routing,
     build_tg_qa_issue_final_case_candidates,
@@ -69,6 +70,7 @@ from evaluation.tg_question_canonicalization import (
     emit_tg_qa_canonicalization_batch,
     export_tg_qa_legal_intent_pair_review_html,
     export_tg_qa_canonicalization_review_cards,
+    finalize_tg_qa_canonicalization_results,
     import_tg_qa_canonical_embedding_records,
     import_tg_qa_canonicalization_results,
     import_tg_qa_canonicalization_review_decisions,
@@ -79,10 +81,13 @@ from evaluation.tg_question_canonicalization import (
     run_tg_qa_legal_intent_candidate_extractor_batch,
     run_tg_qa_legal_intent_pair_judge_batch,
     run_tg_qa_canonicalization_adjudication_batch,
+    run_tg_qa_canonicalization_atomic_verify_repair_batch,
     run_tg_qa_canonicalization_llm_batch,
     run_tg_qa_canonicalization_deepseek_batch,
     run_tg_qa_canonicalization_verifier_batch,
     sample_tg_qa_canonicalization_batch,
+    split_tg_qa_canonicalization_atomic_relation_risks,
+    split_tg_qa_canonicalization_foreign_activity_candidates,
     verify_tg_question_canonicalization_boundaries,
 )
 from ingestion.legal_corpus_workflow import build_new_law_preflight
@@ -360,6 +365,12 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_sample_parser.add_argument("--output", required=True)
     tg_qa_canonical_sample_parser.add_argument("--summary-output", required=True)
     tg_qa_canonical_sample_parser.add_argument("--sample-size", type=int, default=50)
+    tg_qa_canonical_sample_parser.add_argument(
+        "--sampling-policy",
+        choices=["balanced", "stable_hash"],
+        default="balanced",
+    )
+    tg_qa_canonical_sample_parser.add_argument("--sample-seed", default="")
     tg_qa_provider_failure_retry_batch_parser = evaluation_subparsers.add_parser(
         "tg-qa-provider-failure-retry-batch"
     )
@@ -404,6 +415,9 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_llm_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_llm_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_llm_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_llm_run_parser.add_argument("--checkpoint-output", default="")
+    tg_qa_canonical_llm_run_parser.add_argument("--run-bundle-output", default="")
+    tg_qa_canonical_llm_run_parser.add_argument("--log-path", default="")
     tg_qa_canonical_verifier_run_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-verifier-run")
     tg_qa_canonical_verifier_run_parser.add_argument("--evidence", required=True)
     tg_qa_canonical_verifier_run_parser.add_argument("--output", required=True)
@@ -430,6 +444,92 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_verifier_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_verifier_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_verifier_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_verifier_run_parser.add_argument("--checkpoint-output", default="")
+    tg_qa_canonical_verifier_run_parser.add_argument("--run-bundle-output", default="")
+    tg_qa_canonical_verifier_run_parser.add_argument("--log-path", default="")
+    tg_qa_canonical_atomic_run_parser = evaluation_subparsers.add_parser(
+        "tg-qa-canonicalization-atomic-verify-repair-run"
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument("--evidence", required=True)
+    tg_qa_canonical_atomic_run_parser.add_argument("--output", required=True)
+    tg_qa_canonical_atomic_run_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_atomic_run_parser.add_argument("--endpoint-url", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--model-id", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--atomic-run-id", required=True)
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--provider", choices=["anthropic", "openai"], default="openai"
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_atomic_run_parser.add_argument("--timeout-seconds", type=int, default=300)
+    tg_qa_canonical_atomic_run_parser.add_argument("--verifier-max-tokens", type=int, default=32768)
+    tg_qa_canonical_atomic_run_parser.add_argument("--critic-max-tokens", type=int, default=32768)
+    tg_qa_canonical_atomic_run_parser.add_argument("--repair-max-tokens", type=int, default=16384)
+    tg_qa_canonical_atomic_run_parser.add_argument("--max-repairs", type=int, choices=[0, 1], default=1)
+    tg_qa_canonical_atomic_run_parser.add_argument("--enable-critic", action="store_true")
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--critic-policy", choices=["always", "before_pass"], default="always"
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--structured-output-method",
+        choices=["function_calling", "json_mode", "json_schema", "prompt_json"],
+        default="json_schema",
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument("--extra-body-json", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--runtime-profile-registry", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--verifier-runtime-profile-id", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--critic-runtime-profile-id", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--repair-runtime-profile-id", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--verifier-formatter-runtime-profile-id", default=""
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--critic-formatter-runtime-profile-id", default=""
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--repair-formatter-runtime-profile-id", default=""
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument("--stop-on-failure", action="store_true")
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--runtime-contour", default="operator_managed_atomic_verify_repair"
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument("--backend", default="opencode")
+    tg_qa_canonical_atomic_run_parser.add_argument("--api-key-env", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--provider-max-attempts", type=int, default=3)
+    tg_qa_canonical_atomic_run_parser.add_argument(
+        "--provider-retry-delay-seconds", type=float, default=2.0
+    )
+    tg_qa_canonical_atomic_run_parser.add_argument("--no-resume", action="store_true")
+    tg_qa_canonical_atomic_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_atomic_run_parser.add_argument("--checkpoint-output", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--stage-checkpoint-output", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--run-bundle-output", default="")
+    tg_qa_canonical_atomic_run_parser.add_argument("--log-path", default="")
+    tg_qa_canonical_atomic_risk_parser = evaluation_subparsers.add_parser(
+        "tg-qa-canonicalization-atomic-risk-split"
+    )
+    tg_qa_canonical_atomic_risk_parser.add_argument("--evidence", required=True)
+    tg_qa_canonical_atomic_risk_parser.add_argument("--risk-evidence-output", required=True)
+    tg_qa_canonical_atomic_risk_parser.add_argument(
+        "--low-risk-evidence-output", required=True
+    )
+    tg_qa_canonical_atomic_risk_parser.add_argument("--diagnostics-output", required=True)
+    tg_qa_canonical_atomic_risk_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_atomic_risk_parser.add_argument("--max-items", type=int, default=0)
+    tg_qa_canonical_foreign_activity_parser = evaluation_subparsers.add_parser(
+        "tg-qa-canonicalization-foreign-activity-split"
+    )
+    tg_qa_canonical_foreign_activity_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_foreign_activity_parser.add_argument(
+        "--foreign-activity-output", required=True
+    )
+    tg_qa_canonical_foreign_activity_parser.add_argument("--ordinary-output", required=True)
+    tg_qa_canonical_foreign_activity_parser.add_argument("--diagnostics-output", required=True)
+    tg_qa_canonical_foreign_activity_parser.add_argument("--summary-output", required=True)
+    tg_qa_canonical_foreign_activity_parser.add_argument(
+        "--foreign-activity-prompt-version",
+        default="tg_question_canonicalizer_v41_foreign_activity_selected_field_ownership",
+    )
+    tg_qa_canonical_foreign_activity_parser.add_argument("--max-items", type=int, default=0)
     tg_qa_canonical_adjudication_batch_parser = evaluation_subparsers.add_parser(
         "tg-qa-canonicalization-adjudication-batch"
     )
@@ -500,6 +600,9 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_adjudication_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_adjudication_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_adjudication_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--checkpoint-output", default="")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--run-bundle-output", default="")
+    tg_qa_canonical_adjudication_run_parser.add_argument("--log-path", default="")
     tg_qa_canonical_deepseek_run_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-deepseek-run")
     tg_qa_canonical_deepseek_run_parser.add_argument("--batch", required=True)
     tg_qa_canonical_deepseek_run_parser.add_argument("--output", required=True)
@@ -528,6 +631,9 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_deepseek_run_parser.add_argument("--stop-after-consecutive-provider-failures", type=int, default=0)
     tg_qa_canonical_deepseek_run_parser.add_argument("--no-resume", action="store_true")
     tg_qa_canonical_deepseek_run_parser.add_argument("--no-progress", action="store_true")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--checkpoint-output", default="")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--run-bundle-output", default="")
+    tg_qa_canonical_deepseek_run_parser.add_argument("--log-path", default="")
     tg_qa_canonical_review_decisions_parser = evaluation_subparsers.add_parser(
         "tg-qa-canonicalization-review-decisions-import"
     )
@@ -548,6 +654,12 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_routing_parser.add_argument("--retry-qwen-batch-output", default="")
     tg_qa_canonical_routing_parser.add_argument("--send-deepseek-batch-output", default="")
     tg_qa_canonical_routing_parser.add_argument("--backlog-output", default="")
+    tg_qa_canonical_routing_parser.add_argument(
+        "--unreviewed-policy",
+        choices=["hold", "first_pass"],
+        default="hold",
+    )
+    tg_qa_canonical_routing_parser.add_argument("--allow-legacy-identity", action="store_true")
     tg_qa_canonical_import_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-import")
     tg_qa_canonical_import_parser.add_argument("--batch", required=True)
     tg_qa_canonical_import_parser.add_argument("--results", required=True)
@@ -555,6 +667,39 @@ def build_parser() -> argparse.ArgumentParser:
     tg_qa_canonical_import_parser.add_argument("--manifest-output", required=True)
     tg_qa_canonical_import_parser.add_argument("--canonicalization-run-id", default="")
     tg_qa_canonical_import_parser.add_argument("--only-results-task-ids", action="store_true")
+    tg_qa_canonical_import_parser.add_argument("--allow-legacy-identity", action="store_true")
+    tg_qa_canonical_finalize_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-finalize")
+    tg_qa_canonical_finalize_parser.add_argument("--batch", required=True)
+    tg_qa_canonical_finalize_parser.add_argument("--base-accepted-results", required=True)
+    tg_qa_canonical_finalize_parser.add_argument(
+        "--replacement-accepted-results",
+        action="append",
+        default=[],
+        help="Replacement accepted result spec label=path.",
+    )
+    tg_qa_canonical_finalize_parser.add_argument(
+        "--replacement-batch",
+        action="append",
+        default=[],
+        help="Replacement source batch spec label=path; required for every replacement result.",
+    )
+    tg_qa_canonical_finalize_parser.add_argument("--output", required=True)
+    tg_qa_canonical_finalize_parser.add_argument("--manifest-output", required=True)
+    tg_qa_canonical_finalize_parser.add_argument("--backlog-output", required=True)
+    tg_qa_canonical_finalize_parser.add_argument("--allow-legacy-identity", action="store_true")
+    tg_qa_canonical_snapshot_parser = evaluation_subparsers.add_parser("tg-qa-canonicalization-snapshot")
+    tg_qa_canonical_snapshot_parser.add_argument(
+        "--evidence",
+        action="append",
+        required=True,
+        help="Snapshot evidence spec source_label=quality_tier=evidence_path.",
+    )
+    tg_qa_canonical_snapshot_parser.add_argument("--snapshot-name", required=True)
+    tg_qa_canonical_snapshot_parser.add_argument("--output", required=True)
+    tg_qa_canonical_snapshot_parser.add_argument("--manifest-output", required=True)
+    tg_qa_canonical_snapshot_parser.add_argument("--quality-output", required=True)
+    tg_qa_canonical_snapshot_parser.add_argument("--backlog-output", required=True)
+    tg_qa_canonical_snapshot_parser.add_argument("--allow-legacy-identity", action="store_true")
     tg_qa_canonical_embedding_batch_parser = evaluation_subparsers.add_parser("tg-qa-canonical-embedding-batch")
     tg_qa_canonical_embedding_batch_parser.add_argument("--canonicalization-evidence", required=True)
     tg_qa_canonical_embedding_batch_parser.add_argument("--output", required=True)
@@ -1380,6 +1525,8 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             output_path=args.output,
             summary_output_path=args.summary_output,
             sample_size=args.sample_size,
+            sampling_policy=args.sampling_policy,
+            sample_seed=args.sample_seed,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed"
@@ -1433,6 +1580,9 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
             stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
+            checkpoint_output_path=args.checkpoint_output or None,
+            run_bundle_output_path=args.run_bundle_output or None,
+            log_path=args.log_path,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
@@ -1460,10 +1610,78 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
             stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
+            checkpoint_output_path=args.checkpoint_output or None,
+            run_bundle_output_path=args.run_bundle_output or None,
+            log_path=args.log_path,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
         return 0, payload
+    if args.action == "tg-qa-canonicalization-atomic-verify-repair-run":
+        result = run_tg_qa_canonicalization_atomic_verify_repair_batch(
+            evidence_path=args.evidence,
+            output_path=args.output,
+            summary_output_path=args.summary_output,
+            endpoint_url=args.endpoint_url,
+            model_id=args.model_id,
+            atomic_run_id=args.atomic_run_id,
+            provider=args.provider,
+            max_items=args.max_items,
+            timeout_seconds=args.timeout_seconds,
+            verifier_max_tokens=args.verifier_max_tokens,
+            critic_max_tokens=args.critic_max_tokens,
+            repair_max_tokens=args.repair_max_tokens,
+            max_repairs=args.max_repairs,
+            enable_critic=args.enable_critic,
+            critic_policy=args.critic_policy,
+            structured_output_method=args.structured_output_method,
+            api_key_env=args.api_key_env,
+            extra_body=json.loads(args.extra_body_json) if args.extra_body_json else None,
+            runtime_profile_registry_path=args.runtime_profile_registry or None,
+            verifier_runtime_profile_id=args.verifier_runtime_profile_id,
+            critic_runtime_profile_id=args.critic_runtime_profile_id,
+            repair_runtime_profile_id=args.repair_runtime_profile_id,
+            verifier_formatter_runtime_profile_id=(
+                args.verifier_formatter_runtime_profile_id
+            ),
+            critic_formatter_runtime_profile_id=args.critic_formatter_runtime_profile_id,
+            repair_formatter_runtime_profile_id=args.repair_formatter_runtime_profile_id,
+            stop_on_failure=args.stop_on_failure,
+            runtime_contour=args.runtime_contour,
+            backend=args.backend,
+            resume=not args.no_resume,
+            provider_max_attempts=args.provider_max_attempts,
+            provider_retry_delay_seconds=args.provider_retry_delay_seconds,
+            progress=not args.no_progress,
+            checkpoint_output_path=args.checkpoint_output or None,
+            stage_checkpoint_output_path=args.stage_checkpoint_output or None,
+            run_bundle_output_path=args.run_bundle_output or None,
+            log_path=args.log_path,
+        )
+        payload = dict(result["summary"])
+        payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-atomic-risk-split":
+        result = split_tg_qa_canonicalization_atomic_relation_risks(
+            evidence_path=args.evidence,
+            risk_evidence_output_path=args.risk_evidence_output,
+            low_risk_evidence_output_path=args.low_risk_evidence_output,
+            diagnostics_output_path=args.diagnostics_output,
+            summary_output_path=args.summary_output,
+            max_items=args.max_items,
+        )
+        return 0, dict(result["summary"])
+    if args.action == "tg-qa-canonicalization-foreign-activity-split":
+        result = split_tg_qa_canonicalization_foreign_activity_candidates(
+            batch_path=args.batch,
+            foreign_activity_output_path=args.foreign_activity_output,
+            ordinary_output_path=args.ordinary_output,
+            diagnostics_output_path=args.diagnostics_output,
+            summary_output_path=args.summary_output,
+            foreign_activity_prompt_version=args.foreign_activity_prompt_version,
+            max_items=args.max_items,
+        )
+        return 0, dict(result["summary"])
     if args.action == "tg-qa-canonicalization-adjudication-batch":
         result = build_tg_qa_canonicalization_adjudication_batch(
             batch_path=args.batch,
@@ -1513,6 +1731,9 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
             stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
+            checkpoint_output_path=args.checkpoint_output or None,
+            run_bundle_output_path=args.run_bundle_output or None,
+            log_path=args.log_path,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
@@ -1539,6 +1760,9 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             provider_retry_delay_seconds=args.provider_retry_delay_seconds,
             stop_after_consecutive_provider_failures=args.stop_after_consecutive_provider_failures,
             progress=not args.no_progress,
+            checkpoint_output_path=args.checkpoint_output or None,
+            run_bundle_output_path=args.run_bundle_output or None,
+            log_path=args.log_path,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
@@ -1567,6 +1791,8 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             retry_qwen_batch_output_path=args.retry_qwen_batch_output or None,
             send_deepseek_batch_output_path=args.send_deepseek_batch_output or None,
             backlog_output_path=args.backlog_output or None,
+            unreviewed_policy=args.unreviewed_policy,
+            allow_legacy_identity=args.allow_legacy_identity,
         )
         payload = dict(result["summary"])
         payload["status"] = "completed"
@@ -1579,9 +1805,37 @@ def handle_evaluation_command(args: argparse.Namespace, settings: FoundationSett
             manifest_output_path=args.manifest_output,
             canonicalization_run_id=args.canonicalization_run_id,
             only_results_task_ids=args.only_results_task_ids,
+            allow_legacy_identity=args.allow_legacy_identity,
         )
         payload = dict(result["manifest"])
         payload["status"] = "completed" if payload.get("failed_count") == 0 else "completed_with_failures"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-finalize":
+        result = finalize_tg_qa_canonicalization_results(
+            batch_path=args.batch,
+            base_accepted_results_path=args.base_accepted_results,
+            replacement_accepted_result_specs=args.replacement_accepted_results,
+            replacement_batch_specs=args.replacement_batch,
+            output_path=args.output,
+            manifest_output_path=args.manifest_output,
+            backlog_output_path=args.backlog_output,
+            allow_legacy_identity=args.allow_legacy_identity,
+        )
+        payload = dict(result["manifest"])
+        payload["status"] = "completed" if payload.get("backlog_count") == 0 else "completed_with_backlog"
+        return 0, payload
+    if args.action == "tg-qa-canonicalization-snapshot":
+        result = build_tg_qa_canonicalization_snapshot(
+            evidence_specs=args.evidence,
+            snapshot_name=args.snapshot_name,
+            output_path=args.output,
+            manifest_output_path=args.manifest_output,
+            quality_output_path=args.quality_output,
+            backlog_output_path=args.backlog_output,
+            allow_legacy_identity=args.allow_legacy_identity,
+        )
+        payload = dict(result["manifest"])
+        payload["status"] = "completed" if payload.get("backlog_count") == 0 else "completed_with_backlog"
         return 0, payload
     if args.action == "tg-qa-canonical-embedding-batch":
         result = emit_tg_qa_canonical_embedding_batch(

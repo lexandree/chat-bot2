@@ -12,6 +12,10 @@ Required fields:
 - `canonicalization_contract_version`
 - `prompt_version` or `policy_version`
 - `prompt_example_set_id`
+- `canonicalization_identity_policy_version`
+- `canonicalization_batch_id` and `canonicalization_batch_hash`
+- `task_input_hash`
+- `prompt_profile_hash`
 - `runtime_hint`
 - redacted `input`
 - `expected_output_schema`
@@ -20,6 +24,29 @@ Input must include redacted 006 candidate evidence only: source ids, redacted
 question text, source `question_date` when available, topic labels, law-code
 candidates, dialogue flags, selected answer metadata when available, and source
 artifact references. Raw Telegram exports and unredacted text are forbidden.
+
+Derived retry tasks additionally carry `canonicalization_source_identity`, the
+immutable identity of the original task being reconsidered. It is part of the
+retry task identity and is required before a retry can replace base evidence.
+
+## CanonicalizationSampleSummary
+
+Identity and selection metadata for a calibration or qualification sample.
+
+Required fields:
+
+- source and emitted batch identities
+- requested and emitted sample counts
+- `sampling_policy_id`: `balanced` or `stable_hash`
+- deterministic `sampling_policy` description
+- `sample_seed`, required and non-empty for `stable_hash`
+- `selected_task_id_hash`
+- source-status and topic-label counts
+
+`balanced` preserves the existing round-robin diagnostic coverage by answer
+status and first topic label. `stable_hash` orders the complete source batch by
+SHA-256 of the declared seed and task id; use it for a predeclared qualification
+sample whose membership must not depend on file order or model output.
 
 ## CanonicalizationEvidence
 
@@ -32,6 +59,12 @@ Required fields:
 - `candidate_id`
 - `canonicalization_run_id`
 - `canonicalization_contract_version`
+- `canonicalization_identity_policy_version`
+- `canonicalization_batch_id` and `canonicalization_batch_hash`
+- `task_input_hash`
+- `prompt_profile_hash`
+- `runtime_profile` and `runtime_profile_hash`
+- `canonicalization_evidence_hash`
 - `prompt_version` or `policy_version`
 - `runtime_contour`
 - `backend`
@@ -55,6 +88,17 @@ Required fields:
 - `question_date` when present in source evidence
 - `provenance`
 
+Optional review/finalization fields:
+
+- `untrusted_law_code_hints`: input `law_code_candidates` retained only for
+  deterministic non-leakage audit; these values are not legal evidence and are
+  not sent to the atomic verifier
+- `canonicalization_source_identity` for a derived retry
+- `review_provenance`, including decision source, reviewer hash, verifier and
+  adjudicator lineage
+- `finalization_provenance`, including selected source label, run, evidence,
+  batch, and root identity
+
 Validation rules:
 
 - `canonical_question` must preserve the source user's language when status is
@@ -64,6 +108,36 @@ Validation rules:
   and `is_standalone_question=true`.
 - LLM-created fields are review evidence only and cannot create final dataset
   eligibility.
+- Unreviewed first-pass evidence, legacy-identity evidence, and evidence without
+  human acceptance remain in routing/finalization backlog.
+
+## CanonicalizationReviewDecision
+
+An operator decision imported from an explicitly supplied review-decision
+artifact.
+
+Required fields:
+
+- `task_id`
+- optional `candidate_id`, which must match the batch task when present
+- `decision`: `accept`, `reject`, `retry_qwen`, `send_deepseek`, or `hold`
+- optional `decision_reason`
+- optional corrected canonicalization fields
+- optional `review_payload_version`, emitted with a current review-card hash
+- optional `review_payload_hash`, emitted by current review cards and covering
+  the exact displayed review payload plus canonicalization evidence identity
+
+`reviewer_hash` is optional compatibility metadata. Its presence or value is
+ignored for import, routing, and finalization in the single-reviewer workflow.
+Successful import of the supplied decision artifact establishes the manual
+review boundary. The imported record retains its decision id, review time, and
+batch/task/evidence lineage. When `review_payload_hash` is supplied, import
+must match it against a freshly reconstructed card. Imported decisions record
+`review_evidence_binding_status` as `validated`, `legacy_identity_unverified`,
+`legacy_unverified`, `missing_version`, `unsupported_version`, or `mismatch`;
+the final three states fail import. Missing hashes in historical files do not
+invalidate the operator's manual-review confirmation, but those decisions are
+not suitable as reproducible classifier labels.
 
 ## CanonicalizationRunManifest
 
@@ -81,6 +155,9 @@ Required fields:
 - `model_id` when applicable
 - `prompt_version` or `policy_version`
 - `canonicalization_contract_version`
+- `canonicalization_batch_id` and `canonicalization_batch_hash`
+- `prompt_profile_hash`
+- `runtime_profile_hashes`
 - `input_scope`
 - `processed_count`
 - `completed_count`
@@ -91,6 +168,31 @@ Required fields:
 - `started_at`
 - `completed_at`
 - `known_limitations`
+
+## CanonicalizationOperatorRunBundle
+
+Private sidecar for an LLM canonicalizer, verifier, or adjudicator run.
+
+Required fields:
+
+- `stage`
+- result, summary, and checkpoint paths
+- optional `log_path`
+- runtime profile and `runtime_profile_hash`
+- command metadata, including resume and bounded retry settings
+
+## CanonicalizationFinalizationManifest
+
+Control-plane artifact selecting human-reviewed evidence without changing source
+run identity. It records the base batch identity, source result/batch artifacts,
+selected source run ids, finalization policy, and backlog count.
+
+## CanonicalizationSnapshotManifest
+
+Private export manifest for finalized canonical evidence. It records source
+quality tiers, prompt/runtime profile hashes, source run ids, record count, and
+strict-validation backlog count. Snapshot records retain review and
+finalization provenance; they remain review evidence, not legal authority.
 
 ## CanonicalEmbeddingBatchItem
 
@@ -609,3 +711,63 @@ The quality summary must include:
   `rejected`.
 - Reviewed evaluation dataset case: `eligible_candidate` -> `exported` or
   `excluded`.
+
+## AtomicVerificationSidecar
+
+Optional review evidence attached to one immutable canonicalization evidence
+hash. It contains a deterministic field claim ledger, independent verifier
+verdicts, optional independent critic verdicts and disagreement evidence, exact
+source spans, controller reasons, optional bounded repair, and post-repair
+re-verification.
+
+An exact quote with an incorrect offset may be normalized only from a valid
+start anchor or a unique source occurrence. The sidecar records supplied and
+normalized offsets; absent or ambiguous quotes remain invalid. Runtime entries
+are attempt-level so failed parse/provider calls are not erased from lineage.
+Unsupported list atoms transition only by deterministic deletion; supported
+list items remain unchanged. Critic disagreement remains explicit and uses a
+conservative merge rather than majority selection.
+
+An atomic semantic stage may use direct structured output or a two-step
+execution. The two-step form stores a bounded plain-text decision memo and its
+raw SHA-256, then sends that memo plus the original compact payload to a
+separate no-reasoning formatter. Native hidden reasoning is not the memo. A
+critic creates its own memo and never receives the verifier memo.
+Formatter verification claims carry exact quote strings. Deterministic code
+derives offsets only for a unique exact occurrence and converts a supported
+claim with no resolvable quote to `unresolved`.
+
+State transitions:
+
+- `completed evidence -> pass`
+- `completed evidence -> revise -> pass_repaired`
+- `completed evidence -> verifier/critic disagreement -> revise | hold`
+- `completed evidence -> hold`
+- provider/schema failure -> `failed`
+- non-completed input evidence -> `skipped`
+
+`pass` and `pass_repaired` do not represent human acceptance. `hold` is terminal
+for one run and requires a new operator run or human review; the contour does
+not recurse.
+
+## AtomicModelRuntimeProfile
+
+A tracked, secret-free deployment profile for one atomic model. It contains a
+stable profile id, provider, parameter transport, endpoint, model id,
+structured-output method, and explicit verifier/critic/repair options. Stage
+options contain output-token limit, timeout, temperature, and native request
+parameters. `reasoning_mode` declares whether a deployment runs with reasoning
+enabled, disabled, or at its provider default. A stage may bind a second
+profile as formatter; that profile must declare disabled reasoning. The
+registry version and content hash, both effective component profiles, and the
+execution mode bind run and resume identity.
+
+The endpoint URL and pricing source remain registry configuration; generated
+records retain a redacted endpoint shape and dated numeric pricing snapshot.
+API keys, authorization headers, private inputs, and raw prompts are forbidden.
+
+The atomic run also records critic policy. `always` invokes the critic after
+every primary verifier. `before_pass` invokes it only when the primary
+controller would otherwise pass, including after repair. Per-record
+`initial_critic_executed` and `final_critic_executed` fields, plus deterministic
+skip reasons, preserve the actual state transition.

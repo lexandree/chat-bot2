@@ -16,6 +16,7 @@ from evaluation.load_cases import (
     build_relationship_quality_artifact,
     build_structural_workflow_artifact,
 )
+from evaluation import tg_question_canonicalization as canonicalization
 
 
 pytestmark = pytest.mark.smoke
@@ -898,6 +899,10 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
             str(canonical_sample_summary),
             "--sample-size",
             "50",
+            "--sampling-policy",
+            "stable_hash",
+            "--sample-seed",
+            "smoke-v1",
         ],
         settings=settings,
     )
@@ -1123,6 +1128,8 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
     assert cluster_exit == coverage_exit == temporal_queue_exit == review_exit == bank_exit == candidate_exit == final_exit == boundary_exit == 0
     assert batch_payload["emitted_task_count"] == 1
     assert sample_payload["emitted_sample_count"] == 1
+    assert sample_payload["sampling_policy_id"] == "stable_hash"
+    assert sample_payload["sample_seed"] == "smoke-v1"
     assert review_cards_payload["card_count"] == 1
     assert "Export JSONL" in canonical_review_html.read_text(encoding="utf-8")
     assert import_payload["completed_count"] == 1
@@ -1138,6 +1145,135 @@ def test_cli_evaluation_tg_qa_canonicalization_offline_pipeline(tmp_path: Path) 
     assert temporal_blocked_candidates.read_text(encoding="utf-8") == ""
     assert final_payload["case_count"] == 1
     assert boundary_payload["status"] == "passed"
+
+
+def test_cli_canonicalization_finalization_and_snapshot_require_review(tmp_path: Path) -> None:
+    candidates = tmp_path / "canonical_candidates.jsonl"
+    batch = tmp_path / "canonical_batch.jsonl"
+    batch_summary = tmp_path / "canonical_batch_summary.json"
+    results = tmp_path / "canonical_results.jsonl"
+    raw_decisions = tmp_path / "raw_decisions.jsonl"
+    decisions = tmp_path / "decisions.jsonl"
+    decisions_summary = tmp_path / "decisions_summary.json"
+    accepted = tmp_path / "accepted.jsonl"
+    routing_summary = tmp_path / "routing_summary.json"
+    finalized = tmp_path / "finalized.jsonl"
+    final_manifest = tmp_path / "final_manifest.json"
+    final_backlog = tmp_path / "final_backlog.jsonl"
+    snapshot = tmp_path / "snapshot.jsonl"
+    snapshot_manifest = tmp_path / "snapshot_manifest.json"
+    snapshot_quality = tmp_path / "snapshot_quality.json"
+    snapshot_backlog = tmp_path / "snapshot_backlog.jsonl"
+
+    _write_jsonl(candidates, [_tg_canonical_fixture_candidate()])
+    batch_exit, _batch_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-batch",
+            "--candidates",
+            str(candidates),
+            "--output",
+            str(batch),
+            "--summary-output",
+            str(batch_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    batch_item = json.loads(batch.read_text(encoding="utf-8").splitlines()[0])
+    _write_jsonl(results, [_tg_canonical_fixture_result(batch_item)])
+    _write_jsonl(
+        raw_decisions,
+        [
+            {
+                "task_id": batch_item["task_id"],
+                "candidate_id": batch_item["candidate_id"],
+                "decision": "accept",
+                "reviewed_at": "2026-07-10T00:00:00Z",
+            }
+        ],
+    )
+
+    decision_exit, decision_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-review-decisions-import",
+            "--batch",
+            str(batch),
+            "--qwen-results",
+            str(results),
+            "--decisions",
+            str(raw_decisions),
+            "--output",
+            str(decisions),
+            "--summary-output",
+            str(decisions_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    routing_exit, routing_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-routing",
+            "--batch",
+            str(batch),
+            "--qwen-results",
+            str(results),
+            "--review-decisions",
+            str(decisions),
+            "--output",
+            str(accepted),
+            "--summary-output",
+            str(routing_summary),
+        ],
+        settings=FoundationSettings(),
+    )
+    finalize_exit, finalize_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-finalize",
+            "--batch",
+            str(batch),
+            "--base-accepted-results",
+            str(accepted),
+            "--output",
+            str(finalized),
+            "--manifest-output",
+            str(final_manifest),
+            "--backlog-output",
+            str(final_backlog),
+        ],
+        settings=FoundationSettings(),
+    )
+    snapshot_exit, snapshot_payload = dispatch(
+        [
+            "evaluation",
+            "tg-qa-canonicalization-snapshot",
+            "--evidence",
+            f"reviewed=silver={finalized}",
+            "--snapshot-name",
+            "smoke_snapshot",
+            "--output",
+            str(snapshot),
+            "--manifest-output",
+            str(snapshot_manifest),
+            "--quality-output",
+            str(snapshot_quality),
+            "--backlog-output",
+            str(snapshot_backlog),
+        ],
+        settings=FoundationSettings(),
+    )
+
+    snapshot_record = json.loads(snapshot.read_text(encoding="utf-8").splitlines()[0])
+    assert batch_exit == decision_exit == routing_exit == finalize_exit == snapshot_exit == 0
+    assert decision_payload["imported_count"] == 1
+    assert routing_payload["accepted_result_count"] == 1
+    assert finalize_payload["finalized_record_count"] == 1
+    assert finalize_payload["backlog_count"] == 0
+    assert snapshot_payload["record_count"] == 1
+    assert snapshot_record["review_provenance"]["reviewer_hash"] == ""
+    assert snapshot_record["review_provenance"]["decision_source"] == "human_review"
+    assert snapshot_record["finalization_provenance"]["source_run_id"] == "tg-question-canonicalization-run:smoke"
 
 
 def test_cli_legal_intent_pair_review_exports_100_pair_html(tmp_path: Path) -> None:
@@ -1442,6 +1578,10 @@ def test_cli_canonicalization_review_decision_import_and_routing_support_partial
             _tg_canonical_fixture_result(batch_items[2]),
         ],
     )
+    qwen_result_rows = [json.loads(line) for line in qwen_results.read_text(encoding="utf-8").splitlines()]
+    for row in qwen_result_rows:
+        row["canonicalization_evidence_hash"] = canonicalization._canonicalization_evidence_hash(row)
+    _write_jsonl(qwen_results, qwen_result_rows)
     _write_jsonl(
         verifier_results,
         [
@@ -1463,6 +1603,7 @@ def test_cli_canonicalization_review_decision_import_and_routing_support_partial
                 "task_id": batch_items[2]["task_id"],
                 "candidate_id": batch_items[2]["candidate_id"],
                 "decision": "retry_qwen",
+                "reviewer_hash": "reviewer:smoke",
             }
         ],
     )
@@ -1510,6 +1651,8 @@ def test_cli_canonicalization_review_decision_import_and_routing_support_partial
             str(send_deepseek_batch),
             "--backlog-output",
             str(backlog),
+            "--unreviewed-policy",
+            "first_pass",
         ],
         settings=settings,
     )
@@ -1527,8 +1670,8 @@ def test_cli_canonicalization_review_decision_import_and_routing_support_partial
     assert routing_payload["counts_by_decision"] == {"accept": 1, "reject": 1, "retry_qwen": 1}
     assert [row["task_id"] for row in routed] == [batch_items[0]["task_id"]]
     assert {row["decision_source"] for row in ledger} == {
-        "implicit_accept_qwen_included",
-        "implicit_reject_qwen_exclusion",
+        "explicit_first_pass_accept_qwen_included",
+        "explicit_first_pass_reject_qwen_exclusion",
         "human_review",
     }
     assert {row["decision"] for row in backlog_rows} == {"reject", "retry_qwen"}
@@ -1819,13 +1962,13 @@ def _tg_canonical_fixture_candidate() -> dict:
 
 
 def _tg_canonical_fixture_result(batch_item: dict) -> dict:
-    return {
+    record = {
         "task_id": batch_item["task_id"],
         "task_scope": "question_candidate",
         "candidate_id": batch_item["candidate_id"],
         "canonicalization_run_id": "tg-question-canonicalization-run:smoke",
-        "canonicalization_contract_version": "tg_question_canonicalization_v1",
-        "prompt_version": "tg_question_canonicalizer_v4",
+        "canonicalization_contract_version": batch_item["canonicalization_contract_version"],
+        "prompt_version": batch_item["prompt_version"],
         "runtime_contour": "fixture",
         "backend": "deterministic_fixture",
         "model_id": "",
@@ -1846,6 +1989,27 @@ def _tg_canonical_fixture_result(batch_item: dict) -> dict:
         "confidence": "high",
         "quality_flags": [],
     }
+    runtime_profile = {
+        "stage": "canonicalization",
+        "provider": "fixture",
+        "runtime_contour": "fixture",
+        "backend": "deterministic_fixture",
+        "model_id": "",
+    }
+    record.update(
+        {
+            "canonicalization_identity_policy_version": canonicalization.CANONICALIZATION_IDENTITY_POLICY_VERSION,
+            "canonicalization_batch_id": batch_item["canonicalization_batch_id"],
+            "canonicalization_batch_hash": batch_item["canonicalization_batch_hash"],
+            "task_input_hash": batch_item["task_input_hash"],
+            "prompt_profile_hash": batch_item["prompt_profile_hash"],
+            "operator_stage": "canonicalization",
+            "runtime_profile": runtime_profile,
+            "runtime_profile_hash": canonicalization._stable_json_hash(runtime_profile),
+        }
+    )
+    record["canonicalization_evidence_hash"] = canonicalization._canonicalization_evidence_hash(record)
+    return record
 
 
 def _tg_canonical_fixture_vector(item: dict) -> dict:

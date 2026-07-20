@@ -153,6 +153,61 @@ policy, and does not approve automatic answer reuse.
 - **FR-040**: Route-ambiguity records MUST include material context, plausible route law codes, expected route law codes, route class, and paired surface-group provenance so that the same wording can intentionally map to different legal routes.
 - **FR-041**: Records whose route depends on missing material facts MUST be marked unresolved and MUST NOT be forced into a single expected legal section for ordinary Recall@k metrics.
 - **FR-042**: Candidate-generation or route-hint policies MUST NOT be retained unless they report cumulative clean-baseline and route-ambiguity evidence.
+- **FR-043**: Canonicalization tasks and strict results MUST carry deterministic
+  batch, task-input, prompt-profile, runtime-profile, and evidence identities;
+  imports MUST reject incompatible or unknown result fields rather than silently
+  normalizing them.
+- **FR-044**: Routing MUST reconcile every batch task and MUST hold unreviewed,
+  missing, duplicate, or identity-invalid output in explicit backlog artifacts
+  by default.
+- **FR-045**: Verifier and adjudicator output MUST retain canonical-evidence and
+  prompt/runtime lineage. Material adjudicator disagreement MUST route to human
+  review rather than automatically selecting a retry or acceptance.
+- **FR-046**: Finalized canonicalization evidence MUST require an acceptance
+  decision supplied through the explicit review-decision import artifact,
+  preserve the selected source run identity, and validate a derived retry
+  against both its own batch and its base-task root identity. A reviewer
+  identifier is not required in the single-reviewer workflow.
+- **FR-047**: Operator-managed canonicalizer, verifier, and adjudicator runs
+  MUST emit reproducible checkpoint and run-bundle metadata and MUST bind resume
+  behavior to the same input identity and runtime profile.
+- **FR-048**: Optional atomic verification MUST remain a bounded
+  operator-managed sidecar workflow. It MUST verify deterministic field claims
+  independently from generator reasoning, optionally challenge structured
+  verdicts with an independent critic, retain and conservatively merge
+  disagreements, validate exact source spans, permit at most one semantic
+  repair, remove unsupported list atoms deterministically, re-verify changed
+  evidence, route unresolved or still-invalid records to hold, and MUST NOT
+  bypass human review or alter the canonicalization import contract.
+- **FR-049**: Atomic verifier, critic, and repair stages MAY use different
+  model-native runtime profiles and MAY bind a separate formatter profile with
+  reasoning explicitly disabled. A two-step stage MUST pass only an explicit
+  bounded memo, not native hidden reasoning, and a critic MUST NOT receive the
+  verifier memo. Each active component profile MUST bind provider, endpoint
+  shape, model id, reasoning mode, structured-output method, token and timeout
+  limits, native request parameters, and profile-registry identity into resume
+  and run lineage. Formatter retries MUST reuse a completed memo. Provider
+  parameters MUST NOT be silently dropped, SDK-internal retries MUST be
+  disabled in favor of recorded operator retries, and reasoning, transport,
+  schema-conformance, and semantic failures MUST remain distinct.
+- **FR-050**: A conditional critic policy MAY skip critic execution only after
+  the deterministic primary controller has already produced `revise` or
+  `hold`. Every potential initial `pass` and post-repair `pass_repaired` MUST
+  still receive critic review, and the execution/skip decision MUST remain in
+  runtime identity and record lineage.
+- **FR-051**: Current canonicalization review cards MUST bind the displayed
+  source, candidate evidence identity, verifier context, and retry context into
+  a versioned deterministic review-payload hash. Review import MUST reject a
+  supplied hash with a missing/unsupported version or a payload that no longer
+  matches. Historical decisions without this hash MAY retain their explicit
+  manual-review status for compatibility, but MUST be marked unverified and
+  MUST NOT qualify a model or learned router.
+- **FR-052**: Canonicalization sampling MUST preserve the existing balanced
+  calibration policy and MAY provide a separately selected qualification
+  policy based on a declared seed and stable task-id hash order. Qualification
+  summaries MUST retain the policy id, seed, and selected-task-id hash. A
+  balanced diagnostic sample MUST NOT be reported as a deployment-distribution
+  error estimate.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -197,6 +252,16 @@ policy, and does not approve automatic answer reuse.
 - **SC-013**: The corpus-bounded explicit-reference benchmark runs offline against a legal preview and reports exact-reference Recall@1 without claiming semantic retrieval quality.
 - **SC-014**: Offline fixture tests exercise semantic embedding-batch emission and Recall@k, MRR, and nDCG@k evaluation without a live embedding service or Neo4j.
 - **SC-015**: An operator can review a bounded semantic-retrieval sample without editing raw JSON, export multiple relevant sections or no-relevant-candidate-shown labels, and compute reviewed relevance metrics fully offline.
+- **SC-016**: Offline fixtures prove that a mismatched batch identity is rejected,
+  an unreviewed result is held, and a reviewed retry can replace base evidence
+  only when its source-batch lineage validates.
+- **SC-017**: A final private snapshot contains only strict-identity-valid,
+  human-accepted, finalized evidence and reports blocked records separately.
+- **SC-018**: Offline fixtures exercise atomic claim-ledger construction,
+  source-span validation and unambiguous normalization, pass/revise/hold
+  routing, verifier/critic disagreement merge, failed-attempt accounting,
+  claim-scoped list normalization, bounded repair, stage resume, and
+  post-repair re-verification without a live LLM or network dependency.
 
 ## Assumptions
 

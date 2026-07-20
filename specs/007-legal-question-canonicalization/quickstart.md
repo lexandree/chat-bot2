@@ -39,8 +39,9 @@ Expected result:
 
 Before running the full 5,000-record canonicalization funnel, run the
 operator-managed calibration described in [operator-runbook.md](operator-runbook.md)
-on exactly 50 records. This calibration uses OpenCode Go for Qwen3.6 Plus,
-MiniMax.io pay-as-you-go credits for MiniMax-M2.7 verification, local
+on exactly 50 records. This calibration uses OpenCode Go `glm-5.2` as the
+bounded high-quality canonicalizer, MiniMax.io pay-as-you-go credits for
+MiniMax-M2.7 verification, local
 validation, and a review-card UI/export so the operator does not inspect raw
 JSON manually.
 
@@ -57,11 +58,24 @@ PYTHONPATH=src python -m app evaluation tg-qa-canonicalization-review-cards \
   --summary-output data/evaluation/tg_qa_canonicalization/real_data_007_calibration_50_review_summary.json
 ```
 
+Use `--sampling-policy stable_hash --sample-seed <predeclared-seed>` for an
+independent qualification sample. The default balanced policy remains the
+prompt-calibration surface and must not be used to estimate deployment error
+prevalence.
+
+For the current v22 control-plane calibration already emitted locally, use the
+bounded GLM runner rather than substituting a Kimi or Hermes wrapper:
+
+```bash
+bash scripts/evaluation/run_007_v22_glm52_calibration_50.sh full
+```
+
 Expected result:
 
-- Qwen, validation, MiniMax, and human triage artifacts exist for 50 records;
+- GLM, validation, MiniMax, and human triage artifacts exist for 50 records;
 - only minimal task fields are sent to each LLM stage;
-- Qwen prompts include the versioned three-example canonicalization profile;
+- GLM prompts include the complete versioned canonicalization profile recorded
+  by its prompt-profile hash;
 - MiniMax-M2.7 Anthropic-compatible tool-use is preferred; OpenAI-compatible
   tool calls are acceptable with enough token budget for reasoning plus tool
   output, otherwise strict JSON fallback is selected;
